@@ -17,7 +17,7 @@ import FollowButton from '../../components/shop/FollowButton';
 import Followers from '../../components/shop/Followers';
 import ShopProduct from '../../components/shop/ShopProduct';
 import ShopPostForm from '../../components/shop/ShopPostForm';
-import ShopPosts from '../../components/shop/ShopPost';
+import AdminShopPosts from '../../components/shop/AdminShopPost';
 
 
 const AdminShopPage = () => {
@@ -48,6 +48,7 @@ const AdminShopPage = () => {
       try {
         const response = await axios.get(`https://172.27.243.94:8000/shops/${shopId}/combined/`);
         const data = response.data;
+        setPosts(data.posts);
 
         setShop({
           name: data.shop.name,
@@ -60,7 +61,7 @@ const AdminShopPage = () => {
         setReviews(data.reviews);
         setFollowerCount(data.follower_count);
         setFollowers(data.followers || []);
-        setPosts(data.posts);
+        
         setError('');
       } catch (error) {
         console.error('Error fetching shop data:', error);
@@ -93,7 +94,7 @@ const AdminShopPage = () => {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Text style={styles.backButtonText}>←</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{shop.name}</Text>
+        <Text style={styles.headerTitle}>Back</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -157,7 +158,9 @@ const AdminShopPage = () => {
             <View>
               
               <ShopPostForm shopId={shopId} />
-              <ShopPosts posts={posts} />
+              <View>
+                <AdminShopPosts posts={posts} shopId={shopId} />
+              </View>
             </View>}
           {activeTab === 'products' && <ShopProduct products={shop.products} />}
           {activeTab === 'followers' && <Followers followers={followers} />}

@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator,
      TouchableOpacity, TextInput, Button, FlatList, CheckBox } from 'react-native';
 import axios from 'axios';
 import { useLocalSearchParams, useRouter } from 'expo-router'; 
-import { MultiSelect } from 'react-multi-select-component';
+import MultiSelect from "react-native-multiple-select";
 import { SelectList } from "react-native-dropdown-select-list";
 import { Table, Row, Rows } from "react-native-table-component";
 
@@ -15,6 +15,8 @@ const UpdateShopProducts = () => {
   const [customProductCategory, setCustomProductCategory] = useState('');
   const [customProductSubcategory, setCustomProductSubcategory] = useState('');
   const [editingIndex, setEditingIndex] = useState(null); // Track which product is being edited
+  const [activeDropdown, setActiveDropdown] = useState(null);
+  const [selectedItems, setSelectedItems] = useState({});
 
   const params = useLocalSearchParams();
   const { shop_id } = params;
@@ -234,6 +236,27 @@ const handleSaveProductName = (index, newName) => {
   setEditingIndex(null); // Exit editing mode
 };
 
+const onSelectedItemsChange = (category, subcategory, selected) => {
+  setSelectedItems((prev) => ({
+    ...prev,
+    [category]: {
+      ...prev[category],
+      [subcategory]: selected,
+    },
+  }));
+  handleProductChange(category, subcategory, selected);
+};
+
+const handleRemoveProduct = (category, subcategory, productId) => {
+  setSelectedProducts(prevState => ({
+      ...prevState,
+      [category]: {
+          ...prevState[category],
+          [subcategory]: prevState[category][subcategory].filter(product => product.value !== productId),
+      }
+  }));
+};
+
 const handleSubmitProducts = async () => {
     try {
         const formData = new FormData();
@@ -271,9 +294,14 @@ const handleSubmitProducts = async () => {
 
 return (
   <ScrollView contentContainerStyle={styles.scrollContainer}>
-    <View style={styles.shopManagerContainer}>
+    
       <View style={styles.shopManagerContent}>
-        <Text style={styles.title}>Update Shop Products</Text>
+      <TouchableOpacity
+          onPress={handleSubmitProducts}
+          style={styles.submitButton}
+        >
+          <Text style={styles.submitButtonText}>Update Products</Text>
+        </TouchableOpacity>
 
         {/* Custom Product Section */}
         <View style={styles.customProductContainer}>
@@ -282,14 +310,7 @@ return (
               <Text style={styles.customTableTitle}>Custom Products</Text>
               <Table borderStyle={{ borderWidth: 1, borderColor: "#ddd" }}>
                 <Row
-                  data={[
-                    "Product Name",
-                    "Category",
-                    "Subcategory",
-                    "Available",
-                    "Price",
-                    "Actions",
-                  ]}
+                  data={["Product Name", "Category", "Subcategory", "Available", "Price", "Actions"]}
                   flexArr={[2.5, 1, 1, 0.8, 1, 1]}
                   style={styles.tableHeader}
                   textStyle={styles.tableHeaderText}
@@ -303,22 +324,14 @@ return (
                           <TextInput
                             style={styles.customNameInput}
                             value={product.name}
-                            onChangeText={(text) =>
-                              handleCustomProductNameChange(index, text)
-                            }
-                            onBlur={() =>
-                              handleSaveProductName(index, product.name)
-                            }
-                            onSubmitEditing={() =>
-                              handleSaveProductName(index, product.name)
-                            }
+                            onChangeText={(text) => handleCustomProductNameChange(index, text)}
+                            onBlur={() => handleSaveProductName(index, product.name)}
+                            onSubmitEditing={() => handleSaveProductName(index, product.name)}
                             placeholder="Enter product name"
                             autoFocus
                           />
                         ) : (
-                          <TouchableOpacity
-                            onPress={() => setEditingIndex(index)}
-                          >
+                          <TouchableOpacity onPress={() => setEditingIndex(index)}>
                             <Text style={styles.tableText}>{product.name}</Text>
                           </TouchableOpacity>
                         ),
@@ -326,17 +339,13 @@ return (
                         product.subcategory_name,
                         <CheckBox
                           value={product.is_available}
-                          onValueChange={() =>
-                            handleCustomProductCheckboxChange(index)
-                          }
+                          onValueChange={() => handleCustomProductCheckboxChange(index)}
                           style={styles.checkBox}
                         />,
                         <TextInput
                           style={styles.priceInput}
                           value={product.price}
-                          onChangeText={(text) =>
-                            handleCustomProductPriceChange(index, text)
-                          }
+                          onChangeText={(text) => handleCustomProductPriceChange(index, text)}
                           placeholder="Price"
                         />,
                         <TouchableOpacity
@@ -361,6 +370,7 @@ return (
               value={customProductName}
               onChangeText={(text) => setCustomProductName(text)}
             />
+            <View style={styles.customCard}>
             <SelectList
               data={Object.keys(groupedProductSuggestions).map((category) => ({
                 key: category,
@@ -382,9 +392,7 @@ return (
             <SelectList
               data={
                 customProductCategory
-                  ? Object.keys(
-                      groupedProductSuggestions[customProductCategory]
-                    ).map((subcategory) => ({
+                  ? Object.keys(groupedProductSuggestions[customProductCategory]).map((subcategory) => ({
                       key: subcategory,
                       value: subcategory,
                     }))
@@ -406,6 +414,7 @@ return (
               }
               disabled={!customProductCategory}
             />
+            </View>
             <TouchableOpacity
               onPress={handleAddCustomProduct}
               style={styles.addButton}
@@ -417,114 +426,96 @@ return (
 
         {/* Product Suggestions Section */}
         <View>
-          {Object.entries(groupedProductSuggestions).map(
-            ([category, subcategories]) => (
-              <View key={category} style={styles.categoryContainer}>
-                <Text style={styles.categoryTitle}>{category}</Text>
-                {Object.entries(subcategories).map(
-                  ([subcategory, products]) => (
-                    <View
-                      key={subcategory}
-                      style={styles.subcategoryContainer}
-                    >
-                      <Text style={styles.subcategoryTitle}>
-                        {subcategory}
-                      </Text>
-                      <MultiSelect
-                        isMulti
-                        value={
-                          selectedProducts[category]?.[subcategory] || []
-                        }
-                        options={products.map((product) => ({
-                          value: product.id,
-                          label: product.name,
-                        }))}
-                        onChange={(selectedOptions) =>
-                          handleProductChange(
-                            category,
-                            subcategory,
-                            selectedOptions
-                          )
-                        }
-                        style={styles.reactSelectContainer}
-                      />
-                      {selectedProducts[category]?.[subcategory]?.length >
-                        0 && (
-                        <View style={styles.tableWrapper}>
-                          <Table borderStyle={{ borderWidth: 1, borderColor: "#ddd" }}>
-                            <Row
-                              data={[
-                                "Product Name",
-                                "Available",
-                                "Price",
-                                "Delete",
-                              ]}
-                              flexArr={[2.5, 1, 1, 1]}
-                              style={styles.tableHeader}
-                              textStyle={styles.tableHeaderText}
-                            />
-                            {selectedProducts[category][subcategory].map(
-                              (product) => (
-                                <Rows
-                                  key={product.value}
-                                  data={[
-                                    [
-                                      product.label,
-                                      <CheckBox
-                                        value={product.is_available}
-                                        onValueChange={() =>
-                                          handleCheckboxChange(
-                                            category,
-                                            subcategory,
-                                            product.value
-                                          )
-                                        }
-                                        style={styles.checkBox}
-                                      />,
-                                      <TextInput
-                                        style={styles.priceInput}
-                                        value={product.price || ""}
-                                        onChangeText={(text) =>
-                                          handleProductPriceChange(
-                                            category,
-                                            subcategory,
-                                            product.value,
-                                            text
-                                          )
-                                        }
-                                        placeholder="Enter price"
-                                      />,
-                                      <TouchableOpacity
-                                        onPress={() =>
-                                          handleRemoveProduct(
-                                            category,
-                                            subcategory,
-                                            product.value
-                                          )
-                                        }
-                                        style={styles.removeButton}
-                                      >
-                                        <Text style={styles.removeButtonText}>
-                                          X
-                                        </Text>
-                                      </TouchableOpacity>,
-                                    ],
-                                  ]}
-                                  flexArr={[2.5, 1, 1, 1]}
-                                  textStyle={styles.tableText}
-                                />
-                              )
-                            )}
-                          </Table>
-                        </View>
-                      )}
-                    </View>
-                  )
-                )}
-              </View>
-            )
+  {Object.entries(groupedProductSuggestions).map(([category, subcategories]) => (
+    <View key={category} style={styles.categoryContainer}>
+      <Text style={styles.categoryTitle}>{category}</Text>
+      {Object.entries(subcategories).map(([subcategory, products]) => (
+        <View key={subcategory} style={styles.subcategoryContainer}>
+          <Text style={styles.subcategoryTitle}>{subcategory}</Text>
+          <MultiSelect
+            hideTags
+            items={products.map((product) => ({
+              id: product.id, // Use `id` for uniqueKey
+              name: product.name,
+            }))}
+            uniqueKey="id"
+            selectedItems={selectedProducts[category]?.[subcategory]?.map((product) => product.value) || []}
+            onSelectedItemsChange={(selectedIds) => {
+              const selectedOptions = selectedIds.map((id) => {
+                const product = products.find((p) => p.id === id);
+                return { value: product.id, label: product.name }; // Maintain the value-label structure
+              });
+              handleProductChange(category, subcategory, selectedOptions);
+            }}
+            selectText="Pick Products"
+            searchInputPlaceholderText="Search Products..."
+            tagRemoveIconColor="#CCC"
+            tagBorderColor="#CCC"
+            tagTextColor="#CCC"
+            selectedItemTextColor="#CCC"
+            selectedItemIconColor="#CCC"
+            itemTextColor="#000"
+            displayKey="name"
+            searchInputStyle={{ color: "#CCC" }}
+            submitButtonColor="#4682B4"
+            submitButtonText="Enter"
+            flatListProps={{
+              style: { maxHeight: 220 }, // Add scrolling to dropdown
+            }}
+          />
+          {selectedProducts[category]?.[subcategory]?.length > 0 && (
+            <View style={styles.tableWrapper}>
+              <Table borderStyle={{ borderWidth: 1, borderColor: "#ddd" }}>
+                <Row
+                  data={["Product Name", "Available", "Price", "Delete"]}
+                  flexArr={[2.5, 1, 1, 1]}
+                  style={styles.tableHeader}
+                  textStyle={styles.tableHeaderText}
+                />
+                {selectedProducts[category][subcategory].map((product) => (
+                  <Rows
+                    key={product.value}
+                    data={[
+                      [
+                        product.label,
+                        <CheckBox
+                          value={product.is_available}
+                          onValueChange={() =>
+                            handleCheckboxChange(category, subcategory, product.value)
+                          }
+                          style={styles.checkBox}
+                        />,
+                        <TextInput
+                          style={styles.priceInput}
+                          value={product.price || ""}
+                          onChangeText={(text) =>
+                            handleProductPriceChange(category, subcategory, product.value, text)
+                          }
+                          placeholder="Enter price"
+                        />,
+                        <TouchableOpacity
+                          onPress={() =>
+                            handleRemoveProduct(category, subcategory, product.value)
+                          }
+                          style={styles.removeButton}
+                        >
+                          <Text style={styles.removeButtonText}>X</Text>
+                        </TouchableOpacity>,
+                      ],
+                    ]}
+                    flexArr={[2.5, 1, 1, 1]}
+                    textStyle={styles.tableText}
+                  />
+                ))}
+              </Table>
+            </View>
           )}
         </View>
+      ))}
+    </View>
+  ))}
+</View>
+
         <TouchableOpacity
           onPress={handleSubmitProducts}
           style={styles.submitButton}
@@ -532,7 +523,7 @@ return (
           <Text style={styles.submitButtonText}>Update Products</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    
   </ScrollView>
 );
 }
@@ -545,7 +536,7 @@ const styles = StyleSheet.create({
   },
   shopManagerContainer: {
     flex: 1,
-    backgroundColor: "#ffffff",
+    backgroundColor: "red",
     borderRadius: 12,
     padding: 20,
     shadowColor: "#000",
@@ -595,6 +586,11 @@ const styles = StyleSheet.create({
     color: "#495057",
     textAlign: "center",
   },
+  customCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-around',
+  },
   customNameInput: {
     flex: 1,
     borderColor: "#ced4da",
@@ -643,7 +639,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   addButton: {
-    backgroundColor: "blue",
+    backgroundColor: "#007bff",
     paddingVertical: 12,
     borderRadius: 8,
     marginTop: 8,
@@ -665,21 +661,17 @@ const styles = StyleSheet.create({
   },
   subcategoryContainer: {
     marginBottom: 16,
+    position: 'relative', // Required for proper zIndex stacking
+    overflow: 'visible',
   },
   subcategoryTitle: {
     fontSize: 14,
     fontWeight: "bold",
     color: "#495057",
     marginBottom: 4,
+    zIndex: -1
   },
-  reactSelectContainer: {
-    borderColor: "#ced4da",
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 8,
-    backgroundColor: "red",
-    zIndex: 999,
-  },
+  
   submitButton: {
     backgroundColor: "#4CAF50", // A refined green color
     paddingVertical: 12,
@@ -691,7 +683,8 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3, // Elevation for Android shadow
     alignItems: "center",
-    marginTop: 16,
+    marginTop: 0,
+    marginBottom: 20
   },
   submitButtonText: {
     color: "#fff",

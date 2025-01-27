@@ -13,6 +13,8 @@ import { SelectList } from "react-native-dropdown-select-list";
 import { MultiSelect } from "react-multi-select-component";
 import * as Location from "expo-location";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from "expo-router";
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import axios from "axios";
 
 export default function CreateShopScreen({ navigation }) {
@@ -28,6 +30,8 @@ export default function CreateShopScreen({ navigation }) {
   const [formErrors, setFormErrors] = useState({});
   const [userId, setUserId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const router = useRouter();
+  
 
   useEffect(() => {
     const fetchCategories = async () => {
@@ -159,6 +163,13 @@ export default function CreateShopScreen({ navigation }) {
   };
 
   return (
+    <View>
+      <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Back</Text>
+        </View>
     <ScrollView contentContainerStyle={styles.container}>
       <View style={styles.card}>
         <Text style={styles.heading}>Create Your Digital Shop</Text>
@@ -258,11 +269,25 @@ export default function CreateShopScreen({ navigation }) {
 
       </View>
     </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flexGrow: 1, padding: 20, backgroundColor: "#f9f9f9" },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  backButton: {
+    marginRight: 10,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+  },
   card: {
     backgroundColor: "#fff",
     padding: 20,

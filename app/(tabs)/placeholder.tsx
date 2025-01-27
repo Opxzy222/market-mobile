@@ -1,23 +1,6 @@
-// screens/placeholder.tsx
-import { View, Text, StyleSheet } from 'react-native';
+import MessageList from "../../src/screens/shop/MessageList";
 
-export default function PlaceholderScreen() {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.text}>Placeholder Screen</Text>
-    </View>
-  );
+
+export default function ShopScreen() {
+  return <MessageList />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f9f9f9',
-  },
-  text: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-});

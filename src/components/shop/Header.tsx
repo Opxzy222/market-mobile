@@ -16,23 +16,25 @@ const Header = () => {
 
 const styles = StyleSheet.create({
   header: {
-    marginTop: 10,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginHorizontal: 10, 
+    backgroundColor: '#f9f9f9',
   },
   greeting: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#333',
+    marginHorizontal: 10, 
   },
   subGreeting: {
     fontSize: 14,
     color: '#666',
+    marginHorizontal: 10, 
   },
   notificationIcon: {
     marginLeft: 'auto',
+    marginHorizontal: 10, 
   },
 });
 

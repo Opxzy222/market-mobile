@@ -1,6 +1,7 @@
 import React from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 import Header from '../../components/shop/Header';
+import FollowedShops from '../../components/shop/FollowedShops';
 import SearchBar from '../../components/shop/SearchBar';
 
 import Categories from '../../components/shop/Categories';
@@ -11,9 +12,9 @@ const App = () => {
     <ScrollView style={styles.container}>
       <Header />
       <SearchBar />
-      
       <Categories />
       <RecentShops />
+      <FollowedShops />
     </ScrollView>
   );
 };

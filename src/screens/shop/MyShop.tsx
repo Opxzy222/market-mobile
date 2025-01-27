@@ -129,7 +129,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    shadowColor: '#000',
+    boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.3)',
     shadowOpacity: 0.1,
     shadowRadius: 6,
     elevation: 3,

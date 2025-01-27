@@ -79,7 +79,7 @@ export default function SearchResults() {
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Shop</Text>
+          <Text style={styles.headerTitle}>Back</Text>
         </View>
         <FlatList
           data={searchResults}

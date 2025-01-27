@@ -73,12 +73,13 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   input: {
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: '#ddd',
     borderRadius: 8,
     padding: 10,
     marginBottom: 10,
     backgroundColor: '#fff',
+    fontSize: 18,
   },
   searchButton: {
     backgroundColor: '#007bff',

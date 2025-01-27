@@ -50,8 +50,7 @@ const ShopProduct = ({ products }) => {
 
 const styles = StyleSheet.create({
   container: {
-    padding: 16,
-    backgroundColor: '#f3f8fc',
+    
   },
   noProducts: {
     textAlign: 'center',

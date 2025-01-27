@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 
 const ShopProduct = () => {
   const [products, setProducts] = useState(null);
@@ -38,22 +37,23 @@ const ShopProduct = () => {
     return <ActivityIndicator size="large" color="#3b82f6" style={styles.loader} />;
   }
 
-  if (error) {
-    return <Text style={styles.error}>{error}</Text>;
-  }
-
-  if (!products || products.length === 0) {
-    return <Text style={styles.noProducts}>No products available.</Text>;
-  }
-
   return (
     <ScrollView contentContainerStyle={styles.container}>
       {/* Update Product Button */}
       <TouchableOpacity style={styles.updateButton} onPress={handleUpdateProduct}>
-        <Text style={styles.updateButtonText}>Update Shop Products</Text>
+        <Text style={styles.updateButtonText}>Click here to update shop products</Text>
       </TouchableOpacity>
 
-      {products.map((categoryData) => (
+      {/* Error Handling */}
+      {error && <Text style={styles.error}>{error}</Text>}
+
+      {/* No Products Message */}
+      {(!products || products.length === 0) && !error && (
+        <Text style={styles.noProducts}>No products available.</Text>
+      )}
+
+      {/* Render Products */}
+      {products && products.map((categoryData) => (
         <View key={categoryData.category} style={styles.categoryCard}>
           <Text style={styles.categoryTitle}>{categoryData.category}</Text>
           {categoryData.subcategories.map((subcategoryData) => (
@@ -79,8 +79,8 @@ const ShopProduct = () => {
                     </Text>
                     <Text style={styles.tableCell}>
                       {product.price !== null && product.price !== undefined && !isNaN(Number(product.price))
-                      ? `₦${Number(product.price)}`
-                      : 'N/A'}
+                        ? `₦${Number(product.price)}`
+                        : 'N/A'}
                     </Text>
                   </View>
                 ))}
@@ -98,6 +98,7 @@ const styles = StyleSheet.create({
     padding: 16,
     backgroundColor: '#f3f8fc',
   },
+  
   loader: {
     marginTop: 50,
   },
@@ -188,7 +189,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#4caf50',
     borderRadius: 12,
     paddingVertical: 12,
-    marginBottom: 20,
+    marginBottom: 25,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
@@ -196,7 +197,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   updateButtonText: {
-    color: '#fff',
+    color: 'white',
     fontSize: 18,
     fontWeight: 'bold',
     marginLeft: 8,

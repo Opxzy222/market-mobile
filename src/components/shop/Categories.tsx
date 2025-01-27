@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity } from 'react-native';
 import axios from 'axios';
-import { useNavigation } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
 
 const Categories = () => {
   const [categories, setCategories] = useState([]);
-  const navigation = useNavigation();
+  const router = useRouter();
 
   useEffect(() => {
     axios
@@ -34,7 +34,7 @@ const Categories = () => {
   };
 
   const handleCategoryClick = (categoryId, categoryName) => {
-    navigation.navigate('Subcategories', { categoryId, categoryName });
+    router.push({pathname: '/shop/SubcategoryList', params: { categoryId: categoryId, categoryName: categoryName }, });
   };
 
   const renderCategory = ({ item }) => (
@@ -56,7 +56,9 @@ const Categories = () => {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Shop Categories</Text>
-        <Text style={styles.seeAll}>See All</Text>
+        <TouchableOpacity onPress={() => {router.push('/shop/AllCategories');}} >
+          <Text style={styles.seeAll}>See All</Text>
+        </TouchableOpacity>
       </View>
       <FlatList
         data={categories}
@@ -71,7 +73,7 @@ const Categories = () => {
 
 const styles = StyleSheet.create({
   container: {
-    marginHorizontal: 20,  // Reduced for alignment with other sections
+    marginHorizontal: 20,
     marginTop: 20,
     paddingVertical: 10,
   },
@@ -82,13 +84,15 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   title: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#222',
   },
   seeAll: {
-    fontSize: 14,
+    fontSize: 16,
     color: '#007bff',
+    fontWeight: '600',
+    
   },
   row: {
     justifyContent: 'space-between',
@@ -97,21 +101,29 @@ const styles = StyleSheet.create({
   categoryItem: {
     width: '30%',
     alignItems: 'center',
-    padding: 8,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
+    marginHorizontal: 5,
+    marginBottom: 15,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    backgroundColor: '#f9f9f9',
+    borderColor: 'rgba(0, 0, 0, 0.1)',
   },
   icon: {
     width: 50,
     height: 50,
-    marginBottom: 6,
+    marginBottom: 8,
   },
   categoryName: {
     fontSize: 14,
     textAlign: 'center',
-    color: '#555',
+    color: '#333',
+    fontWeight: '600',
   },
 });
 

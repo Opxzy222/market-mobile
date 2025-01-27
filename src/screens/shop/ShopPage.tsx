@@ -17,6 +17,7 @@ import ShopReview from '../../components/shop/ShopReview';
 import FollowButton from '../../components/shop/FollowButton';
 import Followers from '../../components/shop/Followers';
 import ShopProduct from '../../components/shop/ShopProduct';
+import ShopPosts from '../../components/shop/ShopPost';
 
 
 const ShopPage = () => {
@@ -33,15 +34,17 @@ const ShopPage = () => {
   const [error, setError] = useState('');
   const [userId, setUserId] = useState(null);
 
+
   useEffect(() => {
     const fetchUserId = async () => {
       const userIdString = await AsyncStorage.getItem('user_id');
+      console.log('User ID fetched:', userIdString);
       setUserId(parseInt(userIdString, 10));
     };
-
     fetchUserId();
+    console.log('ooo', userId)
   }, []);
-
+  
   useEffect(() => {
     const fetchShopData = async () => {
       try {
@@ -60,6 +63,8 @@ const ShopPage = () => {
         setFollowerCount(data.follower_count);
         setFollowers(data.followers || []);
         setPosts(data.posts);
+        console.log(data.posts)
+        
         setError('');
       } catch (error) {
         console.error('Error fetching shop data:', error);
@@ -70,7 +75,26 @@ const ShopPage = () => {
     if (shopId) {
       fetchShopData();
     }
-  }, [shopId]);
+
+    const markShopAsVisited = async () => {
+      if (!userId || !shopId) {
+        console.log('Skipping markShopAsVisited - userId or shopId not set');
+        return; // Exit if either userId or shopId is missing
+      }
+  
+      try {
+        console.log('Marking shop as visited:', shopId, userId);
+        await axios.post('https://172.27.243.94:8000/shops/recently-visited/', {
+          shop_id: shopId,
+          user_id: userId,
+        });
+      } catch (error) {
+        console.error('Error marking shop as visited:', error);
+      }
+    };
+  
+    markShopAsVisited(); // Call when either shopId or userId changes
+  }, [userId, shopId]);
 
   const handleTabChange = (tab) => setActiveTab(tab);
   const handleReviewSubmitted = (newReview) => {
@@ -84,6 +108,8 @@ const ShopPage = () => {
   if (!shop || userId === null) {
     return <ActivityIndicator size="large" color="#f39c12" />;
   }
+
+  
 
   return (
     <View style={styles.container}>
@@ -106,13 +132,19 @@ const ShopPage = () => {
       <Text style={styles.shopName}>{shop.name}</Text>
       <Text style={styles.followerCount}>{followerCount} Followers</Text>
       <View style={styles.addressContainer}>
-        <MaterialIcons name="location-on" size={18} color="black" style={styles.icon} />
+        <MaterialIcons name="store" size={18} color="#4CAF50" style={styles.icon} />
         <Text style={styles.shopAddress}>{shop.address}</Text>
       </View>
 
       <View style={styles.buttons}>
   <FollowButton shopId={shopId} />
-  <TouchableOpacity style={styles.messageButton}>
+  <TouchableOpacity style={styles.messageButton} onPress={() => {
+          router.push({
+            pathname: '/shop/StartConversation',
+            params: { shopId: shopId, name: shop.name},
+          });
+        }}
+        >
     <Text style={styles.buttonText}>Message</Text>
   </TouchableOpacity>
 </View>
@@ -152,7 +184,7 @@ const ShopPage = () => {
 
         {/* Tab Content */}
         <View style={styles.tabContent}>
-          {activeTab === 'posts' && <Text style={styles.tabText}>Placeholder for Shop Posts</Text>}
+          {activeTab === 'posts' && <ShopPosts posts={posts} />}
           {activeTab === 'products' && <ShopProduct products={shop.products} />}
           {activeTab === 'followers' && <Followers followers={followers} />}
           {activeTab === 'reviews' && 
@@ -234,7 +266,7 @@ const styles = StyleSheet.create({
   addressContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 5,
+    marginTop: 10,
   },
   icon: {
     marginRight: 5,
