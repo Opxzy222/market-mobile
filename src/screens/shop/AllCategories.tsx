@@ -44,7 +44,7 @@ const AllCategories = () => {
   }, []);
 
   const handleCategoryClick = (categoryId, categoryName) => {
-    navigation.navigate('Subcategories', { categoryId, categoryName });
+    router.push({pathname: '/shop/SubcategoryList', params: { categoryId: categoryId, categoryName: categoryName }, });
   };
 
   const renderCategoryItem = ({ item }) => (

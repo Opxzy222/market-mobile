@@ -6,18 +6,18 @@ import {
   Image,
   TouchableOpacity,
   ScrollView,
-  ActivityIndicator,
+  ActivityIndicator, Alert, Clipboard
 } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router'; 
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import ReviewForm from '../../components/shop/ReviewForm';
 import ShopReview from '../../components/shop/ShopReview';
 import FollowButton from '../../components/shop/FollowButton';
 import Followers from '../../components/shop/Followers';
 import ShopProduct from '../../components/shop/ShopProduct';
 import ShopPosts from '../../components/shop/ShopPost';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 
 
 const ShopPage = () => {
@@ -58,6 +58,7 @@ const ShopPage = () => {
           categories: data.shop.categories,
           products: data.shop.products,
           address: data.shop.address,
+          shop_id: data.shop.shop_id
         });
         setReviews(data.reviews);
         setFollowerCount(data.follower_count);
@@ -109,16 +110,28 @@ const ShopPage = () => {
     return <ActivityIndicator size="large" color="#f39c12" />;
   }
 
-  
+  const handleCopyShopId = () => {
+    Clipboard.setString(shop.shop_id);
+    Alert.alert("Copied!", "Shop ID has been copied to the clipboard.");
+  };
 
   return (
     <View style={styles.container}>
       {/* Back Button Header */}
       <View style={styles.header}>
+        <View style={styles.backContainer}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Text style={styles.backButtonText}>←</Text>
+        <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{shop.name}</Text>
+        
+        </View>
+        <View style={styles.shopIdContainer}>
+          <Text style={styles.shopIdLabel}>SHOP ID:</Text>
+          <Text style={styles.shopId}>{shop.shop_id}</Text>
+        <TouchableOpacity onPress={handleCopyShopId}>
+          <Ionicons name="copy" size={20} color="#007BFF" style={styles.copyIcon} />
+        </TouchableOpacity>
+      </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -206,19 +219,15 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 15,
+    justifyContent: 'space-between',
+    padding: 16,
+    backgroundColor: '#f9f9f9',
+  },
+  backContainer: {
     
-    borderBottomWidth: 1,
-    borderBottomColor: '#dcdcdc',
-    elevation: 3,
   },
   backButton: {
-    marginRight: 10,
-  },
-  backButtonText: {
-    fontSize: 16,
-    color: '#0073e6', // A mature and refined blue
-    fontWeight: '600',
+    marginRight: 5,
   },
   headerTitle: {
     fontSize: 20,
@@ -266,7 +275,7 @@ const styles = StyleSheet.create({
   addressContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 3,
   },
   icon: {
     marginRight: 5,
@@ -274,7 +283,7 @@ const styles = StyleSheet.create({
   shopAddress: {
     fontSize: 14,
     color: 'black', // Same as followerCount for consistency
-    marginTop: 5, // Small spacing above the address
+    marginTop: 0, // Small spacing above the address
   },
   buttons: {
     flexDirection: 'row',
@@ -357,6 +366,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#34495e',
     lineHeight: 20,
+  },
+  shopIdContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  shopIdLabel: {
+    fontSize: 16,
+    color: 'black',
+    marginRight: 8,
+    fontWeight: '700',
+  },
+  shopId: {
+    fontSize: 16,
+    color: 'black',
+    marginRight: 1,
+  },
+  copyIcon: {
+    marginLeft: 4,
   },
 });
 

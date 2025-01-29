@@ -49,7 +49,7 @@ export default function GeolocationSearch({ onSearch }) {
         style={styles.input}
         value={searchQuery}
         onChangeText={setSearchQuery}
-        placeholder="What do you want to buy?"
+        placeholder="What are you looking for?"
         editable={!loading}
       />
       <TouchableOpacity

@@ -30,9 +30,17 @@ export default function CreateShopScreen({ navigation }) {
   const [formErrors, setFormErrors] = useState({});
   const [userId, setUserId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const router = useRouter();
-  
 
+  const [locations, setLocations] = useState([]); // Top-level locations
+  const [selectedLocation, setSelectedLocation] = useState(null); // First-level selection
+  const [childLocations, setChildLocations] = useState([]); // Second-level locations
+  const [selectedChildLocation, setSelectedChildLocation] = useState(null); // Second-level selection
+  const [grandChildLocations, setGrandChildLocations] = useState([]); // Third-level locations
+  const [selectedGrandChildLocation, setSelectedGrandChildLocation] = useState(null); // Third-level selection
+
+  const router = useRouter();
+
+  // Fetch categories
   useEffect(() => {
     const fetchCategories = async () => {
       try {
@@ -53,6 +61,7 @@ export default function CreateShopScreen({ navigation }) {
     fetchCategories();
   }, []);
 
+  // Fetch user ID
   useEffect(() => {
     const fetchUserId = async () => {
       const userIdString = await AsyncStorage.getItem("user_id");
@@ -61,6 +70,91 @@ export default function CreateShopScreen({ navigation }) {
 
     fetchUserId();
   }, []);
+
+  // Fetch top-level locations
+  useEffect(() => {
+    const fetchTopLevelLocations = async () => {
+      try {
+        const response = await axios.post(
+          "https://172.27.243.94:8000/location/states/"
+        );
+        setLocations(
+          response.data.locations.map((loc) => ({
+            key: loc.id,
+            value: loc.name,
+          }))
+        );
+      } catch (error) {
+        console.error("Error fetching locations:", error);
+      }
+    };
+
+    fetchTopLevelLocations();
+  }, []);
+
+  const handleLocationChange = async (selectedOption) => {
+    setSelectedLocation(selectedOption);
+    setSelectedChildLocation(null); // Reset child selection
+    setSelectedGrandChildLocation(null); // Reset grandchild selection
+  
+    try {
+      const formData = new FormData();
+      formData.append("parent_id", selectedOption);
+  
+      const response = await axios.post(
+        "https://172.27.243.94:8000/location/children/",
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+  
+      setChildLocations(
+        response.data.locations.map((loc) => ({
+          key: loc.id,
+          value: loc.name,
+        }))
+      );
+    } catch (error) {
+      console.error("Error fetching child locations:", error);
+    }
+  };
+  
+  const handleChildLocationChange = async (selectedOption) => {
+    setSelectedChildLocation(selectedOption);
+    setSelectedGrandChildLocation(null); // Reset grandchild selection
+  
+    try {
+      const formData = new FormData();
+      formData.append("parent_id", selectedOption);
+  
+      const response = await axios.post(
+        "https://172.27.243.94:8000/location/children/",
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+  
+      setGrandChildLocations(
+        response.data.locations.map((loc) => ({
+          key: loc.id,
+          value: loc.name,
+        }))
+      );
+    } catch (error) {
+      console.error("Error fetching grandchild locations:", error);
+    }
+  };
+  
+
+  const handleGrandChildLocationChange = (selectedOption) => {
+    setSelectedGrandChildLocation(selectedOption);
+  };
 
   const handleCategoryChange = async (selectedOption) => {
     setSelectedCategory(selectedOption);
@@ -124,6 +218,10 @@ export default function CreateShopScreen({ navigation }) {
     if (!address.trim()) errors.address = "Address is required.";
     if (!geoLocation.lat || !geoLocation.lng)
       errors.geoLocation = "Geolocation is required. Please pin your location.";
+    if (!selectedLocation) errors.location = "Location is required.";
+    if (!selectedChildLocation) errors.childLocation = "Child location is required.";
+    if (!selectedGrandChildLocation)
+      errors.grandChildLocation = "Grandchild location is required.";
 
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
@@ -132,7 +230,7 @@ export default function CreateShopScreen({ navigation }) {
   const handleSubmit = async () => {
     if (!handleValidation() || isSubmitting) return;
   
-    setIsSubmitting(true); // Disable further submissions
+    setIsSubmitting(true);
     try {
       const formData = new FormData();
       formData.append("shop_name", name);
@@ -140,6 +238,8 @@ export default function CreateShopScreen({ navigation }) {
       formData.append("geo_location", `POINT(${geoLocation.lng} ${geoLocation.lat})`);
       formData.append("address", address);
       formData.append("shop_owner", userId);
+      formData.append("lga", selectedChildLocation);
+      formData.append("location", selectedGrandChildLocation);
   
       selectedSubcategories.forEach((sub) =>
         formData.append("subcategories[]", sub.value)
@@ -151,127 +251,173 @@ export default function CreateShopScreen({ navigation }) {
         { headers: { "Content-Type": "multipart/form-data" } }
       );
   
-      Alert.alert("Success", "Your shop has been created!", [
-        { text: "OK", onPress: () => navigation.navigate("shop") },
-      ]);
+      const shopId = response.data.shop_id;
+  
+      Alert.alert("Success", "Your shop has been created!");
+      
+      // Navigate immediately after the alert
+      router.push({ pathname: '/shop/UpdateProduct', params: { shop_id: shopId } });
     } catch (error) {
       console.error("Error creating shop:", error);
       Alert.alert("Error", "Something went wrong. Please try again.");
     } finally {
-      setIsSubmitting(false); // Allow future submissions
+      setIsSubmitting(false);
     }
   };
+  
 
   return (
-    <View>
+    <View style={{ flex: 1 }}>
       <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Back</Text>
-        </View>
-    <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.card}>
-        <Text style={styles.heading}>Create Your Digital Shop</Text>
-
-        <Text style={styles.label}>Name</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Input shop name"
-          value={name}
-          onChangeText={setName}
-        />
-        {formErrors.name && <Text style={styles.error}>{formErrors.name}</Text>}
-
-        <Text style={styles.label}>Description</Text>
-        <TextInput
-          style={[styles.input, styles.description]}
-          placeholder="Input Shop Description"
-          value={description}
-          onChangeText={setDescription}
-          multiline
-        />
-        {formErrors.description && <Text style={styles.error}>{formErrors.description}</Text>}
-
-        <Text style={styles.label}>Category</Text>
-        <SelectList
-          setSelected={handleCategoryChange}
-          data={categories}
-          placeholder="Select Category"
-          save="key"
-          searchPlaceholder="Search categories"
-          boxStyles={styles.dropdown}
-        />
-
-        {selectedCategory && subcategories.length > 0 && (
-          <>
-            <Text style={styles.label}>Subcategories</Text>
-            <MultiSelect
-              options={subcategories.map((sub) => ({
-                label: sub.value,
-                value: sub.key,
-              }))}
-              value={selectedSubcategories}
-              onChange={setSelectedSubcategories}
-              labelledBy="Select Subcategories"
-            />
-          </>
-        )}
-
-        <Text style={styles.label}>Address</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Input your shop address"
-          value={address}
-          onChangeText={setAddress}
-        />
-        {formErrors.address && <Text style={styles.error}>{formErrors.address}</Text>}
-
-        <View style={styles.geoSection}>
-          <View style={styles.geoInputContainer}>
-            <Text style={styles.geoLabel}>Latitude</Text>
-            <TextInput
-              style={[styles.input, styles.readOnly]}
-              placeholder="Latitude"
-              value={geoLocation.lat}
-              editable={false}
-            />
-          </View>
-          <View style={styles.geoInputContainer}>
-            <Text style={styles.geoLabel}>Longitude</Text>
-            <TextInput
-              style={[styles.input, styles.readOnly]}
-              placeholder="Longitude"
-              value={geoLocation.lng}
-              editable={false}
-            />
-          </View>
-
-          <TouchableOpacity style={styles.pinButton} onPress={handlePinLocation}>
-            <Text style={styles.pinButtonText}>Pin Location</Text>
-          </TouchableOpacity>
-        </View>
-        {geoError && <Text style={styles.error}>{geoError}</Text>}
-        {formErrors.geoLocation && <Text style={styles.error}>{formErrors.geoLocation}</Text>}
-
-        <Pressable
-  style={[
-    styles.submitButton,
-    isSubmitting && styles.disabledButton,
-  ]}
-  onPress={handleSubmit}
-  disabled={isSubmitting}
->
-  <Text style={styles.submitButtonText}>
-    {isSubmitting ? "Submitting..." : "Create Shop"}
-  </Text>
-</Pressable>
-
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Back</Text>
       </View>
-    </ScrollView>
+      
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        <View style={styles.card}>
+          <Text style={styles.heading}>Create Your Digital Shop</Text>
+  
+          <Text style={styles.label}>Name</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Input shop name"
+            value={name}
+            onChangeText={setName}
+          />
+          {formErrors.name && <Text style={styles.error}>{formErrors.name}</Text>}
+  
+          <Text style={styles.label}>Description</Text>
+          <TextInput
+            style={[styles.input, styles.description]}
+            placeholder="Input Shop Description"
+            value={description}
+            onChangeText={setDescription}
+            multiline
+          />
+          {formErrors.description && <Text style={styles.error}>{formErrors.description}</Text>}
+  
+          <Text style={styles.label}>Category</Text>
+          <SelectList
+            setSelected={handleCategoryChange}
+            data={categories}
+            placeholder="Select Category"
+            save="key"
+            searchPlaceholder="Search categories"
+            boxStyles={styles.dropdown}
+          />
+  
+          {selectedCategory && subcategories.length > 0 && (
+            <>
+              <Text style={styles.label}>Subcategories</Text>
+              <MultiSelect
+                options={subcategories.map((sub) => ({
+                  label: sub.value,
+                  value: sub.key,
+                }))}
+                value={selectedSubcategories}
+                onChange={setSelectedSubcategories}
+                labelledBy="Select Subcategories"
+              />
+            </>
+          )}
+  
+          {/* Location Select Section */}
+          <Text style={styles.label}>State</Text>
+          <SelectList
+            setSelected={handleLocationChange}
+            data={locations}
+            placeholder="Select Location"
+            save="key"
+            boxStyles={styles.dropdown}
+          />
+          {formErrors.location && <Text style={styles.error}>{formErrors.location}</Text>}
+  
+          {selectedLocation && (
+            <>
+              <Text style={styles.label}>Local Government</Text>
+              <SelectList
+                setSelected={handleChildLocationChange}
+                data={childLocations}
+                placeholder="Select Child Location"
+                save="key"
+                boxStyles={styles.dropdown}
+              />
+              {formErrors.childLocation && <Text style={styles.error}>{formErrors.childLocation}</Text>}
+            </>
+          )}
+  
+          {selectedChildLocation && (
+            <>
+              <Text style={styles.label}>Location</Text>
+              <SelectList
+                setSelected={handleGrandChildLocationChange}
+                data={grandChildLocations}
+                placeholder="Select Grandchild Location"
+                save="key"
+                boxStyles={styles.dropdown}
+              />
+              {formErrors.grandChildLocation && (
+                <Text style={styles.error}>{formErrors.grandChildLocation}</Text>
+              )}
+            </>
+          )}
+  
+          <Text style={styles.label}>Address</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Input your shop address"
+            value={address}
+            onChangeText={setAddress}
+          />
+          {formErrors.address && <Text style={styles.error}>{formErrors.address}</Text>}
+  
+          <View style={styles.geoSection}>
+            <View style={styles.geoInputContainer}>
+              <Text style={styles.geoLabel}>Latitude</Text>
+              <TextInput
+                style={[styles.input, styles.readOnly]}
+                placeholder="Latitude"
+                value={geoLocation.lat}
+                editable={false}
+              />
+            </View>
+            <View style={styles.geoInputContainer}>
+              <Text style={styles.geoLabel}>Longitude</Text>
+              <TextInput
+                style={[styles.input, styles.readOnly]}
+                placeholder="Longitude"
+                value={geoLocation.lng}
+                editable={false}
+              />
+            </View>
+  
+            <TouchableOpacity style={styles.pinButton} onPress={handlePinLocation}>
+              <Text style={styles.pinButtonText}>Pin Location</Text>
+            </TouchableOpacity>
+          </View>
+          {geoError && <Text style={styles.error}>{geoError}</Text>}
+          {formErrors.geoLocation && <Text style={styles.error}>{formErrors.geoLocation}</Text>}
+  
+          <Pressable
+            style={[
+              styles.submitButton,
+              isSubmitting && styles.disabledButton,
+            ]}
+            onPress={handleSubmit}
+            disabled={isSubmitting}
+          >
+            <Text style={styles.submitButtonText}>
+              {isSubmitting ? "Submitting..." : "Create Shop"}
+            </Text>
+          </Pressable>
+        </View>
+      </ScrollView>
     </View>
   );
-}
+}  
+
 
 const styles = StyleSheet.create({
   container: { flexGrow: 1, padding: 20, backgroundColor: "#f9f9f9" },
