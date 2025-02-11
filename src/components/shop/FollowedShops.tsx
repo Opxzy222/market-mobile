@@ -8,12 +8,13 @@ import {
 } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from 'expo-router';
+import { useRouter, usePathname } from 'expo-router';
 
 const FollowedShops = () => {
   const [shops, setShops] = useState([]);
   const [userId, setUserId] = useState(null);
   const router = useRouter();
+  const pathname = usePathname()
 
   useEffect(() => {
     const fetchUserId = async () => {
@@ -44,7 +45,7 @@ const FollowedShops = () => {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Followed Shops</Text>
-        <TouchableOpacity onPress={() => router.push('/shop/AllFollowedShops')}>
+        <TouchableOpacity onPress={() => router.push({ pathname: '/shop/AllFollowedShops', params: { prevRoute: pathname} })}>
           <Text style={styles.seeAll}>See All</Text>
         </TouchableOpacity>
       </View>

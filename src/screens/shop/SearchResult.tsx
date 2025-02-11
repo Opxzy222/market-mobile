@@ -17,6 +17,7 @@ const screenWidth = Dimensions.get('window').width;
 
 export default function SearchResults() {
   const params = useLocalSearchParams();
+  const { prevRoute } = params;
   const searchResults = params.searchResults
     ? JSON.parse(params.searchResults)
     : [];
@@ -52,7 +53,7 @@ export default function SearchResults() {
         </View>
         <View style={styles.row}>
           <MaterialIcons name="place" size={20} color="black" style={styles.icon} />
-          <Text style={styles.shopDistance}>Distance: {item.distance ?? 'N/A'} m</Text>
+          <Text style={styles.shopDistance}>Distance: {item.distance ?? 'N/A'} km</Text>
         </View>
       </View>
 
@@ -76,10 +77,9 @@ export default function SearchResults() {
       <StatusBar barStyle="dark-content" />
       <View style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity onPress={() => router.replace(prevRoute || '((tabs)/shop)')} style={styles.backButton}>
             <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Back</Text>
         </View>
         <FlatList
           data={searchResults}

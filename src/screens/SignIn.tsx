@@ -76,15 +76,10 @@ export default function SignIn() {
         style={styles.input}
         placeholderTextColor="#888"
       />
-      <TouchableOpacity
-        onPress={() => navigation.navigate("ForgotPassword")}
-        style={styles.forgotPassword}
-      >
-        <Text style={styles.linkText}>Forgot Password?</Text>
-      </TouchableOpacity>
       <TouchableOpacity onPress={handleSignIn} disabled={loading} style={styles.button}>
         {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Login</Text>}
       </TouchableOpacity>
+      
       <Text style={styles.orText}>OR</Text>
       <TouchableOpacity style={styles.googleButton}>
         <Text style={styles.googleButtonText}>Login with Google</Text>
@@ -94,6 +89,12 @@ export default function SignIn() {
         style={styles.registerLink}
       >
         <Text style={styles.linkText}>Don't have an account yet? Register</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        onPress={() => navigation.navigate("ForgotPassword")}
+        style={styles.forgotPassword}
+      >
+        <Text style={styles.linkText}>Forgot Password?</Text>
       </TouchableOpacity>
     </View>
   );
@@ -128,8 +129,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   forgotPassword: {
-    alignSelf: "flex-end",
-    marginBottom: 15,
+    alignSelf: "center",
+    marginTop: 15,
   },
   linkText: {
     color: "blue",

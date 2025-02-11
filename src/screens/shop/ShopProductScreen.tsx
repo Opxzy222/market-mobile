@@ -2,13 +2,14 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 
 const ShopProduct = () => {
   const [products, setProducts] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const params = useLocalSearchParams();
-  const { shopId } = params;
+  const { shopId, prevRoute } = params;
   const router = useRouter();
 
   const fetchShopProducts = async () => {
@@ -38,6 +39,12 @@ const ShopProduct = () => {
   }
 
   return (
+    <View>
+      <View style={styles.header}>
+              <TouchableOpacity onPress={() => router.replace(prevRoute || '((tabs)/shop)')} style={styles.backButton}>
+                <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
+              </TouchableOpacity>
+            </View>
     <ScrollView contentContainerStyle={styles.container}>
       {/* Update Product Button */}
       <TouchableOpacity style={styles.updateButton} onPress={handleUpdateProduct}>
@@ -90,6 +97,7 @@ const ShopProduct = () => {
         </View>
       ))}
     </ScrollView>
+    </View>
   );
 };
 
@@ -97,6 +105,14 @@ const styles = StyleSheet.create({
   container: {
     padding: 16,
     backgroundColor: '#f3f8fc',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  backButton: {
+    marginRight: 10,
   },
   
   loader: {

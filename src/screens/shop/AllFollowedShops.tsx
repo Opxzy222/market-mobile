@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import axios from "axios";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -18,6 +18,9 @@ const AllFollowedShops = () => {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const [userId, setUserId] = useState(null);
+  const params = useLocalSearchParams();
+  const { prevRoute } = params;
+
 
   useEffect(() => {
     const fetchUserId = async () => {
@@ -76,11 +79,10 @@ const AllFollowedShops = () => {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-                <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                  <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Back</Text>
-              </View>
+        <TouchableOpacity onPress={() => router.replace(prevRoute || '((tabs)/shop)')} style={styles.backButton}>
+          <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
+        </TouchableOpacity>
+      </View>
       <Text style={styles.heading}>Shops You Are Following</Text>
       <FlatList
         data={shops}

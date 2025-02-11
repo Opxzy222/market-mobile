@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, Image, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
 import axios from 'axios';
-import { useRouter } from 'expo-router';
+import { useRouter, usePathname } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const RecentlyVisitedShops = () => {
@@ -9,6 +9,7 @@ const RecentlyVisitedShops = () => {
   const [showAll, setShowAll] = useState(false);
   const router = useRouter();
   const [userId, setUserId] = useState(null);
+  const pathname = usePathname()
 
   useEffect(() => {
     const fetchUserId = async () => {
@@ -48,7 +49,9 @@ const RecentlyVisitedShops = () => {
         </Text>
         <TouchableOpacity
           style={styles.shopButton}
-          onPress={() => navigation.navigate('ShopPage', { shopId: item.id })}
+          onPress={() =>
+            router.push({ pathname: "/shop/shop-page", params: { shopId: item.id } })
+          }
         >
           <Text style={styles.buttonText}>Go to Shop</Text>
         </TouchableOpacity>
@@ -62,7 +65,7 @@ const RecentlyVisitedShops = () => {
     <View style={styles.container}>
       <View style={styles.header}>
               <Text style={styles.title}>Recently Visited</Text>
-              <TouchableOpacity onPress={() => {router.push('/shop/AllRecentShops');}} >
+              <TouchableOpacity onPress={() => router.push({ pathname: '/shop/AllRecentShops', params: { prevRoute: pathname} })}>
                 <Text style={styles.seeAll}>See All</Text>
               </TouchableOpacity>
             </View>
@@ -102,7 +105,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#007bff',
     fontWeight: '600',
-    //textDecorationLine: 'underline',
   },
   listContainer: {
     paddingBottom: 16,
@@ -110,29 +112,30 @@ const styles = StyleSheet.create({
   shopCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f9f9f9',
-    borderRadius: 20,
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
     marginBottom: 20,
     padding: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
+    borderColor: '#ddd',
   },
   shopImage: {
     width: 80,
     height: 80,
-    borderRadius: 12,
-    marginRight: 16,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    backgroundColor: '#f0f0f0',
+    borderRadius: 16,
+    marginRight: 24,
+    borderWidth: 2,
+    borderColor: '#eee',
+    backgroundColor: '#f8f8f8',
   },
   shopInfo: {
     flex: 1,
+    paddingLeft: 8,
   },
   shopName: {
     fontSize: 20,
@@ -149,7 +152,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#2196f3',
     paddingVertical: 10,
     paddingHorizontal: 16,
-    borderRadius: 8,
+    borderRadius: 12,
     alignSelf: 'flex-start',
     shadowColor: '#007bff',
     shadowOpacity: 0.4,
@@ -164,7 +167,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     backgroundColor: '#4caf50',
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 16,
     alignItems: 'center',
     shadowColor: '#4caf50',
     shadowOpacity: 0.4,
@@ -176,6 +179,5 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
-
 
 export default RecentlyVisitedShops;

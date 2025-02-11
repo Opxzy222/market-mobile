@@ -22,7 +22,7 @@ import AdminShopPosts from '../../components/shop/AdminShopPost';
 
 const AdminShopPage = () => {
   const params = useLocalSearchParams();
-  const { shopId } = params;
+  const { shopId, prevRoute } = params;
   const router = useRouter(); // Router for navigation
 
   const [shop, setShop] = useState(null);
@@ -91,10 +91,13 @@ const AdminShopPage = () => {
     <View style={styles.container}>
       {/* Back Button Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Text style={styles.backButtonText}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Back</Text>
+      <TouchableOpacity
+        onPress={() => router.replace(prevRoute || '((tabs)/myshop)')}
+        style={styles.backButton}
+      >
+        <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
+      </TouchableOpacity>
+        
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>

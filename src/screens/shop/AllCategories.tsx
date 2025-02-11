@@ -9,9 +9,9 @@ import {
   SafeAreaView,
 } from 'react-native';
 import axios from 'axios';
-import { useNavigation } from '@react-navigation/native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { ScrollView } from 'react-native-gesture-handler';
 
 const categoryIconMap = {
   vehicles: require('../../../assets/Image/car-icon.svg'),
@@ -30,6 +30,8 @@ const categoryIconMap = {
 const AllCategories = () => {
   const [categories, setCategories] = useState([]);
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const { prevRoute } = params;
 
   useEffect(() => {
     axios
@@ -62,15 +64,16 @@ const AllCategories = () => {
   );
 
   return (
-    <View>
-      <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Back</Text>
-        </View>
+  <View style={{ flex: 1 }}>
     <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.replace(prevRoute || '((tabs)/shop)')} style={styles.backButton}>
+          <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
+        </TouchableOpacity>
+      </View>
+      
       <Text style={styles.heading}>All Categories</Text>
+      
       <FlatList
         data={categories}
         renderItem={renderCategoryItem}
@@ -80,30 +83,30 @@ const AllCategories = () => {
         columnWrapperStyle={styles.row}
       />
     </SafeAreaView>
-    </View>
-  );
+  </View>
+);
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: "#f3f4f6",
     padding: 16,
   },
   heading: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    textAlign: 'center',
-    marginVertical: 16,
+    fontSize: 26,
+    fontWeight: "bold",
+    color: "#111827",
+    marginBottom: 20,
+    textAlign: "center",
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
   },
   backButton: {
     marginRight: 10,
+    marginTop: 12,
   },
   headerTitle: {
     fontSize: 20,

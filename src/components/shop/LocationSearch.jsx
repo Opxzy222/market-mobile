@@ -106,7 +106,7 @@ const LocationSearch = ({ onSearch }) => {
   return (
     <View style={styles.container}>
       <View style={styles.card}>
-        <Text style={styles.title}>Search for Places</Text>
+        
 
         <Text style={styles.label}>Select Location</Text>
         <SelectList

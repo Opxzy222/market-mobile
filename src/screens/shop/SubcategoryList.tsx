@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,9 +13,10 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import * as Location from 'expo-location';
 
+const API_BASE_URL = 'https://172.27.243.94:8000';
+
 const SubCategoryList = () => {
-  const params = useLocalSearchParams();
-  const { categoryId, categoryName } = params;
+  const { categoryId, categoryName, prevRoute } = useLocalSearchParams();
   const router = useRouter();
 
   const [subcategories, setSubcategories] = useState([]);
@@ -25,80 +26,64 @@ const SubCategoryList = () => {
   const [isFetchingResults, setIsFetchingResults] = useState(false);
 
   useEffect(() => {
-    axios
-      .get(`https://172.27.243.94:8000/shop-subcategories/${categoryId}/`)
-      .then((response) => {
+    const fetchSubcategories = async () => {
+      try {
+        const response = await axios.get(`${API_BASE_URL}/shop-subcategories/${categoryId}/`);
         setSubcategories(response.data);
-        setLoading(false);
-      })
-      .catch((error) => {
+      } catch (error) {
         console.error('Error fetching subcategories:', error);
         Alert.alert('Error', 'Failed to load subcategories');
         setError(error);
+      } finally {
         setLoading(false);
-      });
+      }
+    };
+
+    fetchSubcategories();
   }, [categoryId]);
 
-  const handleSubcategoryClick = async (subcategoryId) => {
-    console.log('Subcategory clicked:', subcategoryId);
+  const handleSubcategoryClick = useCallback(async (subcategoryId) => {
     setSelectedSubcategoryId(subcategoryId);
     setIsFetchingResults(true);
 
     try {
-      // Check location services
       const locationServicesEnabled = await Location.hasServicesEnabledAsync();
       if (!locationServicesEnabled) {
         Alert.alert(
           'Location Services Disabled',
-          'Please enable location services in your device settings to find nearby shops.'
+          'Please enable location services to find nearby shops.'
         );
-        console.error('Location services are disabled.');
-        setIsFetchingResults(false);
         return;
       }
 
-      // Request location permissions
-      let { status } = await Location.requestForegroundPermissionsAsync();
+      const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert(
           'Permission Denied',
-          'Location permission is required to find nearby shops. Please allow access in your settings.'
+          'Please allow location access in your settings.'
         );
-        console.error('Location permission denied.');
-        setIsFetchingResults(false);
         return;
       }
 
-      const location = await Location.getCurrentPositionAsync({});
-      const { latitude, longitude } = location.coords;
+      const { coords } = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      console.log('Current location:', coords);
 
-      console.log('Current location:', { latitude, longitude });
-
-      const response = await axios.get('https://172.27.243.94:8000/shop-category-search/', {
-        params: {
-          subcategory_id: subcategoryId,
-          lat: latitude,
-          lon: longitude,
-        },
+      const response = await axios.get(`${API_BASE_URL}/shop-category-search/`, {
+        params: { subcategory_id: subcategoryId, lat: coords.latitude, lon: coords.longitude },
       });
 
-      console.log('Search results:', response.data);
-
-      router.push({
-        pathname: '/shop/SearchResult',
-        params: { searchResults: JSON.stringify(response.data) },
-      });
+      router.push({ pathname: '/shop/SearchResult', params: { searchResults: JSON.stringify(response.data) } });
     } catch (error) {
-      console.error('Error during subcategory search:', error);
+      console.error('Error during search:', error);
       Alert.alert('Error', 'Failed to load search results');
     } finally {
       setIsFetchingResults(false);
     }
-  };
+  }, [router]);
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={styles.centeredContainer}>
         <ActivityIndicator size="large" color="#4F46E5" />
         <Text style={styles.loadingText}>Loading subcategories...</Text>
       </View>
@@ -107,7 +92,7 @@ const SubCategoryList = () => {
 
   if (error) {
     return (
-      <View style={styles.errorContainer}>
+      <View style={styles.centeredContainer}>
         <Text style={styles.errorText}>Failed to load subcategories.</Text>
       </View>
     );
@@ -116,11 +101,10 @@ const SubCategoryList = () => {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Back</Text>
-        </View>
+        <TouchableOpacity onPress={() => router.replace(prevRoute || '((tabs)/shop)')} style={styles.backButton}>
+          <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
+        </TouchableOpacity>
+      </View>
       <Text style={styles.heading}>{categoryName}</Text>
       <FlatList
         data={subcategories}
@@ -159,11 +143,6 @@ const styles = StyleSheet.create({
   backButton: {
     marginRight: 10,
   },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-  },
   heading: {
     fontSize: 26,
     fontWeight: 'bold',
@@ -196,7 +175,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#374151',
   },
-  loadingContainer: {
+  centeredContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
@@ -206,12 +185,6 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontSize: 16,
     color: '#6B7280',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F9FAFB',
   },
   errorText: {
     fontSize: 16,

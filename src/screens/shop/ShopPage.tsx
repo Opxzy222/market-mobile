@@ -17,6 +17,7 @@ import FollowButton from '../../components/shop/FollowButton';
 import Followers from '../../components/shop/Followers';
 import ShopProduct from '../../components/shop/ShopProduct';
 import ShopPosts from '../../components/shop/ShopPost';
+import ShopLocation from '../../components/shop/MapFeatures';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 
 
@@ -58,7 +59,9 @@ const ShopPage = () => {
           categories: data.shop.categories,
           products: data.shop.products,
           address: data.shop.address,
-          shop_id: data.shop.shop_id
+          shop_id: data.shop.shop_id,
+          latitude: data.shop.geo_location?.latitude,  // Ensure it exists
+          longitude: data.shop.geo_location?.longitude
         });
         setReviews(data.reviews);
         setFollowerCount(data.follower_count);
@@ -137,17 +140,22 @@ const ShopPage = () => {
       <ScrollView contentContainerStyle={styles.content}>
         {/* Shop Header */}
         <View style={styles.shopHeader}>
+          <View>
           <Image
             source={{ uri: `https://172.27.243.94:8000/${shop.image}` }}
             style={styles.shopImage}
           />
+          </View>
+          
+          
           <View style={styles.shopInfo}>
-      <Text style={styles.shopName}>{shop.name}</Text>
-      <Text style={styles.followerCount}>{followerCount} Followers</Text>
-      <View style={styles.addressContainer}>
-        <MaterialIcons name="store" size={18} color="#4CAF50" style={styles.icon} />
-        <Text style={styles.shopAddress}>{shop.address}</Text>
-      </View>
+            <Text style={styles.shopName}>{shop.name}</Text>
+            <Text style={styles.followerCount}>{followerCount} Followers</Text>
+            <View style={styles.addressContainer}>
+              <MaterialIcons name="store" size={18} color="#4CAF50" style={styles.icon} />
+              <Text style={styles.shopAddress}>{shop.address}</Text>
+            </View>
+            <ShopLocation shopLat={shop.latitude} shopLng={shop.longitude} />
 
       <View style={styles.buttons}>
   <FollowButton shopId={shopId} />

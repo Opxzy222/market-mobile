@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
 import axios from 'axios';
-import { useRouter } from 'expo-router';
+import { useRouter, usePathname } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialIcons } from '@expo/vector-icons';
 
@@ -9,6 +9,7 @@ const MyShop = () => {
   const [shops, setShops] = useState([]);
   const [userId, setUserId] = useState(null);
   const router = useRouter();
+  const pathname = usePathname()
 
   useEffect(() => {
     const fetchUserId = async () => {
@@ -58,15 +59,6 @@ const MyShop = () => {
     router.push('/shop/CreateShop');
   };
 
-  const handleManageShopPage = (shopId) => {
-    router.push({pathname: 'shop/ShopProduct', params: { shopId: shopId }, });
-  };
-
-  const handleShopClick = (shopId) => {
-    
-    router.push({pathname: '/shop/AdminShopPage', params: { shopId: shopId }, });
-  };
-
   return (
     <View style={styles.container}>
       <TouchableOpacity style={styles.createShopButton} onPress={handleCreateShop}>
@@ -81,15 +73,29 @@ const MyShop = () => {
             <Text style={styles.shopName}>{item.name}</Text>
             <Text style={styles.shopDetails}>Products Available: {item.product_count}</Text>
             <View style={styles.actions}>
-              <TouchableOpacity onPress={() => handleShopClick(item.id)}>
+              <TouchableOpacity onPress={() => router.push({ pathname: '/shop/AdminShopPage', params: { shopId: item.id, prevRoute: pathname} })}>
                 <MaterialIcons name="store" size={24} color="#007bff" />
                 <Text style={styles.actionText}>Shop Page</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => handleManageShopPage(item.id)}>
+              <TouchableOpacity onPress={() => router.push({ pathname: 'shop/ShopProduct', params: { shopId: item.id, prevRoute: pathname } })}>
                 <MaterialIcons name="edit" size={24} color="#ffa500" />
                 <Text style={styles.actionText}>Shop Product</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => handleShopClick(item.id)}>
+              <TouchableOpacity onPress={() => router.push({ pathname: '/shop/ShopDetail', params: { shopId: item.id } })}>
+                <MaterialIcons name="info" size={24} color="#4caf50" />
+                <Text style={styles.actionText}>Shop Detail</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.actions}>
+              <TouchableOpacity onPress={() => router.push({ pathname: '/shop/ShopReceipts', params: { shopId: item.id } })}>
+                <MaterialIcons name="receipt" size={24} color="#795548" />
+                <Text style={styles.actionText}>Receipt</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => Alert.alert('Placeholder Action')}>
+                <MaterialIcons name="more-horiz" size={24} color="#9e9e9e" />
+                <Text style={styles.actionText}>More</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => handleCloseShop(item.id)}>
                 <MaterialIcons name="close" size={24} color="#f44336" />
                 <Text style={styles.actionText}>Close Shop</Text>
               </TouchableOpacity>
@@ -129,9 +135,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.3)',
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
     elevation: 3,
   },
   shopName: {

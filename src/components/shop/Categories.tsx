@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity } from 'react-native';
 import axios from 'axios';
-import { useRouter } from 'expo-router';
+import { useRouter, usePathname } from 'expo-router';
 
 const Categories = () => {
   const [categories, setCategories] = useState([]);
   const router = useRouter();
+  const pathname = usePathname()
 
   useEffect(() => {
     axios
@@ -34,7 +35,8 @@ const Categories = () => {
   };
 
   const handleCategoryClick = (categoryId, categoryName) => {
-    router.push({pathname: '/shop/SubcategoryList', params: { categoryId: categoryId, categoryName: categoryName }, });
+    router.push({pathname: '/shop/SubcategoryList', params: { categoryId: categoryId,
+       categoryName: categoryName, prevRoute: pathname }, });
   };
 
   const renderCategory = ({ item }) => (
@@ -56,7 +58,7 @@ const Categories = () => {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Shop Categories</Text>
-        <TouchableOpacity onPress={() => {router.push('/shop/AllCategories');}} >
+        <TouchableOpacity onPress={() => router.push({ pathname: '/shop/AllCategories', params: { prevRoute: pathname} })}>
           <Text style={styles.seeAll}>See All</Text>
         </TouchableOpacity>
       </View>

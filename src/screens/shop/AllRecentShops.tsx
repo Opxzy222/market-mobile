@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -6,22 +6,24 @@ import {
   FlatList,
   Image,
   TouchableOpacity,
-  ScrollView,
-} from 'react-native';
-import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from "expo-router";
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+  ActivityIndicator,
+} from "react-native";
+import axios from "axios";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useRouter, useLocalSearchParams } from "expo-router";
+import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 
 const AllRecentlyVisitedShops = () => {
   const [shops, setShops] = useState([]);
   const [userId, setUserId] = useState(null);
+  const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const params = useLocalSearchParams();
+  const { prevRoute } = params;
 
   useEffect(() => {
     const fetchUserId = async () => {
-      // Replace with AsyncStorage if needed
-      const userIdString = await AsyncStorage.getItem('user_id');
+      const userIdString = await AsyncStorage.getItem("user_id");
       setUserId(parseInt(userIdString, 10));
     };
 
@@ -32,7 +34,9 @@ const AllRecentlyVisitedShops = () => {
         );
         setShops(response.data.recently_visited_shops);
       } catch (error) {
-        console.error('Error fetching recently visited shops:', error);
+        console.error("Error fetching recently visited shops:", error);
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -45,42 +49,40 @@ const AllRecentlyVisitedShops = () => {
   const renderShopCard = ({ item }) => (
     <View style={styles.shopCard}>
       <View style={styles.shopHeader}>
-        <View style={styles.imageContainer}>
-          {item.image && (
-            <Image
-              source={{ uri: `https://172.27.243.94:8000/${item.image}` }}
-              style={styles.shopImage}
-            />
-          )}
-        </View>
+        {item.image && (
+          <Image
+            source={{ uri: `https://172.27.243.94:8000/${item.image}` }}
+            style={styles.shopImage}
+          />
+        )}
         <View style={styles.shopInfo}>
           <Text style={styles.shopName}>{item.name}</Text>
           <Text style={styles.shopAddress}>{item.address}</Text>
           <Text style={styles.visitedAt}>
-            Visited on: {new Date(item.visited_at).toLocaleDateString()}
+            Visited: {new Date(item.visited_at).toLocaleDateString()}
           </Text>
         </View>
       </View>
-      
+
       <Text style={styles.shopDescription}>{item.description}</Text>
+
       <View style={styles.buttonsContainer}>
         <TouchableOpacity
           style={styles.messageButton}
-          onPress={() =>
-            console.log(
-              `Navigate to message shop ${item.id} (${item.name})`
-            )
-          }
+          onPress={() => console.log(`Message ${item.name}`)}
         >
+          <MaterialIcons name="message" size={18} color="#fff" />
           <Text style={styles.buttonText}>Message</Text>
         </TouchableOpacity>
+
         <TouchableOpacity
           style={styles.whatsappButton}
           onPress={() =>
-            console.log(`Navigate to shop page ${item.id} (${item.name})`)
+            router.push({ pathname: "/shop/shop-page", params: { shopId: item.id } })
           }
         >
-          <Text style={styles.buttonText}>Go to Shop</Text>
+          <MaterialIcons name="storefront" size={18} color="#fff" />
+          <Text style={styles.buttonText}>Visit Shop</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -89,18 +91,24 @@ const AllRecentlyVisitedShops = () => {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Back</Text>
-        </View>
-      <Text style={styles.heading}>All Recently Visited Shops</Text>
-      <FlatList
-        data={shops}
-        renderItem={renderShopCard}
-        keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={styles.listContainer}
-      />
+        <TouchableOpacity onPress={() => router.replace(prevRoute || '((tabs)/shop)')} style={styles.backButton}>
+          <MaterialIcons name="arrow-back" size={26} color="#007BFF" />
+        </TouchableOpacity>
+        <Text style={styles.heading}>Recently Visited Shops</Text>
+      </View>
+
+      {loading ? (
+        <ActivityIndicator size="large" color="#007BFF" style={{ marginTop: 20 }} />
+      ) : shops.length === 0 ? (
+        <Text style={styles.noDataText}>No recently visited shops yet.</Text>
+      ) : (
+        <FlatList
+          data={shops}
+          renderItem={renderShopCard}
+          keyExtractor={(item) => item.id.toString()}
+          contentContainerStyle={styles.listContainer}
+        />
+      )}
     </View>
   );
 };
@@ -108,106 +116,106 @@ const AllRecentlyVisitedShops = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: "#F4F6F9",
     paddingHorizontal: 20,
-  },
-  heading: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginVertical: 20,
+    paddingTop: 20,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#dcdcdc',
+    elevation: 3,
   },
   backButton: {
     marginRight: 10,
   },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
+  heading: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#333",
   },
   listContainer: {
     paddingBottom: 20,
   },
+  noDataText: {
+    fontSize: 16,
+    color: "#888",
+    textAlign: "center",
+    marginTop: 20,
+  },
   shopCard: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
+    backgroundColor: "#FFF",
+    borderRadius: 15,
     marginBottom: 20,
     padding: 15,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3,
+    shadowRadius: 6,
+    elevation: 5,
   },
   shopHeader: {
-    flexDirection: 'row',
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 10,
   },
-  imageContainer: {
-    marginRight: 10,
-  },
   shopImage: {
-    width: 80,
-    height: 80,
+    width: 70,
+    height: 70,
     borderRadius: 10,
+    marginRight: 15,
   },
   shopInfo: {
     flex: 1,
   },
   shopName: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#333',
+    fontWeight: "700",
+    color: "#333",
   },
   shopAddress: {
     fontSize: 14,
-    color: '#666',
+    color: "#666",
+    marginTop: 3,
   },
   visitedAt: {
     fontSize: 12,
-    color: '#999',
-  },
-  categoriesContainer: {
-    marginVertical: 10,
-  },
-  categoryBadge: {
-    backgroundColor: '#e0e0e0',
-    color: '#555',
-    borderRadius: 15,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    fontSize: 12,
-    marginRight: 5,
+    color: "#999",
+    marginTop: 3,
   },
   shopDescription: {
     fontSize: 14,
-    color: '#666',
-    marginBottom: 10,
+    color: "#555",
+    marginVertical: 10,
+    lineHeight: 20,
   },
   buttonsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   messageButton: {
-    backgroundColor: '#2196F3',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#007BFF",
     paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 10,
+    paddingHorizontal: 15,
+    borderRadius: 8,
   },
   whatsappButton: {
-    backgroundColor: '#4CAF50',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#28A745",
     paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 10,
+    paddingHorizontal: 15,
+    borderRadius: 8,
   },
   buttonText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 14,
-    fontWeight: 'bold',
+    fontWeight: "600",
+    marginLeft: 5,
   },
 });
 

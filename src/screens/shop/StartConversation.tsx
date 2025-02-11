@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -17,6 +17,7 @@ const StartConversation = () => {
   const [menuVisible, setMenuVisible] = useState(false);
   const [inputMessage, setInputMessage] = useState('');
   const [messages, setMessages] = useState([]);
+  const flatListRef = useRef(null);
   const params = useLocalSearchParams();
   const { shopId, name } = params;
   const router = useRouter();
@@ -122,6 +123,7 @@ const StartConversation = () => {
         keyExtractor={(item) => item.id.toString()}
         renderItem={renderMessage}
         contentContainerStyle={styles.messageList}
+        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
       />
       <View style={styles.inputContainer}>
         <TextInput
@@ -197,14 +199,14 @@ const styles = StyleSheet.create({
   },
   userMessage: {
     alignSelf: 'flex-end',
-    backgroundColor: '#007AFF',
+    backgroundColor: '#DCF8C6',
   },
   shopMessage: {
     alignSelf: 'flex-start',
-    backgroundColor: '#f1f1f1',
+    backgroundColor: '#ECECEC',
   },
   messageText: {
-    color: '#fff',
+    color: 'black',
     fontSize: 16,
   },
   inputContainer: {

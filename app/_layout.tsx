@@ -1,4 +1,4 @@
-import { Tabs, Stack } from 'expo-router';
+import { Tabs } from 'expo-router';
 import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 
 export default function RootLayout() {
@@ -22,7 +22,7 @@ export default function RootLayout() {
         tabBarInactiveTintColor: '#A0A0A0', // Inactive color (subtle gray)
       }}
     >
-      {/* Home Tab */}
+      {/* Home */}
       <Tabs.Screen
         name="(tabs)/shop"
         options={{
@@ -33,7 +33,7 @@ export default function RootLayout() {
         }}
       />
 
-      {/* Messages Tab */}
+      {/* Messages */}
       <Tabs.Screen
         name="(tabs)/placeholder"
         options={{
@@ -44,7 +44,7 @@ export default function RootLayout() {
         }}
       />
 
-      {/* My Shop Tab */}
+      {/* My Shop */}
       <Tabs.Screen
         name="(tabs)/myshop"
         options={{
@@ -55,7 +55,18 @@ export default function RootLayout() {
         }}
       />
 
-      {/* Profile Tab */}
+      {/* Account (Payments & Receipts) */}
+      <Tabs.Screen
+        name="(tabs)/account"
+        options={{
+          title: 'Account',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="card-outline" color={color} size={size || 24} />
+          ),
+        }}
+      />
+
+      {/* Profile (User Info) */}
       <Tabs.Screen
         name="(tabs)/shopt"
         options={{
@@ -67,7 +78,6 @@ export default function RootLayout() {
       />
 
       {/* Other screens outside of (tabs) */}
-      
       <Tabs.Screen name="homepage" options={{ href: null }} />
       <Tabs.Screen name="+not-found" options={{ href: null }} />
       <Tabs.Screen name="index" options={{ href: null }} />

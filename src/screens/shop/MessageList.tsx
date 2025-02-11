@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useRouter } from "expo-router";
+import { useRouter, usePathname } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -20,6 +20,7 @@ const MessageList = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [userId, setUserId] = useState(null);
   const router = useRouter();
+  const pathname = usePathname()
 
   const fetchUserId = async () => {
     try {
@@ -66,6 +67,8 @@ const MessageList = () => {
       params: {
         name: message.name,
         conversation_id: message.conversation_id,
+        shop_id: message.shop_id,
+        prevRoute: pathname,
       },
     });
   };
