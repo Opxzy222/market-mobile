@@ -19,7 +19,7 @@ export default function RootLayout() {
           marginBottom: 5, // Add spacing between text and icons
         },
         tabBarActiveTintColor: '#007AFF', // Active color (modern blue)
-        tabBarInactiveTintColor: '#A0A0A0', // Inactive color (subtle gray)
+        tabBarInactiveTintColor: '#000000', // **Black color for inactive tabs**
       }}
     >
       {/* Home */}
@@ -44,6 +44,17 @@ export default function RootLayout() {
         }}
       />
 
+      {/* Status */}
+      <Tabs.Screen
+        name="(tabs)/status"
+        options={{
+          title: 'Status',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="time-outline" color={color} size={size || 24} />
+          ),
+        }}
+      />
+
       {/* My Shop */}
       <Tabs.Screen
         name="(tabs)/myshop"
@@ -55,7 +66,7 @@ export default function RootLayout() {
         }}
       />
 
-      {/* Account (Payments & Receipts) */}
+      {/* Account */}
       <Tabs.Screen
         name="(tabs)/account"
         options={{
@@ -66,7 +77,7 @@ export default function RootLayout() {
         }}
       />
 
-      {/* Profile (User Info) */}
+      {/* Profile */}
       <Tabs.Screen
         name="(tabs)/shopt"
         options={{

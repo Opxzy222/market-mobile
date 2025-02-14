@@ -13,7 +13,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router'; 
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import ShopReview from '../../components/shop/ShopReview';
-import FollowButton from '../../components/shop/FollowButton';
 import Followers from '../../components/shop/Followers';
 import ShopProduct from '../../components/shop/ShopProduct';
 import ShopPostForm from '../../components/shop/ShopPostForm';
@@ -116,10 +115,7 @@ const AdminShopPage = () => {
       </View>
 
       <View style={styles.buttons}>
-  <FollowButton shopId={shopId} />
-  <TouchableOpacity style={styles.messageButton}>
-    <Text style={styles.buttonText}>Message</Text>
-  </TouchableOpacity>
+  
 </View>
     </View>
     </View>
@@ -268,20 +264,6 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     flex: 1,
     alignItems: 'center',
-  },
-  messageButton: {
-    backgroundColor: '#007bff', 
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 25,
-    flex: 1,
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: '#fff',
-    fontWeight: '600',
-    textAlign: 'center',
-    fontSize: 14,
   },
   details: {
     marginVertical: 15,

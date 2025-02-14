@@ -1,115 +1,113 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet } from "react-native";
-import { useLocalSearchParams, useRouter } from 'expo-router'; 
-import * as FileSystem from "expo-file-system";
-import * as WebBrowser from "expo-web-browser";
+import { View, Text, FlatList, Alert, ActivityIndicator } from "react-native";
+import { Card, Button, Divider, Chip, Avatar } from "react-native-paper";
+import Animated, { FadeInUp, FadeOut } from "react-native-reanimated";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import axios from "axios";
+import ViewReceiptPDF from "../../components/shop/ViewReceipt";
+
+const statusStyles = {
+  pending: { color: "#FFA500", label: "Pending", icon: "time-outline" },
+  accepted: { color: "#4CAF50", label: "Accepted", icon: "checkmark-circle-outline" },
+  rejected: { color: "#F44336", label: "Rejected", icon: "close-circle-outline" },
+  voided: { color: "#9E9E9E", label: "Voided", icon: "remove-circle-outline" },
+};
 
 const ShopReceipts = () => {
-    const [receipts, setReceipts] = useState([]);
-    const [loading, setLoading] = useState(true);
+  const [receipts, setReceipts] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-    const params = useLocalSearchParams();
-    const { shopId } = params;
-    const router = useRouter();
-    
-    useEffect(() => {
-        fetchReceipts();
-    }, []);
+  const params = useLocalSearchParams();
+  const { shopId } = params;
+  const router = useRouter();
 
-    const fetchReceipts = async () => {
-        try {
-            const response = await fetch(`https://172.27.243.94:8000/shop/${shopId}/receipts/`);
-            const data = await response.json();
-            setReceipts(data.receipts);
-        } catch (error) {
-            console.error("Error fetching receipts:", error);
-        } finally {
-            setLoading(false);
-        }
-    };
+  useEffect(() => {
+    fetchReceipts();
+  }, []);
 
-    const viewReceipt = async (pdfUrl) => {
+  const fetchReceipts = async () => {
     try {
-        await WebBrowser.openBrowserAsync(pdfUrl);
+      const response = await axios.get(`https://172.27.243.94:8000/shop/${shopId}/receipts/`);
+      setReceipts(response.data.receipts);
     } catch (error) {
-        console.error("Error opening receipt:", error);
+      Alert.alert("Error", "Failed to fetch receipts.");
+    } finally {
+      setLoading(false);
     }
-};
+  };
 
+  const handleVoidReceipt = async (receiptId) => {
+    try {
+      await axios.post(`https://172.27.243.94:8000/receipts/${receiptId}/void/`);
+      Alert.alert("Success", "Receipt voided successfully.");
+      setReceipts((prev) =>
+        prev.map((receipt) =>
+          receipt.id === receiptId ? { ...receipt, status: "voided" } : receipt
+        )
+      );
+    } catch (error) {
+      Alert.alert("Error", "Failed to void receipt.");
+    }
+  };
 
-    const renderItem = ({ item }) => (
-        <View style={styles.receiptContainer}>
-            <Text style={styles.receiptId}>Receipt ID: {item.receipt_id}</Text>
-            <Text style={styles.date}>Date: {item.created_at}</Text>
-            <TouchableOpacity onPress={() => viewReceipt(item.pdf_url)} style={styles.viewButton}>
-                <Text style={styles.buttonText}>View Receipt</Text>
-            </TouchableOpacity>
-        </View>
-    );
-
+  if (loading) {
     return (
-        <View style={styles.container}>
-            <TouchableOpacity style={styles.generateButton} onPress={() => router.push({ pathname: '/shop/GenerateReceipt', params: { shopId: shopId } })}>
-                <Text style={styles.buttonText}>Generate Receipt</Text>
-            </TouchableOpacity>
-            {loading ? (
-                <ActivityIndicator size="large" color="#007bff" />
-            ) : (
-                <FlatList data={receipts} keyExtractor={(item) => item.receipt_id} renderItem={renderItem} />
-            )}
-        </View>
+      <View className="flex-1 justify-center items-center">
+        <ActivityIndicator size="large" color="#6200EE" />
+      </View>
     );
-};
+  }
 
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        padding: 16,
-        backgroundColor: "#f5f5f5",
-    },
-    title: {
-        fontSize: 22,
-        fontWeight: "bold",
-        marginBottom: 16,
-        textAlign: "center",
-    },
-    receiptContainer: {
-        backgroundColor: "#fff",
-        padding: 16,
-        marginVertical: 8,
-        borderRadius: 12,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
-    },
-    receiptId: {
-        fontSize: 16,
-        fontWeight: "bold",
-    },
-    date: {
-        color: "#666",
-        marginTop: 4,
-    },
-    viewButton: {
-        backgroundColor: "#007bff",
-        padding: 10,
-        marginTop: 8,
-        borderRadius: 8,
-        alignItems: "center",
-    },
-    buttonText: {
-        color: "#fff",
-        fontWeight: "bold",
-    },
-    generateButton: {
-        backgroundColor: "#28a745",
-        padding: 14,
-        marginTop: 16,
-        borderRadius: 12,
-        alignItems: "center",
-    },
-});
+  return (
+    <FlatList
+      data={receipts}
+      keyExtractor={(item) => item.id.toString()}
+      contentContainerStyle={{ padding: 16 }}
+      renderItem={({ item }) => {
+        const status = statusStyles[item.status] || {};
+        return (
+          <Animated.View entering={FadeInUp} exiting={FadeOut}>
+            <Card mode="elevated" style={{ marginBottom: 12, borderRadius: 16, padding: 10 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
+                <Avatar.Icon size={50} icon="receipt" style={{ backgroundColor: "#6200EE" }} />
+                <View style={{ marginLeft: 12 }}>
+                  <Text style={{ fontSize: 18, fontWeight: "bold" }}>Receipt ID: {item.receipt_id}</Text>
+                  <Text style={{ fontSize: 14, color: "#666" }}>Total: ₦{item.total_amount}</Text>
+                  <Text style={{ fontSize: 14, color: "#666" }}>Date: {item.created_at}</Text>
+                </View>
+              </View>
+
+              <Divider style={{ marginVertical: 8 }} />
+
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <Chip style={{ backgroundColor: status.color, padding: 6 }}>
+                  <Text style={{ color: "white", fontWeight: "bold" }}>
+                    {status.label}
+                  </Text>
+                </Chip>
+              </View>
+
+              <Divider style={{ marginVertical: 12 }} />
+
+              <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                <ViewReceiptPDF pdf_url={item.pdf_url} />
+                {item.status === "pending" && (
+                  <Button
+                    mode="contained"
+                    icon="close"
+                    onPress={() => handleVoidReceipt(item.id)}
+                    style={{ backgroundColor: "#F44336" }}
+                  >
+                    Void
+                  </Button>
+                )}
+              </View>
+            </Card>
+          </Animated.View>
+        );
+      }}
+    />
+  );
+};
 
 export default ShopReceipts;

@@ -5,6 +5,7 @@ import Animated, { FadeInUp, FadeOut } from "react-native-reanimated";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
+import ViewReceiptPDF from '../../components/shop/ViewReceipt';
 
 const statusStyles = {
   pending: { color: "#FFA500", label: "Pending", icon: "time-outline" },
@@ -82,7 +83,7 @@ const CustomerReceipts = () => {
                 <Avatar.Icon size={50} icon="store" style={{ backgroundColor: "#6200EE" }} />
                 <View style={{ marginLeft: 12 }}>
                   <Text style={{ fontSize: 18, fontWeight: "bold" }}>{item.shop}</Text>
-                  <Text style={{ fontSize: 14, color: "#666" }}>Total: ${item.total_amount}</Text>
+                  <Text style={{ fontSize: 14, color: "#666" }}>Total: ₦{item.total_amount}</Text>
                 </View>
               </View>
               
@@ -100,13 +101,7 @@ const CustomerReceipts = () => {
               <Divider style={{ marginVertical: 12 }} />
 
               <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                <Button
-                  mode="outlined"
-                  icon="eye"
-                  onPress={() => Alert.alert("Receipt Details", JSON.stringify(item, null, 2))}
-                >
-                  View
-                </Button>
+                <ViewReceiptPDF pdf_url={item.pdf_url} />
                 {item.status === "pending" && (
                   <>
                     <Button
