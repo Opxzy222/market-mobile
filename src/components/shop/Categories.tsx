@@ -58,7 +58,8 @@ const Categories = () => {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Shop Categories</Text>
-        <TouchableOpacity onPress={() => router.push({ pathname: '/shop/AllCategories', params: { prevRoute: pathname} })}>
+        <TouchableOpacity style={styles.seeAllContainer}
+          onPress={() => router.push({ pathname: '/shop/AllCategories', params: { prevRoute: pathname } })}>
           <Text style={styles.seeAll}>See All</Text>
         </TouchableOpacity>
       </View>
@@ -86,15 +87,20 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   title: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#222',
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#333',
+  },
+  seeAllContainer: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: '#eef6fd',
   },
   seeAll: {
     fontSize: 16,
-    color: '#007bff',
+    color: '#007aff',
     fontWeight: '600',
-    
   },
   row: {
     justifyContent: 'space-between',

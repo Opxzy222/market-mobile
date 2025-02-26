@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
 import axios from 'axios';
 import { useRouter, usePathname } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -91,30 +91,26 @@ const MyShop = () => {
                     <MaterialIcons name="shopping-cart" size={28} color="#ffa500" />
                     <Text style={styles.actionText}>Products</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={() => router.push({ pathname: '/shop/ShopStatus', params: { shopId: item.id } })}>
-                    <MaterialIcons name="autorenew" size={28} color="#9c27b0" />
+                  <TouchableOpacity onPress={() => router.push({ pathname: '/shop/ShopStatus', params: { shopId: item.id, prevRoute: pathname } })}>
+                    <MaterialIcons name="update" size={28} color="#9c27b0" />
                     <Text style={styles.actionText}>Status Updates</Text>
                   </TouchableOpacity>
                 </View>
                 <View style={styles.actions}>
-                  <TouchableOpacity onPress={() => router.push({ pathname: '/shop/ShopReceipts', params: { shopId: item.id } })}>
+                  <TouchableOpacity onPress={() => router.push({ pathname: '/shop/ReceiptActions', params: { shopId: item.id, prevRoute: pathname } })}>
                     <MaterialIcons name="receipt" size={28} color="#795548" />
-                    <Text style={styles.actionText}>Receipts</Text>
+                    <Text style={styles.actionText}>Receipt</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity>
+                  <TouchableOpacity onPress={() => router.push({ pathname: '/shop/ShopProfile', params: { shopId: item.id, prevRoute: pathname } })}>
                     <MaterialIcons name="info" size={28} color="#4caf50" />
-                    <Text style={styles.actionText}>Details</Text>
+                    <Text style={styles.actionText}>Pofile Details</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity>
-                    <MaterialIcons name="edit" size={28} color="#fbc02d" />
-                    <Text style={styles.actionText}>Signature</Text>
+                  <TouchableOpacity onPress={() => handleCloseShop(item.id)}>
+                    <MaterialIcons name="close" size={28} color="#f44336" />
+                    <Text style={styles.actionText}>Quit Shop</Text>
                   </TouchableOpacity>
                 </View>
               </View>
-              <TouchableOpacity style={styles.closeShopButton} onPress={() => handleCloseShop(item.id)}>
-                <MaterialIcons name="close" size={24} color="#fff" />
-                <Text style={styles.closeShopText}>Close Shop</Text>
-              </TouchableOpacity>
             </View>
           )}
         />
@@ -177,19 +173,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666',
     textAlign: 'center',
-  },
-  closeShopButton: {
-    backgroundColor: '#f44336',
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 10,
-    alignItems: 'center',
-    flexDirection: 'row',
-  },
-  closeShopText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-    alignItems: 'center',
   },
 });

@@ -79,7 +79,7 @@ export default function RootLayout() {
 
       {/* Profile */}
       <Tabs.Screen
-        name="(tabs)/shopt"
+        name="(tabs)/profile"
         options={{
           title: 'Profile',
           tabBarIcon: ({ color, size }) => (

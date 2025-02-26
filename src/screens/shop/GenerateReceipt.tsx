@@ -135,7 +135,7 @@ const GenerateReceipt = () => {
       <View style={styles.inputContainer}>
         <TextInput
           style={styles.input}
-          placeholder="Customer ID"
+          placeholder="Customer Profile ID"
           value={customerId}
           keyboardType="numeric"
           maxLength={7}

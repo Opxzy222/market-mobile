@@ -14,7 +14,7 @@ const FollowedShops = () => {
   const [shops, setShops] = useState([]);
   const [userId, setUserId] = useState(null);
   const router = useRouter();
-  const pathname = usePathname()
+  const pathname = usePathname();
 
   useEffect(() => {
     const fetchUserId = async () => {
@@ -45,7 +45,10 @@ const FollowedShops = () => {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Followed Shops</Text>
-        <TouchableOpacity onPress={() => router.push({ pathname: '/shop/AllFollowedShops', params: { prevRoute: pathname} })}>
+        <TouchableOpacity 
+          style={styles.seeAllContainer}
+          onPress={() => router.push({ pathname: '/shop/AllFollowedShops', params: { prevRoute: pathname } })}
+        >
           <Text style={styles.seeAll}>See All</Text>
         </TouchableOpacity>
       </View>
@@ -54,6 +57,7 @@ const FollowedShops = () => {
           <TouchableOpacity
             key={shop.id}
             style={styles.shopCard}
+            activeOpacity={0.8}
             onPress={() => {
               router.push({
                 pathname: '/shop/shop-page',
@@ -65,7 +69,9 @@ const FollowedShops = () => {
               source={{ uri: `https://172.27.243.94:8000/${shop.image}` }}
               style={styles.shopImage}
             />
-            <Text style={styles.shopName}>{shop.name}</Text>
+            <Text style={styles.shopName} numberOfLines={1}>
+              {shop.name}
+            </Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -78,23 +84,29 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     marginTop: 20,
     paddingVertical: 10,
+    backgroundColor: '#fff',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 15,
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#333',
+  },
+  seeAllContainer: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: '#eef6fd',
   },
   seeAll: {
     fontSize: 16,
-    color: '#007bff',
+    color: '#007aff',
     fontWeight: '600',
-    //textDecorationLine: 'underline',
   },
   shopRow: {
     flexDirection: 'row',
@@ -104,23 +116,24 @@ const styles = StyleSheet.create({
     flex: 1,
     marginHorizontal: 5,
     alignItems: 'center',
-    backgroundColor: '#f9f9f9',
-    borderRadius: 12,
-    padding: 10,
+    backgroundColor: '#fefefe',
+    borderRadius: 16,
+    padding: 15,
     shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 4,
   },
   shopImage: {
     width: 80,
     height: 80,
-    borderRadius: 10,
-    marginBottom: 5,
+    borderRadius: 20,
+    marginBottom: 10,
   },
   shopName: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 16,
+    fontWeight: '600',
     color: '#333',
     textAlign: 'center',
   },

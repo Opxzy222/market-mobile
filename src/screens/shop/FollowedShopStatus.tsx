@@ -59,61 +59,22 @@ const FollowedShopStatusScreen = () => {
     }
   };
 
-  const markStatusesAsViewed = async (statusIds) => {
-  if (!statusIds || statusIds.length === 0) {
-    console.warn("No valid status IDs to mark as viewed.");
-    return;
-  }
-
-  try {
-    console.log("Marking statuses as viewed:", statusIds);
-
-    // Use FormData to send status_ids[] as an array
-    const formData = new FormData();
-    formData.append("user_id", userId?.toString() || "");
-    statusIds.forEach(id => formData.append("status_ids[]", id)); // Append each ID separately
-
-    await axios.post(
-      "https://172.27.243.94:8000/mark_status_viewed/",
-      formData,
-      { headers: { "Content-Type": "multipart/form-data" } } // Ensure correct content type
-    );
-
-    fetchData();
-  } catch (error) {
-    console.error("Error marking statuses as viewed:", error);
-  }
-};
-
-  const handleOpenViewer = async (index, isViewed) => {
+  const handleOpenViewer = (index) => {
     setCurrentStatusIndex(index);
-    const selectedShopStatuses = isViewed ? viewedStatuses : statuses;
-    const selectedStatuses = selectedShopStatuses[index]?.statuses || [];
-
-    console.log("Selected statuses:", selectedStatuses);
-    
-    const unviewedStatusIds = selectedStatuses
-      .filter(s => !s.viewed && s.id)
-      .map(s => s.id);
-
-    console.log("Unviewed Status IDs:", unviewedStatusIds);
-    
-    if (unviewedStatusIds.length > 0) {
-      await markStatusesAsViewed(unviewedStatusIds);
-    }
   };
 
   const handleCloseViewer = () => {
     setCurrentStatusIndex(null);
+    fetchData(); // Refresh data after closing viewer
   };
 
   const renderStatusItem = ({ item, index, isViewed }) => (
-    <TouchableOpacity onPress={() => handleOpenViewer(index, isViewed)} style={styles.statusItem}>
+    <TouchableOpacity onPress={() => handleOpenViewer(index)} style={styles.statusItem}>
       <StatusRing 
-  imageUri={item.statuses[0].image} 
-  totalStatuses={item.statuses.length} 
-  viewedStatuses={isViewed ? item.statuses.length : item.statuses.filter(s => s.viewed).length} 
-/>
+        imageUri={item.statuses[0].image} 
+        totalStatuses={item.statuses.length} 
+        viewedStatuses={isViewed ? item.statuses.length : item.statuses.filter(s => s.viewed).length} 
+      />
       <View>
         <Text style={styles.name}>{item.shop}</Text>
         <Text style={styles.time}>{item.statuses[0].created_at}</Text>
@@ -155,6 +116,7 @@ const FollowedShopStatusScreen = () => {
           initialIndex={currentStatusIndex} 
           onClose={handleCloseViewer} 
           visible={currentStatusIndex !== null}
+          userId={userId} // Pass userId to StatusViewer
         />
       )}
     </View>

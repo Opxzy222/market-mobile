@@ -65,7 +65,8 @@ const RecentlyVisitedShops = () => {
     <View style={styles.container}>
       <View style={styles.header}>
               <Text style={styles.title}>Recently Visited</Text>
-              <TouchableOpacity onPress={() => router.push({ pathname: '/shop/AllRecentShops', params: { prevRoute: pathname} })}>
+        <TouchableOpacity style={styles.seeAllContainer}
+          onPress={() => router.push({ pathname: '/shop/AllRecentShops', params: { prevRoute: pathname } })}>
                 <Text style={styles.seeAll}>See All</Text>
               </TouchableOpacity>
             </View>
@@ -75,7 +76,7 @@ const RecentlyVisitedShops = () => {
         keyExtractor={(item) => item.id.toString()}
         contentContainerStyle={styles.listContainer}
       />
-      {!showAll && shops.length > 3 && (
+      {!showAll && shops.length > 1 && (
         <TouchableOpacity onPress={handleShowMore} style={styles.showMoreButton}>
           <Text style={styles.showMoreText}>Show More</Text>
         </TouchableOpacity>
@@ -97,13 +98,19 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
+    fontSize: 26,
+    fontWeight: '700',
+    color: '#333',
+  },
+  seeAllContainer: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: '#eef6fd',
   },
   seeAll: {
     fontSize: 16,
-    color: '#007bff',
+    color: '#007aff',
     fontWeight: '600',
   },
   listContainer: {
@@ -164,20 +171,27 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   showMoreButton: {
-    marginTop: 20,
-    backgroundColor: '#4caf50',
-    paddingVertical: 14,
-    borderRadius: 16,
-    alignItems: 'center',
-    shadowColor: '#4caf50',
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-  },
-  showMoreText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
+  marginTop: -10,
+  backgroundColor: '#4CAF50',
+  paddingVertical: 14,
+  paddingHorizontal: 24,
+  borderRadius: 25,
+  alignItems: 'center',
+  flexDirection: 'row',
+  justifyContent: 'center',
+  shadowColor: '#4CAF50',
+  shadowOpacity: 0.4,
+  shadowRadius: 6,
+  elevation: 5,
+},
+showMoreText: {
+  color: '#FFFFFF',
+  fontSize: 16,
+  fontWeight: 'bold',
+  letterSpacing: 0.8,
+  textTransform: 'uppercase',
+},
+
 });
 
 export default RecentlyVisitedShops;

@@ -126,7 +126,6 @@ const ShopPage = () => {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
         <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
         </TouchableOpacity>
-        
         </View>
         <View style={styles.shopIdContainer}>
           <Text style={styles.shopIdLabel}>SHOP ID:</Text>

@@ -21,7 +21,6 @@ const AllFollowedShops = () => {
   const params = useLocalSearchParams();
   const { prevRoute } = params;
 
-
   useEffect(() => {
     const fetchUserId = async () => {
       const userIdString = await AsyncStorage.getItem("user_id");
@@ -52,7 +51,7 @@ const AllFollowedShops = () => {
 
   const renderShopItem = ({ item }) => (
     <TouchableOpacity
-      style={styles.shopContainer}
+      style={styles.shopCard}
       onPress={() => {
         router.push({
           pathname: '/shop/shop-page',
@@ -64,14 +63,16 @@ const AllFollowedShops = () => {
         source={{ uri: `https://172.27.243.94:8000/${item.image}` }}
         style={styles.shopImage}
       />
-      <Text style={styles.shopName}>{item.name}</Text>
+      <View style={styles.shopDetails}>
+        <Text style={styles.shopName}>{item.name}</Text>
+      </View>
     </TouchableOpacity>
   );
 
   if (loading) {
     return (
       <View style={styles.loaderContainer}>
-        <ActivityIndicator size="large" color="#3b82f6" />
+        <ActivityIndicator size="large" color="#2563EB" />
       </View>
     );
   }
@@ -80,10 +81,10 @@ const AllFollowedShops = () => {
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.replace(prevRoute || '((tabs)/shop)')} style={styles.backButton}>
-          <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
+          <MaterialIcons name="arrow-back" size={26} color="#2563EB" />
         </TouchableOpacity>
+        <Text style={styles.heading}>Followed Shops</Text>
       </View>
-      <Text style={styles.heading}>Shops You Are Following</Text>
       <FlatList
         data={shops}
         renderItem={renderShopItem}
@@ -98,61 +99,66 @@ const AllFollowedShops = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f3f4f6",
+    backgroundColor: "#FFFFFF",
     padding: 16,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    backgroundColor: "#F9FAFB",
+    paddingHorizontal: 16,
+    elevation: 2,
   },
   backButton: {
-    marginRight: 10,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
+    marginRight: 12,
   },
   heading: {
-    fontSize: 26,
-    fontWeight: "bold",
+    fontSize: 24,
+    fontWeight: "700",
     color: "#111827",
-    marginBottom: 20,
+    flex: 1,
     textAlign: "center",
   },
   listContainer: {
-    paddingBottom: 16,
+    paddingTop: 16,
   },
-  shopContainer: {
+  shopCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#ffffff",
-    padding: 12,
-    marginBottom: 10,
-    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    padding: 18,
+    marginBottom: 12,
+    borderRadius: 16,
     shadowColor: "#000",
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowRadius: 5,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
   },
   shopImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    marginRight: 12,
-    backgroundColor: "#f3f4f6",
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    marginRight: 16,
+    backgroundColor: "#F3F4F6",
+  },
+  shopDetails: {
+    flex: 1,
   },
   shopName: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "600",
-    color: "#374151",
+    color: "#1F2937",
   },
   loaderContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#f3f4f6",
+    backgroundColor: "#FFFFFF",
   },
 });
 

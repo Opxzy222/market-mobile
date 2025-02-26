@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import NotificationDropdown from './NotificationModal';
 
 const Header = () => {
   return (
@@ -9,7 +10,7 @@ const Header = () => {
         <Text style={styles.greeting}>Hi Amrit!</Text>
         <Text style={styles.subGreeting}>Good Evening!</Text>
       </View>
-      <Ionicons name="notifications-outline" size={24} style={styles.notificationIcon} />
+      <NotificationDropdown/>
     </View>
   );
 };

@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, FlatList, Alert, ActivityIndicator } from "react-native";
+import { View, Text, ScrollView, Alert, ActivityIndicator, TouchableOpacity, StyleSheet } from "react-native";
 import { Card, Button, Divider, Chip, Avatar } from "react-native-paper";
 import Animated, { FadeInUp, FadeOut } from "react-native-reanimated";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter, usePathname } from "expo-router";
+import { MaterialIcons } from '@expo/vector-icons';
 import axios from "axios";
 import ViewReceiptPDF from "../../components/shop/ViewReceipt";
+
+const TABS = ["All", "Accepted", "Pending", "Rejected", "Voided"];
 
 const statusStyles = {
   pending: { color: "#FFA500", label: "Pending", icon: "time-outline" },
@@ -16,6 +19,7 @@ const statusStyles = {
 const ShopReceipts = () => {
   const [receipts, setReceipts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("All");
 
   const params = useLocalSearchParams();
   const { shopId } = params;
@@ -50,53 +54,66 @@ const ShopReceipts = () => {
     }
   };
 
+  const filteredReceipts = receipts.filter((receipt) =>
+    activeTab === "All" ? true : receipt.status === activeTab.toLowerCase()
+  );
+
   if (loading) {
     return (
-      <View className="flex-1 justify-center items-center">
+      <View style={styles.centered}>
         <ActivityIndicator size="large" color="#6200EE" />
       </View>
     );
   }
 
   return (
-    <FlatList
-      data={receipts}
-      keyExtractor={(item) => item.id.toString()}
-      contentContainerStyle={{ padding: 16 }}
-      renderItem={({ item }) => {
+    <ScrollView contentContainerStyle={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.tabContainer}>
+        {TABS.map((tab) => (
+          <TouchableOpacity key={tab} onPress={() => setActiveTab(tab)}>
+            <Text style={[styles.tabText, activeTab === tab && styles.activeTab]}>{tab}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {filteredReceipts.map((item) => {
         const status = statusStyles[item.status] || {};
         return (
-          <Animated.View entering={FadeInUp} exiting={FadeOut}>
-            <Card mode="elevated" style={{ marginBottom: 12, borderRadius: 16, padding: 10 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
-                <Avatar.Icon size={50} icon="receipt" style={{ backgroundColor: "#6200EE" }} />
-                <View style={{ marginLeft: 12 }}>
-                  <Text style={{ fontSize: 18, fontWeight: "bold" }}>Receipt ID: {item.receipt_id}</Text>
-                  <Text style={{ fontSize: 14, color: "#666" }}>Total: ₦{item.total_amount}</Text>
-                  <Text style={{ fontSize: 14, color: "#666" }}>Date: {item.created_at}</Text>
+          <Animated.View key={item.id} entering={FadeInUp} exiting={FadeOut}>
+            <Card mode="elevated" style={styles.card}>
+              <View style={styles.cardHeader}>
+                <Avatar.Icon size={50} icon="receipt" style={styles.avatar} />
+                <View style={styles.cardDetails}>
+                  <Text style={styles.receiptId}>Receipt ID: {item.receipt_id}</Text>
+                  <Text style={styles.receiptText}>Total: ₦{item.total_amount}</Text>
+                  <Text style={styles.receiptText}>Date: {item.created_at}</Text>
                 </View>
               </View>
 
-              <Divider style={{ marginVertical: 8 }} />
+              <Divider style={styles.divider} />
 
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                <Chip style={{ backgroundColor: status.color, padding: 6 }}>
-                  <Text style={{ color: "white", fontWeight: "bold" }}>
-                    {status.label}
-                  </Text>
+              <View style={styles.statusContainer}>
+                <Chip style={[styles.statusChip, { backgroundColor: status.color }]}>
+                  <Text style={styles.statusText}>{status.label}</Text>
                 </Chip>
               </View>
 
-              <Divider style={{ marginVertical: 12 }} />
+              <Divider style={styles.divider} />
 
-              <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+              <View style={styles.buttonContainer}>
                 <ViewReceiptPDF pdf_url={item.pdf_url} />
                 {item.status === "pending" && (
                   <Button
                     mode="contained"
                     icon="close"
                     onPress={() => handleVoidReceipt(item.id)}
-                    style={{ backgroundColor: "#F44336" }}
+                    style={styles.voidButton}
                   >
                     Void
                   </Button>
@@ -105,9 +122,91 @@ const ShopReceipts = () => {
             </Card>
           </Animated.View>
         );
-      }}
-    />
+      })}
+    </ScrollView>
   );
 };
 
 export default ShopReceipts;
+
+const styles = StyleSheet.create({
+  container: {
+    padding: 16,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  backButton: {
+    padding: 8,
+    borderRadius: 50,
+    backgroundColor: "#E0E0E0",
+    marginRight: 12,
+  },
+  tabContainer: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    marginBottom: 16,
+  },
+  tabText: {
+    fontSize: 16,
+    color: "black",
+  },
+  activeTab: {
+    fontWeight: "bold",
+    color: "#6200EE",
+  },
+  card: {
+    marginBottom: 12,
+    borderRadius: 16,
+    padding: 10,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  avatar: {
+    backgroundColor: "#6200EE",
+  },
+  cardDetails: {
+    marginLeft: 12,
+  },
+  receiptId: {
+    fontSize: 18,
+    fontWeight: "bold",
+  },
+  receiptText: {
+    fontSize: 14,
+    color: "#666",
+  },
+  divider: {
+    marginVertical: 8,
+  },
+  statusContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  statusChip: {
+    padding: 6,
+  },
+  statusText: {
+    color: "white",
+    fontWeight: "bold",
+  },
+  buttonContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 10,
+  },
+  voidButton: {
+    backgroundColor: "#F44336",
+  },
+});
