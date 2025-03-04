@@ -3,26 +3,31 @@ import { View, Text, Image, FlatList, TouchableOpacity, StyleSheet } from 'react
 import axios from 'axios';
 import { useRouter, usePathname } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from "@expo/vector-icons";
 
 const RecentlyVisitedShops = () => {
   const [shops, setShops] = useState([]);
   const [showAll, setShowAll] = useState(false);
   const router = useRouter();
-  const [userId, setUserId] = useState(null);
+  const [sessionId, setSessionId] = useState(null);
   const pathname = usePathname()
 
   useEffect(() => {
-    const fetchUserId = async () => {
-      const userIdString = await AsyncStorage.getItem('user_id');
-      setUserId(parseInt(userIdString, 10));
-    };
-    fetchUserId();
+  const fetchSessionId = async () => {
+    const sessionIdString = await AsyncStorage.getItem("sessionToken");
+    setSessionId(sessionIdString); // No need to parse as an integer
+  };
+    fetchSessionId();
   }, []);
 
   useEffect(() => {
     const fetchRecentlyVisitedShops = async () => {
       try {
-        const response = await axios.get(`https://172.27.243.94:8000/shops/recently-visited/${userId}/`);
+        const response = await axios.get("https://172.27.243.94:8000/shops/all-recently-visited/", {
+        headers: {
+          Authorization: sessionId,
+        },
+      });
         setShops(response.data.recently_visited_shops);
       } catch (error) {
         console.error('Error fetching recently visited shops:', error);
@@ -30,53 +35,43 @@ const RecentlyVisitedShops = () => {
     };
 
     fetchRecentlyVisitedShops();
-  }, [userId]);
+  }, [sessionId]);
 
   const handleShowMore = () => {
     setShowAll(true);
   };
 
   const renderShopItem = ({ item }) => (
-    <View style={styles.shopCard}>
-      <Image
-        source={{ uri: `https://172.27.243.94:8000/${item.image}` }}
-        style={styles.shopImage}
-      />
+    <TouchableOpacity
+      style={styles.shopCard}
+      onPress={() => router.push({ pathname: '/shop/shop-page', params: { shopId: item.id } })}
+    >
+      <Image source={{ uri: `https://172.27.243.94:8000/${item.image}` }} style={styles.shopImage} />
       <View style={styles.shopInfo}>
         <Text style={styles.shopName}>{item.name}</Text>
-        <Text style={styles.visitedAt}>
-          Visited on: {new Date(item.visited_at).toLocaleDateString()}
-        </Text>
-        <TouchableOpacity
-          style={styles.shopButton}
-          onPress={() =>
-            router.push({ pathname: "/shop/shop-page", params: { shopId: item.id } })
-          }
-        >
-          <Text style={styles.buttonText}>Go to Shop</Text>
-        </TouchableOpacity>
+        <Text style={styles.visitedAt}>Visited: {new Date(item.visited_at).toLocaleDateString()}</Text>
       </View>
-    </View>
+      <Ionicons name="chevron-forward" size={24} color="#007bff" style={styles.chevronIcon} />
+    </TouchableOpacity>
   );
 
-  const shopsToDisplay = showAll ? shops : shops.slice(0, 1);
+  const shopsToDisplay = showAll ? shops : shops.slice(0, 3);
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-              <Text style={styles.title}>Recently Visited</Text>
-        <TouchableOpacity style={styles.seeAllContainer}
-          onPress={() => router.push({ pathname: '/shop/AllRecentShops', params: { prevRoute: pathname } })}>
-                <Text style={styles.seeAll}>See All</Text>
-              </TouchableOpacity>
-            </View>
+        <Text style={styles.title}>Recently Visited</Text>
+        <TouchableOpacity style={styles.seeAllContainer} onPress={() => router.push('/shop/AllRecentShops')}>
+          <Text style={styles.seeAll}>See All</Text>
+        </TouchableOpacity>
+      </View>
       <FlatList
         data={shopsToDisplay}
         renderItem={renderShopItem}
         keyExtractor={(item) => item.id.toString()}
         contentContainerStyle={styles.listContainer}
       />
-      {!showAll && shops.length > 1 && (
+      {!showAll && shops.length > 3 && (
         <TouchableOpacity onPress={handleShowMore} style={styles.showMoreButton}>
           <Text style={styles.showMoreText}>Show More</Text>
         </TouchableOpacity>
@@ -103,95 +98,71 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   seeAllContainer: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    backgroundColor: '#eef6fd',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: 'rgba(30, 144, 255, 0.15)',
   },
   seeAll: {
     fontSize: 16,
-    color: '#007aff',
-    fontWeight: '600',
+    color: '#1E40AF',
+    fontWeight: 'bold',
   },
   listContainer: {
-    paddingBottom: 16,
+    paddingBottom: 10,
   },
   shopCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#ffffff',
-    borderRadius: 16,
-    marginBottom: 20,
-    padding: 16,
+    borderRadius: 14,
+    marginBottom: 15,
+    padding: 14,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   shopImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 16,
-    marginRight: 24,
-    borderWidth: 2,
-    borderColor: '#eee',
-    backgroundColor: '#f8f8f8',
+    width: 65,
+    height: 65,
+    borderRadius: 14,
+    backgroundColor: '#f2f2f2',
   },
   shopInfo: {
     flex: 1,
-    paddingLeft: 8,
+    marginLeft: 15,
   },
   shopName: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 6,
+    color: '#1E293B',
   },
   visitedAt: {
     fontSize: 14,
-    color: '#6c757d',
-    marginBottom: 10,
+    color: '#6B7280',
+    marginTop: 4,
   },
-  shopButton: {
-    backgroundColor: '#2196f3',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    alignSelf: 'flex-start',
-    shadowColor: '#007bff',
-    shadowOpacity: 0.4,
-    shadowRadius: 4,
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
+  chevronIcon: {
+    marginLeft: 10,
   },
   showMoreButton: {
-  marginTop: -10,
-  backgroundColor: '#4CAF50',
-  paddingVertical: 14,
-  paddingHorizontal: 24,
-  borderRadius: 25,
-  alignItems: 'center',
-  flexDirection: 'row',
-  justifyContent: 'center',
-  shadowColor: '#4CAF50',
-  shadowOpacity: 0.4,
-  shadowRadius: 6,
-  elevation: 5,
-},
-showMoreText: {
-  color: '#FFFFFF',
-  fontSize: 16,
-  fontWeight: 'bold',
-  letterSpacing: 0.8,
-  textTransform: 'uppercase',
-},
-
+    backgroundColor: '#007bff',
+    paddingVertical: 12,
+    borderRadius: 20,
+    alignItems: 'center',
+    marginTop: 10,
+    shadowColor: '#007bff',
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  showMoreText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
 });
 
 export default RecentlyVisitedShops;

@@ -20,25 +20,27 @@ const statusStyles = {
 const CustomerReceipts = () => {
   const [receipts, setReceipts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [userId, setUserId] = useState(null);
+  const [sessionId, setSessionId] = useState(null);
   const [activeTab, setActiveTab] = useState("All");
 
   useEffect(() => {
-    const fetchUserData = async () => {
-      const userIdString = await AsyncStorage.getItem("user_id");
-      if (userIdString) {
-        setUserId(parseInt(userIdString, 10));
-      }
+    const fetchSessionId = async () => {
+      const sessionIdString = await AsyncStorage.getItem("sessionToken");
+      setSessionId(sessionIdString); // No need to parse as an integer
     };
 
-    fetchUserData();
+    fetchSessionId();
   }, []);
-
   const fetchReceipts = async () => {
-    if (!userId) return;
+    if (!sessionId) return;
     setLoading(true);
     try {
-      const response = await axios.get(`https://172.27.243.94:8000/receipts/customer/?user=${userId}`);
+      const response = await axios.get(`https://172.27.243.94:8000/receipts/customer/`, {
+        headers: {
+          Authorization: sessionId, // Send sessionId in headers
+        },
+      });
+
       setReceipts(response.data.receipts);
     } catch (error) {
       Alert.alert("Error", "Failed to fetch receipts.");
@@ -51,7 +53,7 @@ const CustomerReceipts = () => {
   useFocusEffect(
     useCallback(() => {
       fetchReceipts();
-    }, [userId])
+    }, [sessionId])
   );
 
   const handleAction = async (receiptId, action) => {

@@ -11,6 +11,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
+import { LinearGradient } from "expo-linear-gradient";
 
 export default function ShopProfileScreen() {
   const [name, setName] = useState("");
@@ -21,6 +22,7 @@ export default function ShopProfileScreen() {
   const [subcategories, setSubcategories] = useState([]);
   const [selectedChildCategories, setSelectedChildCategories] = useState([]);
   const [image, setImage] = useState(null);
+  const [sessionId, setSessionId] = useState(null);
 
   const [originalName, setOriginalName] = useState("");
   const [originalDescription, setOriginalDescription] = useState("");
@@ -33,14 +35,28 @@ export default function ShopProfileScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const params = useLocalSearchParams();
-  const { shopId } = params;
+  const { shopId, prevRoute } = params;
   const router = useRouter();
+
+  useEffect(() => {
+    const fetchSessionId = async () => {
+      const sessionIdString = await AsyncStorage.getItem("sessionToken");
+      setSessionId(sessionIdString); // No need to parse as an integer
+    };
+
+    fetchSessionId();
+  }, []);
 
   // Fetch shop details and preselect values
   useEffect(() => {
     const fetchShopDetails = async () => {
       try {
-        const response = await axios.get(`https://172.27.243.94:8000/shop/profile/${shopId}/`);
+        const response = await axios.get(`https://172.27.243.94:8000/shop/profile/${shopId}/`, {
+          headers: {
+            Authorization: sessionId, // Send sessionId in headers
+          },
+  });
+
         setName(response.data.name);
         setDescription(response.data.description);
         setAddress(response.data.address);
@@ -182,6 +198,7 @@ export default function ShopProfileScreen() {
         await axios.post(`https://172.27.243.94:8000/shop/profile/${shopId}/`, formData, {
             headers: {
                 "Content-Type": "multipart/form-data",
+                Authorization: sessionId,
             },
         });
 
@@ -196,17 +213,17 @@ export default function ShopProfileScreen() {
 };
 
   return (
-    <View style={styles.container}>
+    <LinearGradient colors={["#F7F7F7", "#EAEAEA"]} style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
+        <TouchableOpacity onPress={() => router.replace(prevRoute || '((tabs)/myshop)')}>
+          <MaterialIcons name="arrow-back" size={26} color="black" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Edit Shop Profile</Text>
       </View>
 
       <View style={styles.imageContainer}>
         <TouchableOpacity onPress={pickImage} style={styles.imageWrapper}>
-          <Image source={{ uri: image || 'https://via.placeholder.com/40' }} style={styles.profileImage} />
+          <Image source={{ uri: image || "https://via.placeholder.com/40" }} style={styles.profileImage} />
           <TouchableOpacity onPress={pickImage} style={styles.uploadIcon}>
             <Ionicons name="camera" size={20} color="white" />
           </TouchableOpacity>
@@ -214,84 +231,90 @@ export default function ShopProfileScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.contentContainer}>
-        <Text style={styles.label}>Name</Text>
-        <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Shop Name" />
+        <View style={styles.card}>
+          <Text style={styles.label}>Shop Name</Text>
+          <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Enter Shop Name" />
 
-        <Text style={styles.label}>Description</Text>
-        <TextInput style={[styles.input, styles.textArea]} value={description} onChangeText={setDescription} placeholder="Shop Description" multiline />
+          <Text style={styles.label}>Description</Text>
+          <TextInput style={[styles.input, styles.textArea]} value={description} onChangeText={setDescription} placeholder="Enter Shop Description" multiline />
 
-        <Text style={styles.label}>Address</Text>
-        <TextInput style={styles.input} value={address} onChangeText={setAddress} placeholder="Shop Address" />
+          <Text style={styles.label}>Address</Text>
+          <TextInput style={styles.input} value={address} onChangeText={setAddress} placeholder="Enter Shop Address" />
 
-        <Text style={styles.label}>Parent Category</Text>
-        <SelectList
-          setSelected={setSelectedParentCategory}
-          data={parentCategories}
-          defaultOption={parentCategories.find(cat => cat.key === selectedParentCategory) || null}
-          placeholder="Select Parent Category"
-        />
+          <Text style={styles.label}>Parent Category</Text>
+          <SelectList
+            setSelected={setSelectedParentCategory}
+            data={parentCategories}
+            defaultOption={parentCategories.find((cat) => cat.key === selectedParentCategory) || null}
+            placeholder="Select Parent Category"
+            boxStyles={{ backgroundColor: 'white' }}
+          />
 
-        {selectedParentCategory && subcategories.length > 0 && (
-          <>
-            <Text style={styles.label}>Child Categories</Text>
-            <MultiSelect
-              options={subcategories.map(sub => ({ label: sub.value, value: sub.key }))}
-              value={selectedChildCategories}
-              onChange={setSelectedChildCategories}
-              labelledBy="Select Categories"
-            />
-          </>
-        )}
+          {selectedParentCategory && subcategories.length > 0 && (
+            <>
+              <Text style={styles.label}>Child Categories</Text>
+              <MultiSelect
+                options={subcategories.map((sub) => ({ label: sub.value, value: sub.key }))}
+                value={selectedChildCategories}
+                onChange={setSelectedChildCategories}
+                labelledBy="Select Categories"
+              />
+            </>
+          )}
 
-        <TouchableOpacity onPress={handleUpdate} style={styles.updateButton}>
-          <Text style={styles.updateButtonText}>{isSubmitting ? "Updating..." : "Update Shop"}</Text>
-        </TouchableOpacity>
+          <TouchableOpacity onPress={handleUpdate} style={styles.updateButton}>
+            <LinearGradient colors={["#FF8C42", "#FF3D00"]} style={styles.gradientButton}>
+              <Text style={styles.updateButtonText}>{isSubmitting ? "Updating..." : "Update Shop"}</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
-    </View>
+    </LinearGradient>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 15,
-    backgroundColor: "#FFFFFF",
+    padding: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: "bold",
-    marginLeft: 10,
-    color: "#1E293B",
+    marginLeft: 12,
+    color: "black",
   },
   imageContainer: {
     alignItems: "center",
-    marginVertical: 20,
+    marginVertical: 24,
   },
   imageWrapper: {
     position: "relative",
   },
   profileImage: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 130,
+    height: 130,
+    borderRadius: 65,
     borderWidth: 3,
-    borderColor: "#1E40AF",
+    borderColor: "#FF8C42",
   },
   uploadIcon: {
     position: "absolute",
     bottom: 5,
     right: 5,
-    backgroundColor: "#1E40AF",
+    backgroundColor: "#FF8C42",
     padding: 8,
     borderRadius: 20,
     borderWidth: 2,
@@ -300,37 +323,44 @@ const styles = StyleSheet.create({
   contentContainer: {
     padding: 20,
   },
+  card: {
+    backgroundColor: "rgba(255, 255, 255, 0.35)",
+    padding: 20,
+    borderRadius: 15,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 4,
+  },
   label: {
     fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 5,
-    color: "#1E293B",
+    fontWeight: "bold",
+    marginBottom: 6,
+    color: "black",
   },
   input: {
-    backgroundColor: "#FFFFFF",
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
-    marginBottom: 15,
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
+    padding: 14,
+    borderRadius: 10,
     fontSize: 16,
-    color: "#334155",
+    color: "black",
+    marginBottom: 14,
   },
   textArea: {
     height: 100,
     textAlignVertical: "top",
   },
   updateButton: {
-    backgroundColor: "#1E40AF",
-    padding: 14,
-    borderRadius: 10,
-    alignItems: "center",
     marginTop: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
+    borderRadius: 12,
+    overflow: "hidden",
+    elevation: 4,
+  },
+  gradientButton: {
+    padding: 14,
+    borderRadius: 12,
+    alignItems: "center",
   },
   updateButtonText: {
     color: "white",

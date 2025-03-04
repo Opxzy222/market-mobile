@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, FlatList } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Image } from 'react-native';
 
 const Followers = ({ followers = [] }) => {
   const getColorForAlphabet = (alphabet) => {
@@ -15,7 +15,10 @@ const Followers = ({ followers = [] }) => {
   };
 
   const renderFollower = ({ item }) => (
-    <View style={styles.followerItem}>
+  <View style={styles.followerItem}>
+    {item.image ? (
+      <Image source={{ uri: item.image }} style={styles.followerAvatar} />
+    ) : (
       <View
         style={[
           styles.followerAvatar,
@@ -26,9 +29,10 @@ const Followers = ({ followers = [] }) => {
           {item.username.charAt(0).toUpperCase()}
         </Text>
       </View>
-      <Text style={styles.followerUsername}>{item.username}</Text>
-    </View>
-  );
+    )}
+    <Text style={styles.followerUsername}>{item.username}</Text>
+  </View>
+);
 
   return (
     <View style={styles.container}>

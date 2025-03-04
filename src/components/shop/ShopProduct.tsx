@@ -1,56 +1,125 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import React, { useContext, useState } from 'react';
+import { View, Text, TextInput, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import SubscriptionProvider, { SubscriptionContext } from '../SubscriptionProvider';
+import SubscriptionRequired from '../RequiredSubscription';
 
 const ShopProduct = ({ products }) => {
-  if (!products || products.length === 0) {
-    return <Text style={styles.noProducts}>No products available.</Text>;
+  const { subscriptionStatus, loading } = useContext(SubscriptionContext);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Wait until the subscription status is determined
+  if (loading) {
+    return <ActivityIndicator size="large" color="#007BFF" style={styles.loader} />;
   }
 
+  // Show the SubscriptionRequired component if the user does not have a valid subscription
+  if (!["regular", "standard", "premium"].includes(subscriptionStatus)) {
+    return <SubscriptionRequired />;
+  }
+
+  // Filter products based on search query
+  const filteredProducts = products
+    .map(categoryData => {
+      const filteredSubcategories = categoryData.subcategories.map(subcategoryData => {
+        const filteredProducts = subcategoryData.products.filter(product => {
+          const productName = product.product_name.toLowerCase();
+          const query = searchQuery.toLowerCase();
+
+          // If search query is empty, return all products
+          if (!query) return true;
+
+          // Show product if it contains the search term anywhere
+          if (productName.includes(query)) return true;
+
+          // Show product only if it starts with the search term
+          if (query.length === 1 && productName.startsWith(query)) return true;
+
+          return false;
+        });
+
+        return {
+          ...subcategoryData,
+          products: filteredProducts,
+        };
+      }).filter(subcategory => subcategory.products.length > 0); // Remove empty subcategories
+
+      return {
+        ...categoryData,
+        subcategories: filteredSubcategories,
+      };
+    })
+    .filter(category => category.subcategories.length > 0); // Remove empty categories
+
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      {products.map((categoryData) => (
-        <View key={categoryData.category} style={styles.categoryCard}>
-          <Text style={styles.categoryTitle}>{categoryData.category}</Text>
-          {categoryData.subcategories.map((subcategoryData) => (
-            <View key={subcategoryData.subcategory} style={styles.subcategorySection}>
-              <Text style={styles.subcategoryTitle}>{subcategoryData.subcategory}</Text>
-              <View style={styles.table}>
-                <View style={styles.tableHeader}>
-                  <Text style={[styles.tableCell, styles.cellWide, styles.headerCell]}>Product</Text>
-                  <Text style={[styles.tableCell, styles.headerCell]}>Available</Text>
-                  <Text style={[styles.tableCell, styles.headerCell]}>Price</Text>
-                </View>
-                {subcategoryData.products.map((product, index) => (
-                  <View
-                    key={product.id}
-                    style={[
-                      styles.tableRow,
-                      index % 2 === 0 && styles.alternateRow,
-                    ]}
-                  >
-                    <Text style={[styles.tableCell, styles.cellWide]}>{product.product_name}</Text>
-                    <Text style={styles.tableCell}>
-                      {product.is_available ? '✔️' : '❌'}
-                    </Text>
-                    <Text style={styles.tableCell}>
-                      {product.price !== null && product.price !== undefined && !isNaN(Number(product.price))
-                        ? `₦${Number(product.price)}`
-                        : 'N/A'}
-                    </Text>
+    <View style={styles.container}>
+      {/* Search Bar */}
+      <TextInput
+        style={styles.searchInput}
+        placeholder="Search products..."
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+      />
+
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
+        {filteredProducts.length === 0 ? (
+          <Text style={styles.noProducts}>No products found.</Text>
+        ) : (
+          filteredProducts.map(categoryData => (
+            <View key={categoryData.category} style={styles.categoryCard}>
+              <Text style={styles.categoryTitle}>{categoryData.category}</Text>
+              {categoryData.subcategories.map(subcategoryData => (
+                <View key={subcategoryData.subcategory} style={styles.subcategorySection}>
+                  <Text style={styles.subcategoryTitle}>{subcategoryData.subcategory}</Text>
+                  <View style={styles.table}>
+                    <View style={styles.tableHeader}>
+                      <Text style={[styles.tableCell, styles.cellWide, styles.headerCell]}>Product</Text>
+                      <Text style={[styles.tableCell, styles.headerCell]}>Available</Text>
+                      <Text style={[styles.tableCell, styles.headerCell]}>Price</Text>
+                    </View>
+                    {subcategoryData.products.map((product, index) => (
+                      <View
+                        key={product.id}
+                        style={[styles.tableRow, index % 2 === 0 && styles.alternateRow]}
+                      >
+                        <Text style={[styles.tableCell, styles.cellWide]}>{product.product_name}</Text>
+                        <Text style={styles.tableCell}>
+                          {product.is_available ? '✔️' : '❌'}
+                        </Text>
+                        <Text style={styles.tableCell}>
+                          {product.price !== null && product.price !== undefined && !isNaN(Number(product.price))
+                            ? `₦${Number(product.price)}`
+                            : 'N/A'}
+                        </Text>
+                      </View>
+                    ))}
                   </View>
-                ))}
-              </View>
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
-      ))}
-    </ScrollView>
+          ))
+        )}
+      </ScrollView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    
+    flex: 1,
+    padding: 10,
+    backgroundColor: '#f8fafc',
+  },
+  searchInput: {
+    height: 40,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    marginBottom: 10,
+    backgroundColor: '#ffffff',
+  },
+  scrollContainer: {
+    paddingBottom: 20,
   },
   noProducts: {
     textAlign: 'center',
@@ -128,4 +197,8 @@ const styles = StyleSheet.create({
   },
 });
 
-export default ShopProduct;
+export default (props) => (
+  <SubscriptionProvider>
+    <ShopProduct {...props} />
+  </SubscriptionProvider>
+);

@@ -12,15 +12,14 @@ const ReceiptActions = () => {
   return (
     <View style={styles.container}>
       {/* Header Section */}
-      <View style={styles.header}>
+        <View style={styles.header}>
             <TouchableOpacity
               onPress={() => router.replace(prevRoute || '((tabs)/myshop)')}
               style={styles.backButton}
             >
               <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
-            </TouchableOpacity>
-              
-            </View>
+            </TouchableOpacity>    
+          </View>
 
       {/* Buttons Section */}
       <View style={styles.buttonsContainer}>
@@ -60,8 +59,17 @@ const styles = StyleSheet.create({
     paddingTop: 20,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
     marginBottom: 10,
   },
   backButton: {

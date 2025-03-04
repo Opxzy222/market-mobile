@@ -68,11 +68,10 @@ const AllCategories = () => {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.replace(prevRoute || '((tabs)/shop)')} style={styles.backButton}>
-          <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
+          <MaterialIcons name="arrow-back" size={26} color="#007BFF" />
         </TouchableOpacity>
+        <Text style={styles.headerTitle}>All Categories</Text>
       </View>
-      
-      <Text style={styles.heading}>All Categories</Text>
       
       <FlatList
         data={categories}
@@ -93,25 +92,30 @@ const styles = StyleSheet.create({
     backgroundColor: "#f3f4f6",
     padding: 16,
   },
-  heading: {
-    fontSize: 26,
-    fontWeight: "bold",
-    color: "#111827",
-    marginBottom: 20,
-    textAlign: "center",
-  },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    marginBottom: 10,
   },
   backButton: {
     marginRight: 10,
     marginTop: 12,
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
+    fontSize: 22,
+    fontWeight: "bold",
+    marginLeft: 65,
+    color: "black",
+    marginTop: 12,
   },
   listContainer: {
     paddingBottom: 16,

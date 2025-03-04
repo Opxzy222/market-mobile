@@ -31,47 +31,57 @@ const AdminShopPage = () => {
   const [posts, setPosts] = useState([]);
   const [activeTab, setActiveTab] = useState('posts');
   const [error, setError] = useState('');
-  const [userId, setUserId] = useState(null);
+  const [sessionId, setSessionId] = useState(null);
 
   useEffect(() => {
-    const fetchUserId = async () => {
-      const userIdString = await AsyncStorage.getItem('user_id');
-      setUserId(parseInt(userIdString, 10));
-    };
-
-    fetchUserId();
-  }, []);
-
-  useEffect(() => {
-    const fetchShopData = async () => {
-      try {
-        const response = await axios.get(`https://172.27.243.94:8000/shops/${shopId}/combined/`);
-        const data = response.data;
-        setPosts(data.posts);
-
-        setShop({
-          name: data.shop.name,
-          description: data.shop.description,
-          image: data.shop.image,
-          categories: data.shop.categories,
-          products: data.shop.products,
-          address: data.shop.address,
-        });
-        setReviews(data.reviews);
-        setFollowerCount(data.follower_count);
-        setFollowers(data.followers || []);
-        
-        setError('');
-      } catch (error) {
-        console.error('Error fetching shop data:', error);
-        setError('Failed to fetch shop data. Please try again later.');
-      }
-    };
-
-    if (shopId) {
-      fetchShopData();
+  const fetchSessionId = async () => {
+    const sessionId = await AsyncStorage.getItem("sessionToken");
+    if (sessionId) {
+      setSessionId(sessionId); // Store session_id instead of user_id
     }
-  }, [shopId]);
+  };
+
+  fetchSessionId();
+}, []);
+
+  useEffect(() => {
+  const fetchShopData = async () => {
+    try {
+      const sessionId = await AsyncStorage.getItem("sessionToken");
+
+      const response = await axios.get(`https://172.27.243.94:8000/shops/${shopId}/combined/`, {
+        headers: {
+          Authorization: sessionId, // Send session ID in headers
+        },
+      });
+
+      const data = response.data;
+      setPosts(data.posts);
+
+      setShop({
+        name: data.shop.name,
+        description: data.shop.description,
+        image: data.shop.image,
+        categories: data.shop.categories,
+        products: data.shop.products,
+        address: data.shop.address,
+      });
+
+      setReviews(data.reviews);
+      setFollowerCount(data.follower_count);
+      setFollowers(data.followers || []);
+
+      setError("");
+    } catch (error) {
+      console.error("Error fetching shop data:", error);
+      setError("Failed to fetch shop data. Please try again later.");
+    }
+  };
+
+  if (shopId) {
+    fetchShopData();
+  }
+}, [shopId]);
 
   const handleTabChange = (tab) => setActiveTab(tab);
   const handleReviewSubmitted = (newReview) => {
@@ -82,7 +92,7 @@ const AdminShopPage = () => {
     return <Text style={styles.errorText}>{error}</Text>;
   }
 
-  if (!shop || userId === null) {
+  if (!shop || sessionId === null) {
     return <ActivityIndicator size="large" color="#f39c12" />;
   }
 

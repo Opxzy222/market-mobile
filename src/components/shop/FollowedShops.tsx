@@ -12,25 +12,27 @@ import { useRouter, usePathname } from 'expo-router';
 
 const FollowedShops = () => {
   const [shops, setShops] = useState([]);
-  const [userId, setUserId] = useState(null);
+  const [sessionId, setSessionId] = useState(null);
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
-    const fetchUserId = async () => {
-      const userIdString = await AsyncStorage.getItem('user_id');
-      setUserId(parseInt(userIdString, 10));
-    };
-    fetchUserId();
+  const fetchSessionId = async () => {
+    const sessionIdString = await AsyncStorage.getItem("sessionToken");
+    setSessionId(sessionIdString); // No need to parse as an integer
+  };
+    fetchSessionId();
   }, []);
 
   useEffect(() => {
     const fetchFollowedShops = async () => {
       try {
-        if (userId) {
-          const response = await axios.get(
-            `https://172.27.243.94:8000/shops/followed/${userId}/`
-          );
+        if (sessionId) {
+          const response = await axios.get("https://172.27.243.94:8000/shops/followed/", {
+            headers: {
+              Authorization: sessionId,
+        },
+      });
           setShops(response.data);
         }
       } catch (error) {
@@ -39,7 +41,7 @@ const FollowedShops = () => {
     };
 
     fetchFollowedShops();
-  }, [userId]);
+  }, [sessionId]);
 
   return (
     <View style={styles.container}>
@@ -84,7 +86,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     marginTop: 20,
     paddingVertical: 10,
-    backgroundColor: '#fff',
   },
   header: {
     flexDirection: 'row',
@@ -98,15 +99,15 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   seeAllContainer: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    backgroundColor: '#eef6fd',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: 'rgba(30, 144, 255, 0.15)',
   },
   seeAll: {
     fontSize: 16,
-    color: '#007aff',
-    fontWeight: '600',
+    color: '#1E40AF',
+    fontWeight: 'bold',
   },
   shopRow: {
     flexDirection: 'row',

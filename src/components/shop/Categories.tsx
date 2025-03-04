@@ -92,15 +92,15 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   seeAllContainer: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    backgroundColor: '#eef6fd',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: 'rgba(30, 144, 255, 0.15)',
   },
   seeAll: {
     fontSize: 16,
-    color: '#007aff',
-    fontWeight: '600',
+    color: '#1E40AF',
+    fontWeight: 'bold',
   },
   row: {
     justifyContent: 'space-between',

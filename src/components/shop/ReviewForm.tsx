@@ -1,4 +1,3 @@
-// ReviewForm.js
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -13,28 +12,37 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const ReviewForm = ({ shopId, onReviewSubmitted }) => {
-  const [rating, setRating] = useState(1);
+  const [rating, setRating] = useState(null); // Set rating to null by default
   const [comment, setComment] = useState('');
   const [error, setError] = useState('');
-  const [userId, setUserId] = useState(null);
+  const [ratingError, setRatingError] = useState('');
+  const [sessionId, setSessionId] = useState(null);
 
   useEffect(() => {
-    const fetchUserId = async () => {
-      const userIdString = await AsyncStorage.getItem('user_id');
-      setUserId(parseInt(userIdString, 10));
+    const fetchSessionId = async () => {
+      const sessionIdString = await AsyncStorage.getItem("sessionToken");
+      setSessionId(sessionIdString);
     };
-    fetchUserId();
+
+    fetchSessionId();
   }, []);
 
   const handleSubmit = async () => {
+    setError('');
+    setRatingError('');
+
     if (!comment) {
       setError('Comment cannot be empty.');
       return;
     }
 
+    if (rating === null) {
+      setRatingError('Please select a rating.');
+      return;
+    }
+
     const formData = new FormData();
     formData.append('shop', shopId);
-    formData.append('user', userId); // Replace with actual user ID logic
     formData.append('rating', rating);
     formData.append('comment', comment);
 
@@ -45,13 +53,13 @@ const ReviewForm = ({ shopId, onReviewSubmitted }) => {
         {
           headers: {
             'Content-Type': 'multipart/form-data',
+            Authorization: sessionId,
           },
         }
       );
       onReviewSubmitted(response.data);
-      setRating(1);
+      setRating(null); // Reset to null after submission
       setComment('');
-      setError('');
     } catch (error) {
       Alert.alert('Error', 'Failed to submit review.');
       console.error('Error submitting review:', error);
@@ -74,13 +82,14 @@ const ReviewForm = ({ shopId, onReviewSubmitted }) => {
       <View style={styles.formGroup}>
         <Text style={styles.label}>Rating</Text>
         <StarRating
-          rating={rating}
+          rating={rating ?? 0} // Display 0 stars when null
           onChange={(newRating) => setRating(newRating)}
           starSize={30}
           color="#ffd700"
           maxStars={5}
           enableHalfStar={false}
         />
+        {ratingError ? <Text style={styles.errorText}>{ratingError}</Text> : null}
       </View>
       <Button title="Submit Review" onPress={handleSubmit} />
     </View>

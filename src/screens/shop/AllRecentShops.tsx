@@ -15,23 +15,25 @@ import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 
 const AllRecentlyVisitedShops = () => {
   const [shops, setShops] = useState([]);
-  const [userId, setUserId] = useState(null);
+  const [sessionId, setSessionId] = useState(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const params = useLocalSearchParams();
   const { prevRoute } = params;
 
   useEffect(() => {
-    const fetchUserId = async () => {
-      const userIdString = await AsyncStorage.getItem("user_id");
-      setUserId(parseInt(userIdString, 10));
-    };
+  const fetchUserId = async () => {
+    const sessionIdString = await AsyncStorage.getItem("sessionToken");
+    setSessionId(sessionIdString); // No need to parse as an integer
+  };
 
     const fetchRecentlyVisitedShops = async () => {
       try {
-        const response = await axios.get(
-          `https://172.27.243.94:8000/shops/recently-visited/${userId}/`
-        );
+        const response = await axios.get("https://172.27.243.94:8000/shops/all-recently-visited/", {
+          headers: {
+          Authorization: sessionId,
+        },
+      });
         setShops(response.data.recently_visited_shops);
       } catch (error) {
         console.error("Error fetching recently visited shops:", error);
@@ -41,10 +43,10 @@ const AllRecentlyVisitedShops = () => {
     };
 
     fetchUserId();
-    if (userId) {
+    if (sessionId) {
       fetchRecentlyVisitedShops();
     }
-  }, [userId]);
+  }, [sessionId]);
 
   const renderShopCard = ({ item }) => (
     <View style={styles.shopCard}>
@@ -121,12 +123,18 @@ const styles = StyleSheet.create({
     paddingTop: 20,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#dcdcdc',
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
     elevation: 3,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    marginBottom: 10,
   },
   backButton: {
     marginRight: 10,

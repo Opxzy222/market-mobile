@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useContext } from "react";
 import {
   View,
   Text,
@@ -20,6 +20,8 @@ import { format } from "date-fns";
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams } from "expo-router";
 import StatusViewer from "../../components/shop/ShopStatusViewer";
+import SubscriptionProvider, { SubscriptionContext } from '../../components/SubscriptionProvider';
+import SubscriptionRequired from "@/components/RequiredSubscription";
 
 const BACKEND_URL = "https://172.27.243.94:8000";
 
@@ -29,11 +31,12 @@ const StatusScreen = () => {
   const [isMediaPosting, setIsMediaPosting] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [selectedMedia, setSelectedMedia] = useState(null);
-  const [loading, setLoading] = useState(false);
   const [currentStatusIndex, setCurrentStatusIndex] = useState(null);
   const [permissionGranted, setPermissionGranted] = useState(false);
   const [mediaAssets, setMediaAssets] = useState([]);
   const [isMediaPickerOpen, setIsMediaPickerOpen] = useState(false);
+  const { subscriptionStatus } = useContext(SubscriptionContext);
+  const [loading, setLoading] = useState(false);
 
   // Ref for the hidden file input on web
   const fileInputRef = useRef(null);
@@ -238,8 +241,6 @@ const StatusScreen = () => {
   // Inside your component's return:
 return (
   <View style={styles.container}>
-    <Text style={styles.header}>Status</Text>
-
     {/* My Status Section */}
     <TouchableOpacity style={styles.myStatus} onPress={() => {}}>
       <Image
@@ -294,93 +295,114 @@ return (
 
     {/* Modal for Posting Plain Text Status */}
     <Modal visible={isTextPosting} animationType="slide" transparent>
-      <View style={styles.modalContainer}>
-        <View style={styles.modalCard}>
-          <View style={styles.modalHeaderRow}>
-            <Ionicons name="chatbubble-ellipses-outline" size={24} color="#555" />
-            <Text style={styles.modalHeaderText}>Post a Text Status</Text>
-          </View>
-          <TextInput
-            style={styles.input}
-            placeholder="What's on your mind?"
-            placeholderTextColor="#888"
-            value={statusText}
-            onChangeText={setStatusText}
-            multiline
-          />
-          <View style={styles.actionRow}>
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => setIsTextPosting(false)}
-            >
-              <Ionicons name="close-circle-outline" size={24} color="#d9534f" />
-              <Text style={styles.actionButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={handlePostTextStatus}
-            >
-              <Ionicons name="checkmark-circle-outline" size={24} color="#5cb85c" />
-              <Text style={styles.actionButtonText}>Post</Text>
-            </TouchableOpacity>
-          </View>
+  {subscriptionStatus === "standard" || subscriptionStatus === "premium" ? (
+    <View style={styles.modalContainer}>
+      <View style={styles.modalCard}>
+        <View style={styles.modalHeaderRow}>
+          <Ionicons name="chatbubble-ellipses-outline" size={24} color="#555" />
+          <Text style={styles.modalHeaderText}>Post a Text Status</Text>
+        </View>
+        <TextInput
+          style={styles.input}
+          placeholder="What's on your mind?"
+          placeholderTextColor="#888"
+          value={statusText}
+          onChangeText={setStatusText}
+          multiline
+        />
+        <View style={styles.actionRow}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => setIsTextPosting(false)}
+          >
+            <Ionicons name="close-circle-outline" size={24} color="#d9534f" />
+            <Text style={styles.actionButtonText}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={handlePostTextStatus}
+          >
+            <Ionicons name="checkmark-circle-outline" size={24} color="#5cb85c" />
+            <Text style={styles.actionButtonText}>Post</Text>
+          </TouchableOpacity>
         </View>
       </View>
-    </Modal>
+    </View>
+  ) : (
+    <TouchableOpacity
+      style={styles.modalOverlay}
+      activeOpacity={1}
+      onPress={() => setIsTextPosting(false)}
+    >
+      <SubscriptionRequired />
+    </TouchableOpacity>
+  )}
+</Modal>
 
-    {/* Modal for Posting Media Status */}
-    <Modal visible={isMediaPosting} animationType="slide" transparent>
-      <View style={styles.modalContainer}>
-        <View style={styles.modalCard}>
-          <View style={styles.modalHeaderRow}>
-            <Ionicons name="images-outline" size={24} color="#555" />
-            <Text style={styles.modalHeaderText}>Post a Media Status</Text>
-          </View>
-          <TextInput
-            style={styles.input}
-            placeholder="Add a caption (optional)"
-            placeholderTextColor="#888"
-            value={statusText}
-            onChangeText={setStatusText}
-            multiline
-          />
-          <View style={styles.actionRow}>
-            <TouchableOpacity style={styles.actionButton} onPress={pickMedia}>
-              <Ionicons name="folder-open-outline" size={24} color="#0275d8" />
-              <Text style={styles.actionButtonText}>Pick Media</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={() => {
-                setIsMediaPosting(false);
-                setSelectedMedia(null);
-              }}
-            >
-              <Ionicons name="close-circle-outline" size={24} color="#d9534f" />
-              <Text style={styles.actionButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.actionButton}
-              onPress={handlePostMediaStatus}
-            >
-              <Ionicons name="checkmark-circle-outline" size={24} color="#5cb85c" />
-              <Text style={styles.actionButtonText}>Post</Text>
-            </TouchableOpacity>
-          </View>
-          {/* Hidden file input for web */}
-          {Platform.OS === "web" && (
-            <input
-              type="file"
-              accept="image/*,video/*"
-              multiple={false}
-              ref={fileInputRef}
-              onChange={handleSelectMediaWeb}
-              style={{ display: "none" }}
-            />
-          )}
+{/* Modal for Posting Media Status */}
+<Modal visible={isMediaPosting} animationType="slide" transparent>
+  {subscriptionStatus === "standard" || subscriptionStatus === "premium" ? (
+    <View style={styles.modalContainer}>
+      <View style={styles.modalCard}>
+        <View style={styles.modalHeaderRow}>
+          <Ionicons name="images-outline" size={24} color="#555" />
+          <Text style={styles.modalHeaderText}>Post a Media Status</Text>
         </View>
+        <TextInput
+          style={styles.input}
+          placeholder="Add a caption (optional)"
+          placeholderTextColor="#888"
+          value={statusText}
+          onChangeText={setStatusText}
+          multiline
+        />
+        <View style={styles.actionRow}>
+          <TouchableOpacity style={styles.actionButton} onPress={pickMedia}>
+            <Ionicons name="folder-open-outline" size={24} color="#0275d8" />
+            <Text style={styles.actionButtonText}>Pick Media</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => {
+              setIsMediaPosting(false);
+              setSelectedMedia(null);
+            }}
+          >
+            <Ionicons name="close-circle-outline" size={24} color="#d9534f" />
+            <Text style={styles.actionButtonText}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={handlePostMediaStatus}
+          >
+            <Ionicons name="checkmark-circle-outline" size={24} color="#5cb85c" />
+            <Text style={styles.actionButtonText}>Post</Text>
+          </TouchableOpacity>
+        </View>
+        {/* Hidden file input for web */}
+        {Platform.OS === "web" && (
+          <input
+            type="file"
+            accept="image/*,video/*"
+            multiple={false}
+            ref={fileInputRef}
+            onChange={handleSelectMediaWeb}
+            style={{ display: "none" }}
+          />
+        )}
       </View>
-    </Modal>
+    </View>
+  ) : (
+    <TouchableOpacity
+      style={styles.modalOverlay}
+      activeOpacity={1}
+      onPress={() => setIsMediaPosting(false)}
+    >
+      <SubscriptionRequired />
+    </TouchableOpacity>
+  )}
+</Modal>
+
 
     {/* Status Viewer Modal */}
     {currentStatusIndex !== null && (
@@ -521,6 +543,12 @@ modalHeaderText: {
   color: "#333",
   marginLeft: 10,
 },
+modalOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.5)", // Semi-transparent background
+  },
 
 modalCard: {
   backgroundColor: "#fff",
@@ -572,4 +600,8 @@ iconStyle: {
 });
 
 
-export default StatusScreen;
+export default (props) => (
+  <SubscriptionProvider>
+    <StatusScreen {...props} />
+  </SubscriptionProvider>
+);

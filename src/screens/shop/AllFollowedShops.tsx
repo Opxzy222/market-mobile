@@ -17,37 +17,44 @@ const AllFollowedShops = () => {
   const [shops, setShops] = useState([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
-  const [userId, setUserId] = useState(null);
+  const [sessionId, setSessionId] = useState(null);
   const params = useLocalSearchParams();
   const { prevRoute } = params;
 
   useEffect(() => {
     const fetchUserId = async () => {
-      const userIdString = await AsyncStorage.getItem("user_id");
-      setUserId(parseInt(userIdString, 10));
-    };
-
-    const fetchAllFollowedShops = async () => {
-      try {
-        const response = await axios.get(
-          `https://172.27.243.94:8000/shops/followed/${userId}/`
-        );
-        const sortedShops = response.data.sort((a, b) =>
-          a.name.localeCompare(b.name)
-        );
-        setShops(sortedShops);
-      } catch (error) {
-        console.error("Error fetching all followed shops:", error);
-      } finally {
-        setLoading(false);
-      }
+      const sessionIdString = await AsyncStorage.getItem("sessionToken");
+      setSessionId(sessionIdString); // No need to parse as an integer
     };
 
     fetchUserId();
-    if (userId) {
+    console.log(sessionId, 'heya')
+  }, []);
+
+  useEffect(() => {
+    if (sessionId) {
+      console.log(sessionId, 'heya')
+      const fetchAllFollowedShops = async () => {
+        try {
+          const response = await axios.get("https://172.27.243.94:8000/shops/followed/", {
+            headers: {
+              Authorization: sessionId,
+            },
+          });
+          const sortedShops = response.data.sort((a, b) =>
+            a.name.localeCompare(b.name)
+          );
+          setShops(sortedShops);
+        } catch (error) {
+          console.error("Error fetching all followed shops:", error);
+        } finally {
+          setLoading(false);
+        }
+      };
+
       fetchAllFollowedShops();
     }
-  }, [userId]);
+  }, [sessionId]);
 
   const renderShopItem = ({ item }) => (
     <TouchableOpacity
@@ -99,21 +106,25 @@ const AllFollowedShops = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#f3f4f6",
     padding: 16,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    backgroundColor: "#F9FAFB",
-    paddingHorizontal: 16,
-    elevation: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    marginBottom: 10,
   },
   backButton: {
-    marginRight: 12,
+    marginRight: 1,
   },
   heading: {
     fontSize: 24,

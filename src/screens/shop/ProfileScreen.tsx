@@ -1,262 +1,156 @@
 import React, { useEffect, useState } from "react";
 import { 
-  View, Text, TextInput, Image, TouchableOpacity, 
-  StyleSheet, ScrollView, ActivityIndicator 
+  View, 
+  Text, 
+  StyleSheet, 
+  TouchableOpacity, 
+  ScrollView, 
+  Clipboard, 
+  ToastAndroid,
+  Platform,
+  Alert
 } from "react-native";
-import * as ImagePicker from "expo-image-picker";
-import axios from "axios";
+import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { useRouter, usePathname } from 'expo-router';
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Button } from "react-native-elements";
-import { Ionicons } from "@expo/vector-icons";
 
 const ProfileScreen = () => {
-  const [user, setUser] = useState(null);
-  const [phoneNo, setPhoneNo] = useState("");
-  const [image, setImage] = useState(null);
+  const router = useRouter();
+  const pathname = usePathname();
   const [userId, setUserId] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    const fetchUserId = async () => {
-      try {
-        const userIdString = await AsyncStorage.getItem("user_id");
-        if (userIdString) {
-          setUserId(parseInt(userIdString, 10));
-        }
-      } catch (error) {
-        console.error("Error fetching user ID:", error);
-      }
+    const fetchSessionId = async () => {
+      const userIdString = await AsyncStorage.getItem("userId");
+      setUserId(userIdString);
     };
-    fetchUserId();
+    fetchSessionId();
   }, []);
 
-  useEffect(() => {
+  const copyToClipboard = () => {
     if (userId) {
-      axios.get(`https://172.27.243.94:8000/user/profile/${userId}/`)
-        .then(response => {
-          setUser(response.data);
-          setPhoneNo(response.data.phone_no || "");
-          setImage(response.data.image);
-        })
-        .catch(error => console.error("Error fetching profile:", error))
-        .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
-    }
-  }, [userId]);
+      Clipboard.setString(userId);
+      setCopied(true);
 
-  const handleUpdate = async () => {
-  if (!userId) {
-    console.error("User ID is missing!");
-    return;
-  }
-
-  const formData = new FormData();
-  let hasChanges = false;
-
-  // Append only changed text fields
-  if (phoneNo !== user.phone_no) {
-    formData.append("phone_no", phoneNo);
-    hasChanges = true;
-  }
-
-  // Handle image file upload for web
-  if (image && image !== user.image) {
-    try {
-      const response = await fetch(image);
-      const blob = await response.blob();
-      const file = new File([blob], "profile.jpg", { type: "image/jpeg" });
-
-      formData.append("image", file);
-      hasChanges = true;
-    } catch (error) {
-      console.error("Error converting image to file:", error);
-      alert("Failed to process image. Please try again.");
-      return;
-    }
-  }
-
-  if (!hasChanges) {
-    alert("No changes made to update.");
-    return;
-  }
-
-  try {
-    const response = await axios.post(
-      `https://172.27.243.94:8000/user/profile/${userId}/`,
-      formData,
-      {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
+      if (Platform.OS === "android") {
+        ToastAndroid.show("Profile ID copied!", ToastAndroid.SHORT);
+      } else {
+        Alert.alert("Copied", "Profile ID copied to clipboard!");
       }
-    );
 
-    if (response.status === 200) {
-      alert("Profile updated successfully!");
-    } else {
-      alert("Failed to update profile.");
-    }
-  } catch (error) {
-    console.error("Update error:", error);
-    alert("An error occurred while updating the profile.");
-  }
-};
-
-
-const pickImage = async () => {
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 1,
-    });
-    if (!result.canceled) {
-      setImage(result.assets[0].uri);  // Instant update
+      setTimeout(() => setCopied(false), 2000);
     }
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007bff" />
-        <Text style={styles.loadingText}>Loading profile...</Text>
-      </View>
-    );
-  }
-
-  if (!user) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>User profile not found.</Text>
-      </View>
-    );
-  }
-
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.profileCard}>
-        <View style={styles.imageContainer}>
-          <TouchableOpacity onPress={pickImage}>
-            <Image source={{ uri: image || user.image }} style={styles.profileImage} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={pickImage} style={styles.uploadIcon}>
-            <Ionicons name="camera" size={20} color="white" />
-          </TouchableOpacity>
+    <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
+        {/* Profile ID Section */}
+        {userId && (
+          <View style={styles.profileCard}>
+            <Text style={styles.profileTitle}>Profile ID</Text>
+            <View style={styles.profileRow}>
+              <Text style={styles.profileIdText}>{userId}</Text>
+              <TouchableOpacity onPress={copyToClipboard} style={styles.copyButton}>
+                <Ionicons name={copied ? "checkmark-circle" : "copy-outline"} size={22} color={copied ? "#4CAF50" : "#007AFF"} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* Menu Options */}
+        <View style={styles.menuContainer}>
+          <MenuItem icon="person" title="Edit Profile" onPress={() => router.push({ pathname: '/shop/EditProfile', prevRoute: pathname})} />
+          <MenuItem icon="lock-closed" title="Change Password" onPress={() => router.push({ pathname: 'ChangePassword', prevRoute: pathname})} />
+          <MenuItem icon="shield-checkmark" title="Account Verification" onPress={() => router.push("AccountVerification")} />
+          <MenuItem icon="trash" title="Delete Account" onPress={() => router.push("DeleteAccount")} color="#D32F2F" />
+          <MenuItem icon="log-out-outline" title="Logout" onPress={() => console.log("Logging out...")} color="#D32F2F" />
         </View>
-
-        <Text style={styles.profileId}>Profile ID: {user.user_id}</Text>
-
-        <Text style={styles.label}>First Name</Text>
-        <Text style={styles.input}>{user.firstname}</Text>
-
-        <Text style={styles.label}>Last Name</Text>
-        <Text style={styles.input}>{user.lastname}</Text>
-
-        <Text style={styles.label}>Email</Text>
-        <Text style={styles.input}>{user.email}</Text>
-
-        <Text style={styles.label}>Confirm Email (Code Verification Placeholder)</Text>
-        <TextInput style={styles.input} placeholder="Enter verification code" keyboardType="number-pad" />
-
-        <Text style={styles.label}>Phone Number</Text>
-        <TextInput 
-          style={styles.input} 
-          value={phoneNo} 
-          onChangeText={setPhoneNo} 
-          keyboardType="phone-pad" 
-        />
-
-        <Text style={styles.label}>Confirm Phone Number (Code Verification Placeholder)</Text>
-        <TextInput style={styles.input} placeholder="Enter verification code" keyboardType="number-pad" />
-
-        <Button title="Update Profile" onPress={handleUpdate} buttonStyle={styles.updateButton} />
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </LinearGradient>
   );
 };
+
+const MenuItem = ({ icon, title, onPress, color = "#333" }) => (
+  <TouchableOpacity style={styles.menuItem} onPress={onPress}>
+    <Ionicons name={icon} size={24} color={color} />
+    <Text style={[styles.menuText, { color }]}>{title}</Text>
+    <MaterialIcons name="navigate-next" size={24} color={color} />
+  </TouchableOpacity>
+);
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f9fafe",
-    padding: 20,
+  },
+  scrollContainer: {
+    paddingVertical: 40,
+    paddingHorizontal: 20,
   },
   profileCard: {
-    backgroundColor: "white",
-    padding: 20,
+    backgroundColor: "#fff",
     borderRadius: 15,
+    padding: 20,
+    marginBottom: 25,
+    alignItems: "center",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.1,
-    shadowRadius: 5,
+    shadowRadius: 6,
     elevation: 5,
-    alignItems: "center",
   },
-  imageContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    position: "relative",
-  },
-  profileImage: {
-    width: 130,
-    height: 130,
-    borderRadius: 65,
-    borderWidth: 4,
-    borderColor: "#007bff",
-  },
-  uploadIcon: {
-    position: "absolute",
-    bottom: 10,
-    right: 10,
-    backgroundColor: "#007bff",
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: "white",
-  },
-  profileId: {
-    fontSize: 20,
-    fontWeight: "bold",
-    textAlign: "center",
-    marginVertical: 10,
-    color: "#333",
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginTop: 15,
-    color: "#444",
-    alignSelf: "flex-start",
-  },
-  input: {
-    width: "100%",
-    backgroundColor: "#f1f3f6",
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 5,
-    borderWidth: 1,
-    borderColor: "#dcdfe6",
-  },
-  updateButton: {
-    backgroundColor: "#007bff",
-    marginTop: 20,
-    borderRadius: 8,
-    paddingVertical: 12,
-    width: "100%",
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  loadingText: {
+  profileTitle: {
     fontSize: 18,
-    marginTop: 10,
+    fontWeight: "bold",
     color: "#333",
+    marginBottom: 10,
+  },
+  profileRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F3F4F6",
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderRadius: 10,
+    width: "100%",
+    justifyContent: "space-between",
+  },
+  profileIdText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#333",
+  },
+  copyButton: {
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: "rgba(0, 122, 255, 0.1)",
+  },
+  menuContainer: {
+    backgroundColor: "#fff",
+    borderRadius: 15,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  menuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E0E0E0",
+  },
+  menuText: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: "500",
+    marginLeft: 15,
   },
 });
 

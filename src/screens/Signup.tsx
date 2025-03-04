@@ -29,8 +29,9 @@ export default function SignUp() {
     try {
       const response = await axios.post("https://172.27.243.94:8000/create-user/", formData);
       const responseData = response.data;
+      console.log(responseData.message, 'okay')
 
-      if (responseData.message === "account created successfully") {
+      if (responseData.message === "Account created successfully") {
         Alert.alert("Success", "User created successfully");
         navigation.navigate("login");
       } else {

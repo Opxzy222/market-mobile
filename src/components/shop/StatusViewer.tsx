@@ -47,7 +47,7 @@ const StatusViewer = ({ visible, statuses, onClose, userId }) => {
       ].statuses.findIndex((status) => !status.viewed);
       setCurrentIndex(firstUnviewedStatusIndex !== -1 ? firstUnviewedStatusIndex : 0);
     } else {
-      setCurrentShopIndex(-0);
+      setCurrentShopIndex(0);
       setCurrentIndex(-0);
     }
     setTimeout(() => {

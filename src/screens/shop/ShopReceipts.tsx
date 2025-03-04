@@ -6,6 +6,7 @@ import { useLocalSearchParams, useRouter, usePathname } from "expo-router";
 import { MaterialIcons } from '@expo/vector-icons';
 import axios from "axios";
 import ViewReceiptPDF from "../../components/shop/ViewReceipt";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const TABS = ["All", "Accepted", "Pending", "Rejected", "Voided"];
 
@@ -20,10 +21,21 @@ const ShopReceipts = () => {
   const [receipts, setReceipts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("All");
+  const [sessionId, setSessionId] = useState(null);
 
   const params = useLocalSearchParams();
   const { shopId } = params;
   const router = useRouter();
+
+  useEffect(() => {
+    const fetchSessionId = async () => {
+      const sessionIdString = await AsyncStorage.getItem("sessionToken");
+      setSessionId(sessionIdString);
+    };
+
+    fetchSessionId();
+  }, []);
+
 
   useEffect(() => {
     fetchReceipts();
@@ -31,7 +43,12 @@ const ShopReceipts = () => {
 
   const fetchReceipts = async () => {
     try {
-      const response = await axios.get(`https://172.27.243.94:8000/shop/${shopId}/receipts/`);
+      const response = await axios.get(`https://172.27.243.94:8000/shop/${shopId}/receipts/`, {
+        headers: {
+          Authorization: sessionId, // Send sessionId in headers
+        },
+      });
+
       setReceipts(response.data.receipts);
     } catch (error) {
       Alert.alert("Error", "Failed to fetch receipts.");
@@ -141,6 +158,15 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
+    padding: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
     marginBottom: 10,
   },
   backButton: {

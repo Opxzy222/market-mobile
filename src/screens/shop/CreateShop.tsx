@@ -28,7 +28,7 @@ export default function CreateShopScreen({ navigation }) {
   const [selectedSubcategories, setSelectedSubcategories] = useState([]);
   const [geoError, setGeoError] = useState("");
   const [formErrors, setFormErrors] = useState({});
-  const [userId, setUserId] = useState(null);
+  const [sessionId, setSessionId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [locations, setLocations] = useState([]); // Top-level locations
@@ -63,12 +63,13 @@ export default function CreateShopScreen({ navigation }) {
 
   // Fetch user ID
   useEffect(() => {
-    const fetchUserId = async () => {
-      const userIdString = await AsyncStorage.getItem("user_id");
-      setUserId(parseInt(userIdString, 10));
+    const fetchSessionId = async () => {
+      const sessionIdString = await AsyncStorage.getItem("sessionToken");
+      setSessionId(sessionIdString); // No need to parse as an integer
     };
 
-    fetchUserId();
+    fetchSessionId();
+    console.log(sessionId, 'heya')
   }, []);
 
   // Fetch top-level locations
@@ -229,29 +230,33 @@ export default function CreateShopScreen({ navigation }) {
 
   const handleSubmit = async () => {
     if (!handleValidation() || isSubmitting) return;
-  
+
     setIsSubmitting(true);
     try {
-      const formData = new FormData();
-      formData.append("shop_name", name);
-      formData.append("description", description);
-      formData.append("geo_location", `POINT(${geoLocation.lng} ${geoLocation.lat})`);
-      formData.append("address", address);
-      formData.append("shop_owner", userId);
-      formData.append("lga", selectedChildLocation);
-      formData.append("location", selectedGrandChildLocation);
-  
-      selectedSubcategories.forEach((sub) =>
-        formData.append("subcategories[]", sub.value)
-      );
-  
-      const response = await axios.post(
-        "https://172.27.243.94:8000/create-shop/",
-        formData,
-        { headers: { "Content-Type": "multipart/form-data" } }
-      );
-  
-      const shopId = response.data.shop_id;
+        const formData = new FormData();
+        formData.append("shop_name", name);
+        formData.append("description", description);
+        formData.append("geo_location", `POINT(${geoLocation.lng} ${geoLocation.lat})`);
+        formData.append("address", address);
+        formData.append("lga", selectedChildLocation);
+        formData.append("location", selectedGrandChildLocation);
+
+        selectedSubcategories.forEach((sub) =>
+            formData.append("subcategories[]", sub.value)
+        );
+
+        const response = await axios.post(
+            "https://172.27.243.94:8000/create-shop/",
+            formData,
+            { 
+                headers: { 
+                    "Content-Type": "multipart/form-data",
+                    Authorization: sessionId,  // Added sessionId to headers
+                } 
+            }
+        );
+
+        const shopId = response.data.shop_id;
   
       Alert.alert("Success", "Your shop has been created!");
       
@@ -422,9 +427,18 @@ export default function CreateShopScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: { flexGrow: 1, padding: 20, backgroundColor: "#f9f9f9" },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    marginBottom: 10,
   },
   backButton: {
     marginRight: 10,

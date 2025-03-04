@@ -1,42 +1,95 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useContext, useMemo  } from "react";
 import { 
-  View, Text, TextInput, ActivityIndicator, FlatList, Alert, TouchableOpacity, StyleSheet, Platform
+  View, Text, TextInput, ActivityIndicator, FlatList, Alert, TouchableOpacity, StyleSheet, Platform 
 } from "react-native";
 import axios from "axios";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import SubscriptionProvider, { SubscriptionContext } from '../../components/SubscriptionProvider';
+import SubscriptionRequired from "@/components/RequiredSubscription";
 
 const GenerateReceipt = () => {
   const [customerId, setCustomerId] = useState("");
   const [customerName, setCustomerName] = useState("");
-  const [loading, setLoading] = useState(false);
   const [items, setItems] = useState([]);
   const [newItem, setNewItem] = useState({ name: "", qty: "", price: "" });
   const [totalAmount, setTotalAmount] = useState("0");
   const [receiptUrl, setReceiptUrl] = useState(null);
-
+  const [filteredProducts, setFilteredProducts] = useState([]);
+  const [shopProducts, setShopProducts] = useState([]);
+  const [NameLoading, setNameLoading] = useState(false);
+  
   const params = useLocalSearchParams();
   const { shopId } = params;
+  const router = useRouter();
+  const { subscriptionStatus, loading } = useContext(SubscriptionContext);
+
+  const isSubscribed = useMemo(() => {
+    return subscriptionStatus === "standard" || subscriptionStatus === "premium";
+  }, [subscriptionStatus]);
 
   useEffect(() => {
-    if (customerId.length === 7) {
+    if (customerId.length === 8) {
       fetchCustomerName(customerId);
     }
   }, [customerId]);
 
+  // ✅ Ensure all hooks run before any return
+  useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        const response = await axios.get(`https://172.27.243.94:8000/shop/${shopId}/products/`);
+        setShopProducts(response.data.shop_products);
+      } catch (error) {
+        console.error("Error fetching shop products:", error);
+      }
+    };
+    fetchProducts();
+  }, [shopId]);
+
+  // 🚀 Only return after hooks
+  if (loading) {
+    return <ActivityIndicator size="large" color="#007BFF" />;
+  }
+
+  if (!isSubscribed) {
+    return <SubscriptionRequired />;
+  }
+  // Filter product names as user types
+  const handleSearch = (text) => {
+    setNewItem({ ...newItem, name: text });
+
+    if (text.length > 0) {
+      const filtered = shopProducts.filter((product) =>
+        product.toLowerCase().startsWith(text.toLowerCase())
+      );
+      setFilteredProducts(filtered);
+      console.log(filteredProducts, 'omo')
+    } else {
+      setFilteredProducts([]);
+    }
+  };
+
+  // Set selected product name in input
+  const selectProduct = (product) => {
+    setNewItem({ ...newItem, name: product }); // Set item name
+    setFilteredProducts([]); // Hide suggestions
+  };
+
   const fetchCustomerName = async (customerId) => {
-    setLoading(true);
+    setNameLoading(true);
     try {
       const response = await axios.get("https://172.27.243.94:8000/customer-fullname/", {
         params: { customer_id: customerId },
       });
       setCustomerName(response.data.full_name);
+      console.log('yes oo', customerName)
     } catch (error) {
       Alert.alert("Error", "Customer not found.");
       setCustomerName("");
     }
-    setLoading(false);
+    setNameLoading(false);
   };
 
   const addItem = () => {
@@ -138,17 +191,17 @@ const GenerateReceipt = () => {
           placeholder="Customer Profile ID"
           value={customerId}
           keyboardType="numeric"
-          maxLength={7}
+          maxLength={8}
           onChangeText={setCustomerId}
         />
-        {loading && <ActivityIndicator size="small" color="#007BFF" />}
+        {NameLoading && <ActivityIndicator size="small" color="#007BFF" />}
       </View>
 
-      <TextInput 
-        style={styles.disabledInput} 
-        placeholder="Customer Name" 
-        value={customerName} 
-        editable={false} 
+      <TextInput
+        style={styles.disabledInput}
+        placeholder="Customer Name"
+        value={customerName}
+        editable={false}
       />
 
       {/* Item Input Fields */}
@@ -157,7 +210,10 @@ const GenerateReceipt = () => {
           style={styles.itemInput}
           placeholder="Item Name"
           value={newItem.name}
-          onChangeText={(text) => setNewItem({ ...newItem, name: text })}
+          onChangeText={(text) => {
+            setNewItem({ ...newItem, name: text });
+            handleSearch(text);
+          }}
         />
         <TextInput
           style={[styles.itemInput, styles.qtyInput]}
@@ -175,19 +231,28 @@ const GenerateReceipt = () => {
         />
       </View>
 
+      {/* Product Suggestions */}
+      {filteredProducts.length > 0 && (
+        <FlatList
+          data={filteredProducts}
+          style={styles.suggestionsList}
+          keyExtractor={(item, index) => index.toString()}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={[styles.suggestion, { borderWidth: 0.5, borderColor: "gray", backgroundColor: "white" }]}
+              onPress={() => selectProduct(item)}
+            >
+              <Text style={[styles.suggestionText, { color: "black" }]}>{item}</Text>
+            </TouchableOpacity>
+          )}
+        />
+      )}
+
       <TouchableOpacity style={styles.button} onPress={addItem}>
         <Text style={styles.buttonText}>Add Item</Text>
       </TouchableOpacity>
 
-      {/* Table Header */}
-      <View style={styles.tableHeader}>
-        <Text style={styles.tableHeaderText}>Item</Text>
-        <Text style={styles.tableHeaderText}>Qty</Text>
-        <Text style={styles.tableHeaderText}>Unit Price</Text>
-        <Text style={styles.tableHeaderText}>Total</Text>
-      </View>
-
-      {/* Items List */}
+      {/* Added Items */}
       <FlatList
         data={items}
         keyExtractor={(item, index) => index.toString()}
@@ -205,17 +270,18 @@ const GenerateReceipt = () => {
         <Text style={styles.totalText}>Total: ₦{totalAmount}</Text>
       </View>
 
-      {/* Generate Receipt Button */}
-            <TouchableOpacity onPress={generateReceipt} style={styles.primaryButton}>
-              <Text style={styles.primaryButtonText}>Generate Receipt</Text>
-            </TouchableOpacity>
-      
-            {/* Show Receipt Link */}
-            {receiptUrl && (
-              <TouchableOpacity onPress={() => Alert.alert("Download", "Opening Receipt...")} style={styles.button}>
-                <Text style={{ color: "white" }}>Download Receipt</Text>
-              </TouchableOpacity>
-            )}
+      <TouchableOpacity onPress={generateReceipt} style={styles.primaryButton}>
+        <Text style={styles.primaryButtonText}>Generate Receipt</Text>
+      </TouchableOpacity>
+
+      {receiptUrl && (
+        <TouchableOpacity
+          onPress={() => Alert.alert("Download", "Opening Receipt...")}
+          style={styles.button}
+        >
+          <Text style={{ color: "white" }}>Download Receipt</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 };
@@ -361,7 +427,36 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "bold",
   },
+  suggestionContainer: {
+    position: "absolute",
+    top: 100, // Adjust based on your layout
+    left: 20,
+    right: 20,
+    backgroundColor: "#fff",
+    borderRadius: 8,
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    zIndex: 1000,
+    borderWidth: 1,
+    borderColor: "red",
+  },
+  suggestion: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#ddd",
+  },
+  suggestionText: {
+    fontSize: 16,
+    color: "black",
+  },
 });
 
 
-export default GenerateReceipt;
+export default (props) => (
+  <SubscriptionProvider>
+    <GenerateReceipt {...props} />
+  </SubscriptionProvider>
+);

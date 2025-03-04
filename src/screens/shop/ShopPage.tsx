@@ -33,72 +33,101 @@ const ShopPage = () => {
   const [posts, setPosts] = useState([]);
   const [activeTab, setActiveTab] = useState('posts');
   const [error, setError] = useState('');
-  const [userId, setUserId] = useState(null);
+  const [sessionId, setSessionId] = useState(null);
+  const [plan, setPlan] = useState('');
 
 
   useEffect(() => {
     const fetchUserId = async () => {
-      const userIdString = await AsyncStorage.getItem('user_id');
-      console.log('User ID fetched:', userIdString);
-      setUserId(parseInt(userIdString, 10));
+      const sessionIdString = await AsyncStorage.getItem("sessionToken");
+      setSessionId(sessionIdString); // No need to parse as an integer
     };
+
     fetchUserId();
-    console.log('ooo', userId)
+    console.log(sessionId, 'heya')
   }, []);
   
   useEffect(() => {
-    const fetchShopData = async () => {
-      try {
-        const response = await axios.get(`https://172.27.243.94:8000/shops/${shopId}/combined/`);
-        const data = response.data;
+  const fetchSessionId = async () => {
+    try {
+      const sessionIdString = await AsyncStorage.getItem("sessionToken");
+      setSessionId(sessionIdString);
+    } catch (error) {
+      console.error("Error fetching session token:", error);
+    }
+  };
 
-        setShop({
-          name: data.shop.name,
-          description: data.shop.description,
-          image: data.shop.image,
-          categories: data.shop.categories,
-          products: data.shop.products,
-          address: data.shop.address,
-          shop_id: data.shop.shop_id,
-          latitude: data.shop.geo_location?.latitude,  // Ensure it exists
-          longitude: data.shop.geo_location?.longitude
-        });
-        setReviews(data.reviews);
-        setFollowerCount(data.follower_count);
-        setFollowers(data.followers || []);
-        setPosts(data.posts);
-        console.log(data.posts)
-        
-        setError('');
-      } catch (error) {
-        console.error('Error fetching shop data:', error);
-        setError('Failed to fetch shop data. Please try again later.');
-      }
-    };
+  fetchSessionId();
+}, []);
 
-    if (shopId) {
-      fetchShopData();
+useEffect(() => {
+  const fetchShopData = async () => {
+    if (!sessionId || !shopId) return; // Ensure sessionId & shopId exist before fetching
+
+    try {
+      const response = await axios.get(
+        `https://172.27.243.94:8000/shops/${shopId}/combined/`,
+        {
+          headers: {
+            Authorization: sessionId, // Sending sessionId in headers
+          },
+        }
+      );
+      const data = response.data;
+
+      setShop({
+        name: data.shop.name,
+        description: data.shop.description,
+        image: data.shop.image,
+        categories: data.shop.categories,
+        products: data.shop.products,
+        address: data.shop.address,
+        shop_id: data.shop.shop_id,
+        latitude: data.shop.geo_location?.latitude,
+        longitude: data.shop.geo_location?.longitude,
+      });
+      setReviews(data.reviews);
+      setFollowerCount(data.follower_count);
+      setFollowers(data.followers || []);
+      setPosts(data.posts);
+      setPlan(data.plan);
+      console.log("yola", data.plan);
+
+      setError(""); // Clear error on success
+    } catch (error) {
+      console.error("Error fetching shop data:", error);
+      setError("Failed to fetch shop data. Please try again later.");
+    }
+  };
+
+  fetchShopData();
+}, [sessionId, shopId]); // ✅ Runs when sessionId or shopId changes
+
+useEffect(() => {
+  const markShopAsVisited = async () => {
+    if (!sessionId || !shopId) {
+      console.log("Skipping markShopAsVisited - sessionId or shopId not set");
+      return; // Exit if either sessionId or shopId is missing
     }
 
-    const markShopAsVisited = async () => {
-      if (!userId || !shopId) {
-        console.log('Skipping markShopAsVisited - userId or shopId not set');
-        return; // Exit if either userId or shopId is missing
-      }
-  
-      try {
-        console.log('Marking shop as visited:', shopId, userId);
-        await axios.post('https://172.27.243.94:8000/shops/recently-visited/', {
-          shop_id: shopId,
-          user_id: userId,
-        });
-      } catch (error) {
-        console.error('Error marking shop as visited:', error);
-      }
-    };
-  
-    markShopAsVisited(); // Call when either shopId or userId changes
-  }, [userId, shopId]);
+    try {
+      console.log("Marking shop as visited:", shopId, sessionId);
+      await axios.post(
+        "https://172.27.243.94:8000/shops/recently-visited/",
+        { shop_id: shopId },
+        {
+          headers: {
+            Authorization: sessionId, // Sending sessionId in headers
+          },
+        }
+      );
+    } catch (error) {
+      console.error("Error marking shop as visited:", error);
+    }
+  };
+
+  markShopAsVisited(); // ✅ Call function correctly
+}, [sessionId, shopId]); // ✅ Separate useEffect for marking shop as visited
 
   const handleTabChange = (tab) => setActiveTab(tab);
   const handleReviewSubmitted = (newReview) => {
@@ -109,7 +138,7 @@ const ShopPage = () => {
     return <Text style={styles.errorText}>{error}</Text>;
   }
 
-  if (!shop || userId === null) {
+  if (!shop || sessionId === null) {
     return <ActivityIndicator size="large" color="#f39c12" />;
   }
 
@@ -204,8 +233,14 @@ const ShopPage = () => {
 
         {/* Tab Content */}
         <View style={styles.tabContent}>
-          {activeTab === 'posts' && <ShopPosts posts={posts} />}
-          {activeTab === 'products' && <ShopProduct products={shop.products} />}
+          {activeTab === 'posts' && (
+            plan === null || plan === "" ? (
+            <Text style={styles.noPostsText}>No posts available</Text>
+            ) : (
+            <ShopPosts posts={posts} />
+          )
+        )}
+          {activeTab === 'products' && <ShopProduct key={shopId} products={shop.products} />}
           {activeTab === 'followers' && <Followers followers={followers} />}
           {activeTab === 'reviews' && 
             <View>
@@ -228,7 +263,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 16,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    marginBottom: 10,
   },
   backContainer: {
     

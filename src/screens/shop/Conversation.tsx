@@ -35,50 +35,62 @@ const Conversation = () => {
   const params = useLocalSearchParams();
   const { name, conversation_id, shop_id, prevRoute } = params;
   const router = useRouter();
-  const [userId, setUserId] = useState(null);
+  const [sessionId, setSessionId] = useState(null);
 
   useEffect(() => {
-    const fetchUserId = async () => {
-      try {
-        const userIdString = await AsyncStorage.getItem('user_id');
-        if (userIdString) setUserId(parseInt(userIdString, 10));
-      } catch (error) {
-        console.error('Error fetching user ID:', error);
-      }
+    const fetchSessionId = async () => {
+      const sessionIdString = await AsyncStorage.getItem("sessionToken");
+      setSessionId(sessionIdString); // No need to parse as an integer
     };
-    fetchUserId();
+
+    fetchSessionId();
+    console.log(sessionId, 'heya')
   }, []);
 
   useEffect(() => {
-    const fetchMessages = async () => {
-      if (!conversation_id || !userId) return;
+  const fetchMessages = async () => {
+    if (!conversation_id || !sessionId) return;
 
-      try {
-        const response = await axios.get(
-          `https://172.27.243.94:8000/conversation/?conversation_id=${conversation_id}`
-        );
+    try {
+      // Fetch messages with sessionId in headers
+      const response = await axios.get(
+        `https://172.27.243.94:8000/conversation/?conversation_id=${conversation_id}`,
+        {
+          headers: {
+            Authorization: sessionId, // Sending sessionId in headers
+          },
+        }
+      );
 
-        const uniqueMessages = response.data.filter(msg => !receivedMessagesRef.current.has(msg.id));
-        uniqueMessages.forEach(msg => receivedMessagesRef.current.add(msg.id));
-        setMessages(uniqueMessages);
+      const uniqueMessages = response.data.filter(
+        (msg) => !receivedMessagesRef.current.has(msg.id)
+      );
+      uniqueMessages.forEach((msg) => receivedMessagesRef.current.add(msg.id));
+      setMessages(uniqueMessages);
 
-        await axios.post(
-          'https://172.27.243.94:8000/mark-messages-read/',
-          { conversation_id, user_id: userId },
-          { headers: { 'Content-Type': 'application/json' } }
-        );
-      } catch (error) {
-        console.error('Error fetching messages:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
+      // Mark messages as read with sessionId in headers
+      await axios.post(
+        "https://172.27.243.94:8000/mark-messages-read/",
+        { conversation_id},
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: sessionId, // Sending sessionId in headers
+          },
+        }
+      );
+    } catch (error) {
+      console.error("Error fetching messages:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    fetchMessages();
-  }, [conversation_id, userId]);
+  fetchMessages();
+}, [conversation_id, sessionId]);
 
   useEffect(() => {
-    if (!conversation_id || !userId) return;
+    if (!conversation_id || !sessionId) return;
 
     const connectWebSocket = () => {
       const websocketUrl = `ws://172.27.243.94:8001/ws/chat/${conversation_id}/`;
@@ -114,7 +126,7 @@ const Conversation = () => {
     return () => {
       websocketRef.current?.close();
     };
-  }, [conversation_id, userId]);
+  }, [conversation_id, sessionId]);
 
   const toggleMenu = () => {
     setMenuVisible(!menuVisible);
@@ -127,7 +139,7 @@ const Conversation = () => {
       websocketRef.current.send(
         JSON.stringify({
           content: inputMessage,
-          sender_id: userId,
+          sender_id: sessionId,
           conversation_id: conversation_id,
           timestamp: new Date().toISOString(),
         })
@@ -145,7 +157,7 @@ const Conversation = () => {
   }
 
   const formData = new FormData();
-  formData.append("sender_id", userId);
+  formData.append("sender_id", sessionId);
   formData.append("shop_id", shop_id);
   formData.append("conversation_id", conversation_id);
 
@@ -184,7 +196,7 @@ const Conversation = () => {
     // ✅ Send file URL via WebSocket but don't update state yet
     websocketRef.current.send(
       JSON.stringify({
-        sender_id: userId,
+        sender_id: sessionId,
         conversation_id: conversation_id,
         type,
         timestamp: new Date().toISOString(),
@@ -238,7 +250,7 @@ const Conversation = () => {
         const isVideo = item.attachment && (item.type?.includes("video") || item.attachment.match(/\.(mp4|mov|avi|mkv)$/i));
 
         return (
-          <View style={[styles.message, item.sender_id === userId ? styles.userMessage : styles.shopMessage]}>
+          <View style={[styles.message, item.sender_id === sessionId ? styles.userMessage : styles.shopMessage]}>
             {item.attachment ? (
               isImage ? (
                 <>
@@ -318,11 +330,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ddd',
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    marginBottom: 10,
   },
   backButton: {
     marginRight: 16,

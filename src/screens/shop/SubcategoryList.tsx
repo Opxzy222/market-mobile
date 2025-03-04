@@ -104,8 +104,8 @@ const SubCategoryList = () => {
         <TouchableOpacity onPress={() => router.replace(prevRoute || '((tabs)/shop)')} style={styles.backButton}>
           <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
         </TouchableOpacity>
+        <Text style={styles.heading}>{categoryName}</Text>
       </View>
-      <Text style={styles.heading}>{categoryName}</Text>
       <FlatList
         data={subcategories}
         keyExtractor={(item) => item.id.toString()}
@@ -136,19 +136,27 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB',
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    marginBottom: 10,
   },
   backButton: {
     marginRight: 10,
   },
   heading: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    color: '#1F2937',
-    textAlign: 'center',
+    fontSize: 22,
+    fontWeight: "bold",
+    marginLeft: 60,
+    color: "#6B4226",
   },
   subcategoryItem: {
     backgroundColor: '#FFFFFF',

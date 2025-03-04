@@ -7,6 +7,7 @@ import StatusViewer from "../../components/shop/StatusViewer";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import StatusRing from "../../components/shop/StatusRing";
 import { useFocusEffect } from "@react-navigation/native";
+import { LinearGradient } from "expo-linear-gradient";
 
 const FollowedShopStatusScreen = () => {
   const [statuses, setStatuses] = useState([]);
@@ -69,13 +70,17 @@ const FollowedShopStatusScreen = () => {
   };
 
   const renderStatusItem = ({ item, index, isViewed }) => (
-    <TouchableOpacity onPress={() => handleOpenViewer(index)} style={styles.statusItem}>
+    <TouchableOpacity
+      onPress={() => handleOpenViewer(index)}
+      style={styles.statusItem}
+      activeOpacity={0.8}
+    >
       <StatusRing 
         imageUri={item.statuses[0].image} 
         totalStatuses={item.statuses.length} 
         viewedStatuses={isViewed ? item.statuses.length : item.statuses.filter(s => s.viewed).length} 
       />
-      <View>
+      <View style={styles.textContainer}>
         <Text style={styles.name}>{item.shop}</Text>
         <Text style={styles.time}>{item.statuses[0].created_at}</Text>
       </View>
@@ -83,54 +88,120 @@ const FollowedShopStatusScreen = () => {
   );
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.header}>Followed Shop Status</Text>
+  <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
+    <Text style={styles.header}>Followed Shop Status</Text>
+    
+    {loading ? (
+      <ActivityIndicator size="large" color="#25D366" />
+    ) : (
+      <>
+        {statuses.length > 0 && (
+          <>
+            <Text style={styles.subHeader}>Recent Updates</Text>
+            <FlatList 
+              data={statuses} 
+              renderItem={({ item, index }) => renderStatusItem({ item, index, isViewed: false })}
+              keyExtractor={(item) => item.statuses[0].id.toString()} 
+              contentContainerStyle={styles.listContainer}
+            />
+          </>
+        )}
 
-      {loading ? (
-        <ActivityIndicator size="large" color="#25D366" />
-      ) : (
-        <>
-          <Text style={styles.subHeader}>Recent Updates</Text>
-          <FlatList 
-            data={statuses} 
-            renderItem={({ item, index }) => renderStatusItem({ item, index, isViewed: false })}
-            keyExtractor={(item) => item.statuses[0].id.toString()} 
-            contentContainerStyle={{ paddingBottom: 10 }}
-          />
+        {viewedStatuses.length > 0 && (
+          <>
+            <View style={styles.spacer} />
+            <Text style={styles.subHeader}>Viewed Updates</Text>
+            <FlatList 
+              data={viewedStatuses} 
+              renderItem={({ item, index }) => renderStatusItem({ item, index, isViewed: true })}
+              keyExtractor={(item) => item.statuses[0].id.toString()} 
+              contentContainerStyle={styles.listContainer}
+            />
+          </>
+        )}
 
-          <View style={styles.spacer} />
+        {statuses.length === 0 && viewedStatuses.length === 0 && (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No status updates available.</Text>
+          </View>
+        )}
+      </>
+    )}
 
-          <Text style={styles.subHeader}>Viewed Updates</Text>
-          <FlatList 
-            data={viewedStatuses} 
-            renderItem={({ item, index }) => renderStatusItem({ item, index, isViewed: true })}
-            keyExtractor={(item) => item.statuses[0].id.toString()} 
-            contentContainerStyle={{ paddingBottom: 10 }}
-          />
-        </>
-      )}
-
-      {currentStatusIndex !== null && (
-        <StatusViewer 
-          statuses={[...statuses, ...viewedStatuses]} 
-          initialIndex={currentStatusIndex} 
-          onClose={handleCloseViewer} 
-          visible={currentStatusIndex !== null}
-          userId={userId} // Pass userId to StatusViewer
-        />
-      )}
-    </View>
+    {currentStatusIndex !== null && (
+      <StatusViewer 
+        statuses={[...statuses, ...viewedStatuses]} 
+        initialIndex={currentStatusIndex} 
+        onClose={handleCloseViewer} 
+        visible={currentStatusIndex !== null}
+        userId={userId}
+      />
+    )}
+  </LinearGradient>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff", padding: 15 },
-  header: { fontSize: 22, fontWeight: "bold", marginBottom: 10 },
-  subHeader: { fontSize: 18, fontWeight: "600", marginVertical: 10 },
-  spacer: { height: 20 },
-  statusItem: { flexDirection: "row", alignItems: "center", marginBottom: 15 },
-  name: { fontSize: 16, fontWeight: "bold" },
-  time: { fontSize: 14, color: "gray" },
+  container: {
+    flex: 1,
+    backgroundColor: "#f8f9fa",
+    padding: 20,
+  },
+  header: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#333",
+    marginBottom: 15,
+  },
+  subHeader: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#007bff",
+    marginVertical: 12,
+  },
+  listContainer: {
+    paddingBottom: 16,
+  },
+  spacer: {
+    height: 20,
+  },
+  statusItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    padding: 12,
+    marginVertical: 8,
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  textContainer: {
+    marginLeft: 15,
+  },
+  name: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#333",
+  },
+  time: {
+    fontSize: 14,
+    color: "#6c757d",
+    marginTop: 4,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: "#6c757d",
+    fontStyle: "italic",
+  },
 });
 
 export default FollowedShopStatusScreen;

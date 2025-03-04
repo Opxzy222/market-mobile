@@ -21,9 +21,10 @@ async function login(email: string, password: string) {
 
   const response = await axios.post("https://172.27.243.94:8000/login/", formData);
   if (response.data.message === "login successful") {
-    const { user_id, session_id, user_name } = response.data;
+    const { user_id, session_id, user_name, userId } = response.data;
     await AsyncStorage.setItem("sessionToken", session_id);
     await AsyncStorage.setItem("user_id", user_id.toString());
+    await AsyncStorage.setItem("userId", userId);
     await AsyncStorage.setItem("user_name", user_name);
     return { id: user_id, name: user_name };
   }

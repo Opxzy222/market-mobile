@@ -7,6 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
+  Image,
 } from "react-native";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -18,29 +19,29 @@ const MessageList = () => {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [userId, setUserId] = useState(null);
+  const [sessionId, setSessionId] = useState(null);
   const router = useRouter();
-  const pathname = usePathname()
+  const pathname = usePathname();
 
-  const fetchUserId = async () => {
+  const fetchSessionId = async () => {
     try {
-      const userIdString = await AsyncStorage.getItem("user_id");
-      if (userIdString) {
-        setUserId(parseInt(userIdString, 10));
-      }
+      const sessionIdString = await AsyncStorage.getItem("sessionToken");
+      setSessionId(sessionIdString);
     } catch (error) {
       console.error("Error fetching user ID:", error);
     }
   };
 
   const fetchMessages = async () => {
-    if (!userId) return;
+    if (!sessionId) return;
 
     setLoading(true);
     try {
-      const response = await axios.get(
-        `https://172.27.243.94:8000/message-list/?user_id=${userId}`
-      );
+      const response = await axios.get("https://172.27.243.94:8000/message-list/", {
+        headers: {
+          Authorization: sessionId,
+        },
+      });
       setMessages(response.data);
     } catch (error) {
       console.error("Error fetching messages:", error);
@@ -51,8 +52,15 @@ const MessageList = () => {
 
   useFocusEffect(
     useCallback(() => {
-      fetchUserId().then(fetchMessages);
-    }, [userId])
+      const getSessionAndFetchMessages = async () => {
+        await fetchSessionId();
+        if (sessionId) {
+          fetchMessages();
+        }
+      };
+
+      getSessionAndFetchMessages();
+    }, [sessionId])
   );
 
   const handleRefresh = async () => {
@@ -74,9 +82,9 @@ const MessageList = () => {
   };
 
   return (
-    <View style={styles.container}>
+    <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
       <LinearGradient
-        colors={["#4c669f", "#3b5998", "#192f6a"]}
+        colors={["#3A7BD5", "#3A6073"]}
         style={styles.headerContainer}
       >
         <Text style={styles.header}>Messages</Text>
@@ -94,21 +102,25 @@ const MessageList = () => {
             <TouchableOpacity
               style={styles.messageItem}
               onPress={() => handleMessageClick(item)}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
             >
-              <View style={styles.messageHeader}>
-                <Text style={styles.name}>{item.name}</Text>
-                <Text style={styles.date}>
-                  {new Date(item.date).toLocaleDateString()}
+              <Image
+                source={{
+                  uri: item.profile_image || "https://your-default-image-url.com/default-profile.png",
+                }}
+                style={styles.profileImage}
+                onError={(e) => console.log("Image Load Error:", e.nativeEvent.error)}
+              />
+
+              <View style={styles.textContainer}>
+                <View style={styles.messageHeader}>
+                  <Text style={styles.name}>{item.name}</Text>
+                  <Text style={styles.date}>{new Date(item.date).toLocaleDateString()}</Text>
+                </View>
+                <Text style={styles.lastMessage} numberOfLines={1} ellipsizeMode="tail">
+                  {item.last_message}
                 </Text>
               </View>
-              <Text
-                style={styles.lastMessage}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                {item.last_message}
-              </Text>
             </TouchableOpacity>
           )}
           refreshControl={
@@ -116,26 +128,31 @@ const MessageList = () => {
           }
         />
       )}
-    </View>
+    </LinearGradient>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f0f4f7",
+    backgroundColor: "#F7FAFC",
   },
   headerContainer: {
-    padding: 20,
-    paddingTop: 50,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    marginBottom: 16,
+    paddingVertical: 45,
+    borderBottomLeftRadius: 35,
+    borderBottomRightRadius: 35,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 6,
   },
   header: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: "bold",
-    color: "#fff",
+    color: "#FFFFFF",
     textAlign: "center",
   },
   loader: {
@@ -143,39 +160,60 @@ const styles = StyleSheet.create({
   },
   noMessages: {
     fontSize: 16,
-    color: "#666",
+    color: "#888",
     textAlign: "center",
     marginTop: 20,
   },
   messageItem: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
-    padding: 16,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20, 
+    padding: 16, 
     marginHorizontal: 16,
-    marginBottom: 12,
+    marginVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10, 
+    elevation: 5,
+  },
+  profileImage: {
+    width: 58, 
+    height: 58,
+    borderRadius: 30,
+    marginRight: 14,
+    borderWidth: 3, 
+    borderColor: "#3A7BD5",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 6,
-    elevation: 4,
+    elevation: 3,
+  },
+  textContainer: {
+    flex: 1,
   },
   messageHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 8,
+    marginBottom: 4,
+    alignItems: "center",
   },
   name: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "black",
+    fontSize: 18, 
+    fontWeight: "bold",
+    color: "#2C3E50",
   },
   date: {
-    fontSize: 12,
-    color: "#999",
+    fontSize: 13, 
+    color: "#7B8D93",
+    fontWeight: "600",
   },
   lastMessage: {
-    fontSize: 14,
-    color: "#555",
+    fontSize: 15, 
+    color: "#444",
+    opacity: 0.9,
   },
 });
 

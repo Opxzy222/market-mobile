@@ -1,40 +1,51 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
 import axios from 'axios';
 import { useRouter, usePathname } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import { LinearGradient } from "expo-linear-gradient";
 
 const MyShop = () => {
   const [shops, setShops] = useState([]);
-  const [userId, setUserId] = useState(null);
+  const [sessionId, setSessionId] = useState(null);
   const router = useRouter();
   const pathname = usePathname();
 
-  useEffect(() => {
-    const fetchUserId = async () => {
-      const userIdString = await AsyncStorage.getItem('user_id');
-      setUserId(parseInt(userIdString, 10));
-    };
-    fetchUserId();
+  // Function to fetch session ID
+  const fetchSessionId = useCallback(async () => {
+    const sessionIdString = await AsyncStorage.getItem("sessionToken");
+    setSessionId(sessionIdString);
   }, []);
 
-  useEffect(() => {
-    if (userId) {
-      const fetchShops = async () => {
-        try {
-          const formData = new FormData();
-          formData.append('user_id', userId);
+  // Function to fetch shop data
+  const fetchShops = useCallback(async () => {
+    if (!sessionId) return;
 
-          const response = await axios.post('https://172.27.243.94:8000/shops-product-count/', formData);
-          setShops(response.data);
-        } catch (error) {
-          console.error('Error fetching shops', error);
+    try {
+      const response = await axios.post(
+        'https://172.27.243.94:8000/shops-product-count/',
+        {},
+        {
+          headers: {
+            Authorization: sessionId,
+            "Content-Type": "application/json",
+          },
         }
-      };
-      fetchShops();
+      );
+      setShops(response.data);
+    } catch (error) {
+      console.error('Error fetching shops', error);
     }
-  }, [userId]);
+  }, [sessionId]);
+
+  // Reload data when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      fetchSessionId().then(fetchShops);
+    }, [fetchSessionId, fetchShops])
+  );
 
   const handleCloseShop = async (shopId) => {
     Alert.alert('Confirm', 'Are you sure you want to close this shop?', [
@@ -63,68 +74,67 @@ const MyShop = () => {
   };
 
   return (
-    <View style={styles.container}>
+  <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
+    {shops.length === 0 && (
       <TouchableOpacity style={styles.createShopButton} onPress={handleCreateShop}>
         <MaterialIcons name="add-circle" size={24} color="#fff" />
         <Text style={styles.createShopText}>Create Shop</Text>
       </TouchableOpacity>
+    )}
 
-      {shops.length === 0 ? (
-        <View style={styles.noShopContainer}>
-          <Text style={styles.noShopText}>No shop found. loading...</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={shops}
-          keyExtractor={(item) => item.id.toString()}
-          renderItem={({ item }) => (
-            <View style={styles.shopCard}>
-              <Text style={styles.shopName}>{item.name}</Text>
-              <Text style={styles.shopDetails}>Products Available: {item.product_count}</Text>
-              <View style={styles.actionsContainer}>
-                <View style={styles.actions}>
-                  <TouchableOpacity onPress={() => router.push({ pathname: '/shop/AdminShopPage', params: { shopId: item.id, prevRoute: pathname } })}>
-                    <MaterialIcons name="store" size={28} color="#007bff" />
-                    <Text style={styles.actionText}>Shop Page</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => router.push({ pathname: 'shop/ShopProduct', params: { shopId: item.id, prevRoute: pathname } })}>
-                    <MaterialIcons name="shopping-cart" size={28} color="#ffa500" />
-                    <Text style={styles.actionText}>Products</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => router.push({ pathname: '/shop/ShopStatus', params: { shopId: item.id, prevRoute: pathname } })}>
-                    <MaterialIcons name="update" size={28} color="#9c27b0" />
-                    <Text style={styles.actionText}>Status Updates</Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.actions}>
-                  <TouchableOpacity onPress={() => router.push({ pathname: '/shop/ReceiptActions', params: { shopId: item.id, prevRoute: pathname } })}>
-                    <MaterialIcons name="receipt" size={28} color="#795548" />
-                    <Text style={styles.actionText}>Receipt</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => router.push({ pathname: '/shop/ShopProfile', params: { shopId: item.id, prevRoute: pathname } })}>
-                    <MaterialIcons name="info" size={28} color="#4caf50" />
-                    <Text style={styles.actionText}>Pofile Details</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => handleCloseShop(item.id)}>
-                    <MaterialIcons name="close" size={28} color="#f44336" />
-                    <Text style={styles.actionText}>Quit Shop</Text>
-                  </TouchableOpacity>
-                </View>
+    {shops.length === 0 ? (
+      <View style={styles.noShopContainer}>
+        <Text style={styles.noShopText}>No shop found. Loading...</Text>
+      </View>
+    ) : (
+      <FlatList
+        data={shops}
+        keyExtractor={(item) => item.id.toString()}
+        renderItem={({ item }) => (
+          <View style={styles.shopCard}>
+            <Text style={styles.shopName}>{item.name}</Text>
+            <Text style={styles.shopDetails}>Products Available: {item.product_count}</Text>
+            <View style={styles.actionsContainer}>
+              <View style={styles.actions}>
+                <TouchableOpacity onPress={() => router.push({ pathname: '/shop/AdminShopPage', params: { shopId: item.id, prevRoute: pathname } })}>
+                  <MaterialIcons name="store" size={28} color="#007bff" />
+                  <Text style={styles.actionText}>Shop Page</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push({ pathname: 'shop/ShopProduct', params: { shopId: item.id, prevRoute: pathname } })}>
+                  <MaterialIcons name="shopping-cart" size={28} color="#ffa500" />
+                  <Text style={styles.actionText}>Products</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push({ pathname: '/shop/ShopStatus', params: { shopId: item.id, prevRoute: pathname } })}>
+                  <MaterialIcons name="update" size={28} color="#9c27b0" />
+                  <Text style={styles.actionText}>Status Updates</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.actions}>
+                <TouchableOpacity onPress={() => router.push({ pathname: '/shop/ReceiptActions', params: { shopId: item.id, prevRoute: pathname } })}>
+                  <MaterialIcons name="receipt" size={28} color="#795548" />
+                  <Text style={styles.actionText}>Receipt</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push({ pathname: '/shop/ShopProfile', params: { shopId: item.id, prevRoute: pathname } })}>
+                  <MaterialIcons name="info" size={28} color="#4caf50" />
+                  <Text style={styles.actionText}>Profile Details</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => handleCloseShop(item.id)}>
+                  <MaterialIcons name="close" size={28} color="#f44336" />
+                  <Text style={styles.actionText}>Quit Shop</Text>
+                </TouchableOpacity>
               </View>
             </View>
-          )}
-        />
-      )}
-    </View>
-  );
-};
-
-export default MyShop;
+          </View>
+        )}
+      />
+    )}
+  </LinearGradient>
+);
+}
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
     padding: 16,
   },
   createShopButton: {
@@ -172,6 +182,8 @@ const styles = StyleSheet.create({
   actionText: {
     fontSize: 12,
     color: '#666',
-    textAlign: 'center',
+    textAlign: 'center'
   },
 });
+
+export default MyShop;
