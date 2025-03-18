@@ -65,7 +65,7 @@ const SubscriptionProvider = ({ children }) => {
 
       console.log("Fetching Subscription from Backend");
 
-      const response = await fetch(`https://172.27.243.94:8000/check-subscription/${parsedUserId}/`);
+      const response = await fetch(`https://127.0.0.1:8000/check-subscription/${parsedUserId}/`);
       const data = await response.json();
       console.log("Subscription Data:", data);
 

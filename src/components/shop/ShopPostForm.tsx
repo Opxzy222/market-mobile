@@ -108,7 +108,7 @@ const ShopPostForm = ({ shopId }) => {
   
     try {
       const response = await axios.post(
-        `https://172.27.243.94:8000/shops/${shopId}/posts/create/`,
+        `https://127.0.0.1:8000/shops/${shopId}/posts/create/`,
         formData,
         {
           headers: {

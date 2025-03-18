@@ -1,0 +1,463 @@
+import { useState, useEffect, useMemo } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  Image,
+  Dimensions,
+  SafeAreaView,
+  StatusBar,
+  Modal, TouchableWithoutFeedback, KeyboardAvoidingView,
+  Keyboard
+} from 'react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { MaterialIcons } from '@expo/vector-icons';
+import { LinearGradient } from "expo-linear-gradient";
+import Slider from "@react-native-community/slider";
+import Ionicons from "react-native-vector-icons/Ionicons";
+
+const screenWidth = Dimensions.get("window").width;
+
+export default function SearchResults() {
+  const params = useLocalSearchParams();
+  const { prevRoute } = params;
+  const searchResults = useMemo(
+    () => (params.searchResults ? JSON.parse(params.searchResults) : []),
+    [params.searchResults]
+  );
+
+  const router = useRouter();
+  const [minRating, setMinRating] = useState(0);
+  const [maxRating, setMaxRating] = useState(5);
+  const [minDistance, setMinDistance] = useState(0);
+  const [maxDistance, setMaxDistance] = useState(50);
+  const [filteredResults, setFilteredResults] = useState(searchResults);
+  const [modalVisible, setModalVisible] = useState(false);
+
+  const allDistancesNull = useMemo(
+    () => searchResults.every((shop) => shop.distance === null),
+    [searchResults]
+  );
+
+  useEffect(() => {
+  setMinRating(0);
+  setMaxRating(5);
+  setMinDistance(0);
+  setMaxDistance(50);
+  setFilteredResults(searchResults);
+}, [searchResults]);
+
+
+  const applyFilters = () => {
+    const results = searchResults.filter((shop) => {
+      let ratingCheck = shop.average_rating >= minRating && shop.average_rating <= maxRating;
+      let distanceCheck = true;
+
+      if (!allDistancesNull && shop.distance !== null) {
+        distanceCheck = shop.distance >= minDistance && shop.distance <= maxDistance;
+      }
+      return ratingCheck && distanceCheck;
+    });
+    setFilteredResults(results);
+  };
+
+  useEffect(() => {
+    applyFilters();
+  }, [minRating, maxRating, minDistance, maxDistance]);
+
+  const renderShopCard = ({ item }) => (
+    <LinearGradient colors={["rgba(255,255,255,0.6)", "rgba(240,240,240,0.4)"]} style={styles.shopCard}>
+      <View style={styles.imageContainer}>
+        {item.average_rating !== null && (
+          <View style={styles.ratingBadge}>
+            <MaterialIcons name="star" size={14} color="#FFD700" />
+            <Text style={styles.ratingText}>{item.average_rating}</Text>
+          </View>
+        )}
+        {item.image ? (
+          <Image source={{ uri: `https://127.0.0.1:8000/${item.image}` }} style={styles.shopImage} />
+        ) : (
+          <View style={styles.noImageContainer}>
+            <Text style={styles.noImageText}>No Image</Text>
+          </View>
+        )}
+      </View>
+      <View style={styles.detailsContainer}>
+        <Text style={styles.shopName}>{item.name || "Unnamed Shop"}</Text>
+        <View style={styles.row}>
+          <MaterialIcons name="store" size={18} color="#4CAF50" />
+          <Text style={styles.shopAddress}>{item.address || "No Address"}</Text>
+        </View>
+        <View style={styles.row}>
+          <MaterialIcons name="place" size={18} color="#555" />
+          <Text style={styles.shopDistance}>Distance: {item.distance ?? "N/A"} km</Text>
+        </View>
+      </View>
+    </LinearGradient>
+  );
+
+  return (
+  <SafeAreaView style={styles.safeArea}>
+    <StatusBar barStyle="dark-content" />
+    <LinearGradient colors={["#F5F5F5", "#E0E0E0"]} style={styles.container}>
+      
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Search Results</Text>
+      </View>
+
+      {/* Filter Button */}
+      <TouchableOpacity onPress={() => setModalVisible(true)} style={styles.filterButton}>
+  <LinearGradient colors={["#007BFF", "#0056b3"]} style={styles.buttonGradient}>
+    <Ionicons name="filter-outline" size={20} color="#FFF" style={styles.buttonIcon} />
+    <Text style={styles.filterButtonText}>Filter</Text>
+  </LinearGradient>
+</TouchableOpacity>
+
+
+      {/* Shop List */}
+      <FlatList
+        data={filteredResults}
+        keyExtractor={(item) => item.id.toString()}
+        renderItem={renderShopCard}
+        ListEmptyComponent={<Text style={styles.noResults}>No shops found.</Text>}
+      />
+    </LinearGradient>
+
+    {/* Modal for Filters */}
+    {/* Modal for Filters */}
+{modalVisible && (
+  <Modal visible={modalVisible} animationType="fade" transparent>
+    <TouchableWithoutFeedback onPress={() => setModalVisible(false)}>
+      <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView behavior="padding" style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <Text style={styles.filterTitle}>Filter Options</Text>
+
+            {/* Rating Sliders */}
+            <View style={styles.sliderContainer}>
+              <Text style={styles.sliderLabel}>Min Rating: {minRating.toFixed(1)}</Text>
+              <Slider
+                minimumValue={0}
+                maximumValue={5}
+                step={1}
+                value={minRating}
+                onValueChange={setMinRating}
+                style={styles.slider}
+                minimumTrackTintColor="#007BFF"
+                maximumTrackTintColor="#D3D3D3"
+                thumbTintColor="#007BFF"
+              />
+            </View>
+
+            <View style={styles.sliderContainer}>
+              <Text style={styles.sliderLabel}>Max Rating: {maxRating.toFixed(1)}</Text>
+              <Slider
+                minimumValue={0}
+                maximumValue={5}
+                step={1}
+                value={maxRating}
+                onValueChange={setMaxRating}
+                style={styles.slider}
+                minimumTrackTintColor="#007BFF"
+                maximumTrackTintColor="#D3D3D3"
+                thumbTintColor="#007BFF"
+              />
+            </View>
+
+            {/* Distance Sliders */}
+            {!allDistancesNull && (
+              <>
+                <View style={styles.sliderContainer}>
+                  <Text style={styles.sliderLabel}>Min Distance: {minDistance.toFixed(1)} km</Text>
+                  <Slider
+  minimumValue={0}
+  maximumValue={50}
+  step={0.1}
+  value={minDistance}
+  onValueChange={setMinDistance}
+  style={styles.slider}
+  minimumTrackTintColor={allDistancesNull ? "#D3D3D3" : "#007BFF"}
+  maximumTrackTintColor="#D3D3D3"
+  thumbTintColor={allDistancesNull ? "#A9A9A9" : "#007BFF"}
+  disabled={allDistancesNull}
+/>
+
+                </View>
+
+                <View style={styles.sliderContainer}>
+                  <Text style={styles.sliderLabel}>Max Distance: {maxDistance.toFixed(1)} km</Text>
+                  <Slider
+                    minimumValue={0}
+                    maximumValue={50}
+                    step={0.1}
+                    value={maxDistance}
+                    onValueChange={setMaxDistance}
+                    style={styles.slider}
+                    minimumTrackTintColor="#007BFF"
+                    maximumTrackTintColor="#D3D3D3"
+                    thumbTintColor="#007BFF"
+                  />
+                </View>
+              </>
+            )}
+
+            {/* Apply Filters Button */}
+            <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.applyButton}>
+              <Text style={styles.applyButtonText}>Apply Filters</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </View>
+    </TouchableWithoutFeedback>
+  </Modal>
+    )}
+  </SafeAreaView>
+);
+
+}
+
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#F5F5F5",
+  },
+  container: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: "bold",
+    marginLeft: 75,
+    color: "black",
+  },
+  backButton: {
+    borderRadius: 50,
+    backgroundColor: "#E0E0E0",
+    marginRight: 12,
+  },
+  
+  shopCard: {
+    borderRadius: 18,
+    padding: 16,
+    marginVertical: 10,
+    backgroundColor: "rgba(255, 255, 255, 0.5)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  ratingBadge: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#222",
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  ratingText: {
+    fontSize: 13,
+    fontWeight: "bold",
+    color: "#FFD700",
+    marginLeft: 6,
+  },
+  imageContainer: {
+    marginBottom: 12,
+  },
+  shopImage: {
+    width: 110,
+    height: 110,
+    borderRadius: 14,
+    resizeMode: "cover",
+    borderWidth: 1,
+    borderColor: "rgba(0, 0, 0, 0.1)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+  },
+  noImageContainer: {
+    width: 110,
+    height: 110,
+    borderRadius: 14,
+    backgroundColor: "#f0f0f0",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  noImageText: {
+    fontSize: 15,
+    color: "#888",
+  },
+  shopName: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#222",
+    marginBottom: 6,
+  },
+  detailsContainer: {
+    marginBottom: 12,
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  shopAddress: {
+    fontSize: 15,
+    color: "#444",
+    marginLeft: 6,
+  },
+  shopDistance: {
+    fontSize: 15,
+    color: "#444",
+    marginLeft: 6,
+  },
+  goToShopButton: {
+    borderRadius: 28,
+    overflow: "hidden",
+    marginTop: 12,
+  },
+  buttonGradient: {
+    paddingVertical: 14,
+    alignItems: "center",
+    borderRadius: 28,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  buttonText: {
+    fontSize: 17,
+    fontWeight: "bold",
+    color: "#FFF",
+    textTransform: "uppercase",
+  },
+  noResults: {
+    textAlign: "center",
+    fontSize: 18,
+    color: "#AAA",
+  },
+  emptyListContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalContainer: {
+    width: "90%",
+    borderRadius: 20,
+    overflow: "hidden",
+  },
+  modalContent: {
+    backgroundColor: "#FFF",
+    padding: 20,
+    borderRadius: 16,
+    width: "90%",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  filterTitle: {
+    fontSize: 22,
+    fontWeight: "bold",
+    textAlign: "center",
+    marginBottom: 16,
+    color: "#333",
+  },
+  sliderContainer: {
+    marginBottom: 15,
+  },
+  sliderLabel: {
+    fontSize: 16,
+    fontWeight: "500",
+    marginBottom: 5,
+    color: "#444",
+  },
+  slider: {
+    width: "100%",
+  },
+  applyButton: {
+    backgroundColor: "#007BFF",
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: "center",
+    marginTop: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  applyButtonText: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#FFF",
+  },
+  filterButton: {
+  borderRadius: 12,
+  overflow: "hidden",
+  marginTop: 10,
+  alignSelf: "center",
+  width: "90%",
+  elevation: 5,
+},
+
+buttonGradient: {
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "center",
+  paddingVertical: 14,
+  borderRadius: 12,
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.2,
+  shadowRadius: 6,
+},
+
+buttonIcon: {
+  marginRight: 8,
+},
+
+filterButtonText: {
+  fontSize: 16,
+  fontWeight: "bold",
+  color: "#FFF",
+  textTransform: "uppercase",
+},
+});

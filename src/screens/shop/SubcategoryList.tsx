@@ -13,7 +13,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import * as Location from 'expo-location';
 
-const API_BASE_URL = 'https://172.27.243.94:8000';
+const API_BASE_URL = 'https://127.0.0.1:8000';
 
 const SubCategoryList = () => {
   const { categoryId, categoryName, prevRoute } = useLocalSearchParams();
@@ -106,6 +106,7 @@ const SubCategoryList = () => {
         </TouchableOpacity>
         <Text style={styles.heading}>{categoryName}</Text>
       </View>
+      <View style={styles.card}>
       <FlatList
         data={subcategories}
         keyExtractor={(item) => item.id.toString()}
@@ -125,6 +126,7 @@ const SubCategoryList = () => {
           </TouchableOpacity>
         )}
       />
+      </View>
     </View>
   );
 };
@@ -132,7 +134,6 @@ const SubCategoryList = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
     backgroundColor: '#F9FAFB',
   },
   header: {
@@ -147,16 +148,21 @@ const styles = StyleSheet.create({
     elevation: 3,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
-    marginBottom: 10,
-  },
-  backButton: {
-    marginRight: 10,
   },
   heading: {
     fontSize: 22,
     fontWeight: "bold",
-    marginLeft: 60,
-    color: "#6B4226",
+    marginLeft: 75,
+    color: "black",
+  },
+  backButton: {
+    borderRadius: 50,
+    backgroundColor: "#E0E0E0",
+    marginRight: 12,
+  },
+  card: {
+    padding: 20,
+    flex: 1
   },
   subcategoryItem: {
     backgroundColor: '#FFFFFF',

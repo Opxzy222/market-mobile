@@ -8,6 +8,8 @@ import * as Sharing from "expo-sharing";
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import SubscriptionProvider, { SubscriptionContext } from '../../components/SubscriptionProvider';
 import SubscriptionRequired from "@/components/RequiredSubscription";
+import { MaterialIcons } from '@expo/vector-icons';
+import { LinearGradient } from "expo-linear-gradient";
 
 const GenerateReceipt = () => {
   const [customerId, setCustomerId] = useState("");
@@ -39,7 +41,7 @@ const GenerateReceipt = () => {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const response = await axios.get(`https://172.27.243.94:8000/shop/${shopId}/products/`);
+        const response = await axios.get(`https://127.0.0.1:8000/shop/${shopId}/products/`);
         setShopProducts(response.data.shop_products);
       } catch (error) {
         console.error("Error fetching shop products:", error);
@@ -80,7 +82,7 @@ const GenerateReceipt = () => {
   const fetchCustomerName = async (customerId) => {
     setNameLoading(true);
     try {
-      const response = await axios.get("https://172.27.243.94:8000/customer-fullname/", {
+      const response = await axios.get("https://127.0.0.1:8000/customer-fullname/", {
         params: { customer_id: customerId },
       });
       setCustomerName(response.data.full_name);
@@ -122,7 +124,7 @@ const GenerateReceipt = () => {
     formData.append("customer_id", customerId);
 
     try {
-      const response = await axios.post("https://172.27.243.94:8000/generate-receipt/", formData, {
+      const response = await axios.post("https://127.0.0.1:8000/generate-receipt/", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       
@@ -183,7 +185,13 @@ const GenerateReceipt = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Generate Receipt</Text>
+      <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Generate Receipt</Text>
+      </View>
+      <View style={styles.card}> 
 
       <View style={styles.inputContainer}>
         <TextInput
@@ -281,7 +289,8 @@ const GenerateReceipt = () => {
         >
           <Text style={{ color: "white" }}>Download Receipt</Text>
         </TouchableOpacity>
-      )}
+        )}
+        </View>
     </View>
   );
 };
@@ -289,15 +298,35 @@ const GenerateReceipt = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
     backgroundColor: "#F5F5F5",
   },
-  title: {
-    fontSize: 26,
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+  },
+  headerTitle: {
+    fontSize: 22,
     fontWeight: "bold",
-    textAlign: "center",
-    marginBottom: 20,
-    color: "#333",
+    marginLeft: 75,
+    color: "black",
+  },
+  backButton: {
+    borderRadius: 50,
+    backgroundColor: "#E0E0E0",
+    marginRight: 12,
+  },
+  card: {
+    flex: 1,
+    padding: 16
   },
   inputContainer: {
     flexDirection: "row",

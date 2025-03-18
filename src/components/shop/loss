@@ -1,325 +1,379 @@
-import { useState, useEffect } from "react";
-import { 
-  View, Text, TextInput, Image, TouchableOpacity, 
-  StyleSheet, ScrollView, ActivityIndicator 
+import React, { useEffect, useState, useRef } from "react";
+import {
+  View,
+  Text,
+  Image,
+  Modal,
+  TouchableOpacity,
+  StyleSheet,
+  Animated,
 } from "react-native";
-import { SelectList } from "react-native-dropdown-select-list";
-import { MultiSelect } from "react-multi-select-component";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useVideoPlayer, VideoView } from "expo-video";
+import { useEvent } from "expo";
 import axios from "axios";
-import { useRouter, useLocalSearchParams } from "expo-router";
-import MaterialIcons from "react-native-vector-icons/MaterialIcons";
-import { Ionicons } from "@expo/vector-icons";
-import * as ImagePicker from "expo-image-picker";
 
-export default function ShopProfileScreen() {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [parentCategories, setParentCategories] = useState([]);
-  const [selectedParentCategory, setSelectedParentCategory] = useState(null);
-  const [subcategories, setSubcategories] = useState([]);
-  const [selectedChildCategories, setSelectedChildCategories] = useState([]);
-  const [image, setImage] = useState(null);
+const IMAGE_TEXT_DURATION = 6000; // 6 seconds for image and text statuses
+const VIDEO_MAX_DURATION = 30000; // 30 seconds maximum for video statuses
 
-  const [originalName, setOriginalName] = useState("");
-  const [originalDescription, setOriginalDescription] = useState("");
-  const [originalParentCategory, setOriginalParentCategory] = useState(null);
-  const [originalChildCategories, setOriginalChildCategories] = useState([]);
-  const [initialChildCategoryIds, setInitialChildCategoryIds] = useState([]);
-  const [originalImage, setOriginalImage] = useState("");
+const StatusViewer = ({ visible, statuses, onClose, userId }) => {
+  console.log("statuses", statuses);
 
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [currentShopIndex, setCurrentShopIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [sortedStatuses, setSortedStatuses] = useState([]);
 
-  const params = useLocalSearchParams();
-  const { shopId } = params;
-  const router = useRouter();
+  const progress = useRef(new Animated.Value(0)).current;
+  const progressAnimation = useRef(null);
+  const pausedTime = useRef(0);
+  const isPaused = useRef(false);
 
-  // Fetch shop details and preselect values
+  // Sort statuses once on first render or when `statuses` change
   useEffect(() => {
-    const fetchShopDetails = async () => {
-      try {
-        const response = await axios.get(`https://172.27.243.94:8000/shop/profile/${shopId}/`);
-        setName(response.data.name);
-        setDescription(response.data.description);
-        setImage(response.data.image);
-        setSelectedParentCategory(response.data.parent_category_id);
-        setOriginalParentCategory(response.data.parent_category_id);
-        
-        // Store original values
-        setOriginalName(response.data.name);
-        setOriginalDescription(response.data.description);
-        setOriginalImage(response.data.image);
-        setInitialChildCategoryIds(response.data.category_ids);
-        setOriginalChildCategories(response.data.category_ids);
+    if (statuses.length > 0) {
+      const sorted = statuses.map((shop) => ({
+        ...shop,
+        statuses: shop.statuses
+          .slice()
+          .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)),
+      }));
 
-      } catch (error) {
-        console.error("Error fetching shop details:", error);
-      }
-    };
-    fetchShopDetails();
-  }, [shopId]);
-
-  // Fetch parent categories
-  useEffect(() => {
-    const fetchParentCategories = async () => {
-      try {
-        const response = await axios.post("https://172.27.243.94:8000/category/dropdown-options/");
-        setParentCategories(response.data.categories.map(cat => ({ key: cat.id, value: cat.name })));
-      } catch (error) {
-        console.error("Error fetching parent categories:", error);
-      }
-    };
-    fetchParentCategories();
-  }, []);
-
-  // Fetch child categories when parent category changes
-  useEffect(() => {
-    if (!selectedParentCategory) return;
-
-    const fetchChildCategories = async () => {
-      try {
-        const formData = new FormData();
-        formData.append("parent_id", selectedParentCategory);
-
-        const response = await axios.post("https://172.27.243.94:8000/category/subcategories/", formData, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
-
-        const formattedSubcategories = response.data.subcategories.map(subcat => ({
-          key: subcat.id,
-          value: subcat.name
-        }));
-
-        setSubcategories(formattedSubcategories);
-
-        // Preselect child categories based on previously fetched data
-        setSelectedChildCategories(
-          initialChildCategoryIds.map(id => {
-            const subcategory = formattedSubcategories.find(sub => sub.key === id);
-            return subcategory ? { label: subcategory.value, value: subcategory.key } : null;
-          }).filter(Boolean) // Remove null values
-        );
-
-      } catch (error) {
-        console.error("Error fetching child categories:", error);
-      }
-    };
-
-    fetchChildCategories();
-  }, [selectedParentCategory]);
-
-  const pickImage = async () => {
-      let result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 1,
-      });
-      if (!result.canceled) {
-        setImage(result.assets[0].uri);  // Instant update
-      }
-    };
-
-  // Handle shop update
-  const handleUpdate = async () => {
-    if (isSubmitting) return;
-    setIsSubmitting(true);
-
-    try {
-        const formData = new FormData();
-
-        if (name !== originalName) {
-            formData.append("shop_name", name);
-        }
-        if (description !== originalDescription) {
-            formData.append("description", description);
-        }
-        if (selectedParentCategory !== originalParentCategory) {
-            formData.append("category_id", selectedParentCategory);
-        }
-      if (image && image !== originalImage) {
-    try {
-      const response = await fetch(image);
-      const blob = await response.blob();
-      const file = new File([blob], "profile.jpg", { type: "image/jpeg" });
-
-      formData.append("image", file);
-    } catch (error) {
-      console.error("Error converting image to file:", error);
-      alert("Failed to process image. Please try again.");
-      return;
+      setSortedStatuses(sorted);
+      setCurrentShopIndex(0);
+      setCurrentIndex(0);
     }
+  }, [statuses]);
+
+  const getAllStatuses = () => {
+    return sortedStatuses[currentShopIndex]?.statuses || [];
+  };
+
+  const getStatusDuration = () => {
+  const currentStatus = getAllStatuses()[currentIndex];
+  if (currentStatus?.media_type === "video") {
+    return Math.min(player?.duration * 1000 || VIDEO_MAX_DURATION, VIDEO_MAX_DURATION);
+  } else if (currentStatus?.media_type === "image" || currentStatus?.text) {
+    return IMAGE_TEXT_DURATION; // Text statuses should follow the 6s rule
   }
-
-        // Append subcategories correctly
-        if (
-            JSON.stringify(selectedChildCategories.map(sub => sub.value)) !==
-            JSON.stringify(originalChildCategories)
-        ) {
-            selectedChildCategories.forEach(sub => {
-                formData.append("subcategory_ids", sub.value); // No square brackets
-            });
-        }
-
-        // Debugging: Log FormData contents
-        for (let pair of formData.entries()) {
-            console.log(pair[0], pair[1]);
-        }
-
-        if (formData.entries().next().done) {
-            alert("No Changes", "No changes were detected. Please update at least one field.");
-            setIsSubmitting(false);
-            return;
-        }
-
-        await axios.post(`https://172.27.243.94:8000/shop/profile/${shopId}/`, formData, {
-            headers: {
-                "Content-Type": "multipart/form-data",
-            },
-        });
-
-        alert("Success", "Shop profile updated successfully!");
-        router.back();
-    } catch (error) {
-        console.error("Error updating shop:", error);
-        alert("Error", "Something went wrong. Please try again.");
-    } finally {
-        setIsSubmitting(false);
-    }
+  return IMAGE_TEXT_DURATION;
 };
 
+  useEffect(() => {
+    if (visible) {
+      progress.setValue(0);
+      startProgress(getStatusDuration());
+    }
+    markStatusAsViewed(getAllStatuses()[currentIndex]);
+  }, [currentIndex, currentShopIndex]);
+
+  const startProgress = (duration) => {
+    if (isPaused.current) return;
+    progress.setValue(0);
+    progressAnimation.current = Animated.timing(progress, {
+      toValue: 1,
+      duration: duration,
+      useNativeDriver: false,
+    }).start(({ finished }) => {
+      if (finished) handleNext();
+    });
+  };
+
+  const handleNext = () => {
+  const allStatuses = getAllStatuses();
+  if (!allStatuses.length) return; // Ensure statuses are available
+
+  if (currentIndex < allStatuses.length - 1) {
+    setCurrentIndex((prev) => prev + 1);
+  } else if (currentShopIndex < sortedStatuses.length - 1) {
+    setCurrentShopIndex((prev) => prev + 1);
+    setCurrentIndex(0);
+  } else {
+    onClose();
+  }
+};
+
+
+  const handlePrev = () => {
+    if (currentIndex > 0) {
+      setCurrentIndex((prev) => prev - 1);
+    } else if (currentShopIndex > 0) {
+      const prevShopIndex = currentShopIndex - 1;
+      setCurrentShopIndex(prevShopIndex);
+      setCurrentIndex(sortedStatuses[prevShopIndex].statuses.length - 1);
+    }
+  };
+
+  const markStatusAsViewed = async (status) => {
+    if (!status || status.viewed || !userId) return;
+    try {
+      const formData = new FormData();
+      formData.append("user_id", userId.toString());
+      formData.append("status_ids[]", status.id);
+
+      await axios.post(
+        "https://127.0.0.1:8000/mark_status_viewed/",
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+
+      status.viewed = true;
+    } catch (error) {
+      console.error("Error marking status as viewed:", error);
+    }
+  };
+
+  const togglePause = () => {
+  if (!player || !player?.play) return;
+
+  if (isPaused.current) {
+    isPaused.current = false;
+    const remainingTime = getStatusDuration() - pausedTime.current;
+    progress.setValue(pausedTime.current / getStatusDuration());
+    startProgress(remainingTime); // Restart progress with remaining time
+
+    if (isVideo && player?.paused) {
+      player.play();
+    }
+  } else {
+    isPaused.current = true;
+    progressAnimation.current?.stop();  // Stop the timer here
+    pausedTime.current = progress.__getValue() * getStatusDuration();
+
+    if (isVideo && !player?.paused) {
+      player.pause();
+    }
+  }
+};
+
+  const allStatuses = getAllStatuses();
+  const hasStatuses = allStatuses.length > 0;
+
+  // Move this above the return statement to ensure Hooks are always called
+  const currentStatus = allStatuses[currentIndex] || {};
+  const isImage = currentStatus?.media_type === "image";
+const isVideo = currentStatus?.media_type === "video";
+const hasMedia = isImage || isVideo;
+const statusText = currentStatus?.text || "";
+
+  // Always define hooks before any conditional return
+  const player = useVideoPlayer(
+    currentStatus?.media ?? "", // Provide a fallback that ensures it's never undefined
+    (player) => {
+      if (player) {
+        player.loop = false;
+      }
+    }
+  );
+
+  useEffect(() => {
+  if (isVideo && player) {
+    const checkDuration = setInterval(() => {
+      if (player?.duration) {
+        progress.setValue(0);  // Reset progress
+        progressAnimation.current?.stop();
+        startProgress(getStatusDuration()); // Start timer only after video is ready
+        clearInterval(checkDuration); 
+      }
+    }, 100);
+
+    return () => clearInterval(checkDuration);
+  }
+}, [player, isVideo]);
+
+
+  useEffect(() => {
+  if (isVideo && player) {
+    player.play();
+    return () => player.pause();
+  }
+}, [currentIndex, currentShopIndex, player]);
+
+
+  useEffect(() => {
+    if (isVideo && !isPaused.current) {
+      player.play();
+    } else {
+      player.pause();
+    }
+
+    if (!isVideo && progressAnimation?.current) {
+      progressAnimation.current.start();
+    }
+
+    return () => {
+      player.pause();
+      progressAnimation?.current?.stop();
+    };
+  }, [currentIndex, currentShopIndex]);
+
+  if (!visible || !hasStatuses) return null;
+
   return (
-    <View style={{ flex: 1 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", padding: 10 }}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
-        </TouchableOpacity>
-        <Text style={{ fontSize: 18, marginLeft: 10 }}>Edit Shop Profile</Text>
-      </View>
-      <View style={styles.imageContainer}>
-          <TouchableOpacity onPress={pickImage}>
-            <Image source={{ uri: image || 'https://via.placeholder.com/40' }} style={styles.profileImage} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={pickImage} style={styles.uploadIcon}>
-            <Ionicons name="camera" size={20} color="white" />
-          </TouchableOpacity>
+    <Modal visible={visible} animationType="fade" transparent>
+      <View style={styles.container}>
+        {/* Progress Bars */}
+        <View style={styles.progressContainer}>
+          {getAllStatuses().map((_, idx) => (
+            <View key={idx} style={styles.progressBackground}>
+              <Animated.View
+                style={[
+                  styles.progressBar,
+                  {
+                    width:
+                      idx === currentIndex
+                        ? progress.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: ["0%", "100%"],
+                          })
+                        : idx < currentIndex
+                        ? "100%"
+                        : "0%",
+                  },
+                ]}
+              />
+            </View>
+          ))}
         </View>
-      <ScrollView contentContainerStyle={{ padding: 20 }}>
-        <Text>Name</Text>
-        <TextInput value={name} onChangeText={setName} placeholder="Shop Name" />
 
-        <Text>Description</Text>
-        <TextInput value={description} onChangeText={setDescription} placeholder="Shop Description" multiline />
-
-        <Text>Parent Category</Text>
-        <SelectList
-          setSelected={setSelectedParentCategory}
-          data={parentCategories}
-          defaultOption={parentCategories.find(cat => cat.key === selectedParentCategory) || null}
-          placeholder="Select Parent Category"
+        {/* Left Side - Previous */}
+        <TouchableOpacity
+          style={styles.leftExpanded}
+          onPress={handlePrev}
+          onPressIn={togglePause}
+          onPressOut={togglePause}
         />
 
-        {selectedParentCategory && subcategories.length > 0 && (
-          <>
-            <Text>Child Categories</Text>
-            <MultiSelect
-              options={subcategories.map(sub => ({ label: sub.value, value: sub.key }))}
-              value={selectedChildCategories}
-              onChange={setSelectedChildCategories}
-              labelledBy="Select Categories"
-            />
-          </>
-        )}
-
-        <TouchableOpacity onPress={handleUpdate} style={{ backgroundColor: "#007BFF", padding: 10, marginTop: 20, borderRadius: 5 }}>
-          <Text style={{ color: "white", textAlign: "center" }}>{isSubmitting ? "Updating..." : "Update Shop"}</Text>
+        {/* Status Content */}
+        <TouchableOpacity
+          style={styles.content}
+          activeOpacity={1}
+          onPress={togglePause}
+        >
+          {hasMedia ? (
+            <>
+              {isVideo ? (
+                <VideoView
+                  style={styles.media}
+                  resizeMode="cover"
+                  player={player}
+                  allowsFullscreen={false}
+              allowsPictureInPicture={false}
+                />
+              ) : (
+                <Image
+                  source={{ uri: currentStatus.media }}
+                  style={styles.media}
+                  resizeMode="contain"
+                />
+              )}
+              {currentStatus?.text?.trim().length > 0 && (
+                <Text style={styles.caption}>{currentStatus.text}</Text>
+              )}
+            </>
+          ) : (
+            <View style={styles.plainTextContainer}>
+              <Text style={styles.plainText}>{currentStatus?.text}</Text>
+            </View>
+          )}
         </TouchableOpacity>
-      </ScrollView>
-    </View>
+
+        {/* Right Side - Next */}
+        <TouchableOpacity
+          style={styles.rightExpanded}
+          onPress={handleNext}
+          onPressIn={togglePause}
+          onPressOut={togglePause}
+        />
+
+        {/* Close Button */}
+        <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+          <Text style={styles.closeText}>✕</Text>
+        </TouchableOpacity>
+      </View>
+    </Modal>
   );
-}
+};
+
+export default StatusViewer;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f9fafe",
-    padding: 20,
-  },
-  profileCard: {
-    backgroundColor: "white",
-    padding: 20,
-    borderRadius: 15,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 5,
-    alignItems: "center",
-  },
-  imageContainer: {
-    alignItems: "center",
+    backgroundColor: "#2E2E2E",
     justifyContent: "center",
-    position: "relative",
+    alignItems: "center",
   },
-  profileImage: {
-    width: 130,
-    height: 130,
-    borderRadius: 65,
-    borderWidth: 4,
-    borderColor: "#007bff",
-  },
-  uploadIcon: {
+  // Progress bars
+  progressContainer: {
+    flexDirection: "row",
     position: "absolute",
-    bottom: 10,
-    right: 10,
-    backgroundColor: "#007bff",
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: "white",
+    top: 40,
+    width: "90%",
+    zIndex: 999,
   },
-  profileId: {
-    fontSize: 20,
-    fontWeight: "bold",
-    textAlign: "center",
-    marginVertical: 10,
-    color: "#333",
-  },
-  label: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginTop: 15,
-    color: "#444",
-    alignSelf: "flex-start",
-  },
-  input: {
-    width: "100%",
-    backgroundColor: "#f1f3f6",
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 5,
-    borderWidth: 1,
-    borderColor: "#dcdfe6",
-  },
-  updateButton: {
-    backgroundColor: "#007bff",
-    marginTop: 20,
-    borderRadius: 8,
-    paddingVertical: 12,
-    width: "100%",
-  },
-  loadingContainer: {
+  progressBackground: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+    height: 3,
+    backgroundColor: "rgba(255,255,255,0.3)",
+    marginHorizontal: 2,
+    borderRadius: 2,
   },
-  loadingText: {
-    fontSize: 18,
+  progressBar: {
+    height: 3,
+    backgroundColor: "#fff",
+    borderRadius: 2,
+  },
+  // Tap zones
+  leftExpanded: {
+    position: "absolute",
+    width: "40%",
+    height: "100%",
+    left: 0,
+  },
+  rightExpanded: {
+    position: "absolute",
+    width: "40%",
+    height: "100%",
+    right: 0,
+  },
+  // Main content
+  content: {
+    width: "100%",
+    height: "100%",
+    justifyContent: "center",
+  },
+  media: {
+    width: "100%",
+    height: "70%",
+  },
+  caption: {
+    color: "#f1f1f1",
+    fontSize: 20,
     marginTop: 10,
-    color: "#333",
+    textAlign: "center",
+    fontWeight: "600",
+    paddingHorizontal: 20,
+  },
+  plainTextContainer: {
+    width: "100%",
+    height: "100%",
+    justifyContent: "center",
+    paddingHorizontal: 20,
+  },
+  plainText: {
+    fontSize: 32,
+    fontWeight: "700",
+    color: "#f1f1f1",
+    textAlign: "center",
+  },
+  // Close button
+  closeButton: {
+    position: "absolute",
+    top: 40,
+    right: 20,
+    zIndex: 999,
+  },
+  closeText: {
+    fontSize: 30,
+    color: "#fff",
   },
 });
-

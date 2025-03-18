@@ -43,7 +43,7 @@ const ShopReceipts = () => {
 
   const fetchReceipts = async () => {
     try {
-      const response = await axios.get(`https://172.27.243.94:8000/shop/${shopId}/receipts/`, {
+      const response = await axios.get(`https://127.0.0.1:8000/shop/${shopId}/receipts/`, {
         headers: {
           Authorization: sessionId, // Send sessionId in headers
         },
@@ -59,7 +59,7 @@ const ShopReceipts = () => {
 
   const handleVoidReceipt = async (receiptId) => {
     try {
-      await axios.post(`https://172.27.243.94:8000/receipts/${receiptId}/void/`);
+      await axios.post(`https://127.0.0.1:8000/receipts/${receiptId}/void/`);
       Alert.alert("Success", "Receipt voided successfully.");
       setReceipts((prev) =>
         prev.map((receipt) =>
@@ -89,6 +89,7 @@ const ShopReceipts = () => {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
         </TouchableOpacity>
+        <Text style={styles.headerTitle}>Receipts</Text>
       </View>
 
       <View style={styles.tabContainer}>
@@ -148,7 +149,7 @@ export default ShopReceipts;
 
 const styles = StyleSheet.create({
   container: {
-    padding: 16,
+    flex: 1
   },
   centered: {
     flex: 1,
@@ -167,10 +168,15 @@ const styles = StyleSheet.create({
     elevation: 3,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
-    marginBottom: 10,
+    marginBottom: 20
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: "bold",
+    marginLeft: 75,
+    color: "black",
   },
   backButton: {
-    padding: 8,
     borderRadius: 50,
     backgroundColor: "#E0E0E0",
     marginRight: 12,

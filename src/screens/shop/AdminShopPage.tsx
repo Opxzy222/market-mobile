@@ -6,17 +6,17 @@ import {
   Image,
   TouchableOpacity,
   ScrollView,
-  ActivityIndicator,
+  ActivityIndicator, Alert, Clipboard, ToastAndroid, Platform
 } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router'; 
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import ShopReview from '../../components/shop/ShopReview';
 import Followers from '../../components/shop/Followers';
 import ShopProduct from '../../components/shop/ShopProduct';
 import ShopPostForm from '../../components/shop/ShopPostForm';
 import AdminShopPosts from '../../components/shop/AdminShopPost';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 
 
 const AdminShopPage = () => {
@@ -32,6 +32,7 @@ const AdminShopPage = () => {
   const [activeTab, setActiveTab] = useState('posts');
   const [error, setError] = useState('');
   const [sessionId, setSessionId] = useState(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
   const fetchSessionId = async () => {
@@ -49,7 +50,7 @@ const AdminShopPage = () => {
     try {
       const sessionId = await AsyncStorage.getItem("sessionToken");
 
-      const response = await axios.get(`https://172.27.243.94:8000/shops/${shopId}/combined/`, {
+      const response = await axios.get(`https://127.0.0.1:8000/shops/${shopId}/combined/`, {
         headers: {
           Authorization: sessionId, // Send session ID in headers
         },
@@ -65,6 +66,7 @@ const AdminShopPage = () => {
         categories: data.shop.categories,
         products: data.shop.products,
         address: data.shop.address,
+        shop_id: data.shop.shop_id,
       });
 
       setReviews(data.reviews);
@@ -96,6 +98,22 @@ const AdminShopPage = () => {
     return <ActivityIndicator size="large" color="#f39c12" />;
   }
 
+  const copyToClipboard = () => {
+    if (shop.shop_id) {
+      Clipboard.setString(shop.shop_id);
+      setCopied(true);
+
+      if (Platform.OS === "android") {
+        ToastAndroid.show("Profile ID copied!", ToastAndroid.SHORT);
+      } else {
+        Alert.alert("Copied", "Profile ID copied to clipboard!");
+      }
+
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+
   return (
     <View style={styles.container}>
       {/* Back Button Header */}
@@ -106,6 +124,13 @@ const AdminShopPage = () => {
       >
         <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
       </TouchableOpacity>
+      <View style={styles.shopIdContainer}>
+          <Text style={styles.shopIdLabel}>SHOP ID:</Text>
+          <Text style={styles.shopId}>{shop.shop_id}</Text>
+        <TouchableOpacity onPress={copyToClipboard} style={styles.copyButton}>
+          <Ionicons name={copied ? "checkmark-circle" : "copy-outline"} size={22} color={copied ? "#4CAF50" : "#007AFF"} />
+        </TouchableOpacity>
+      </View>
         
       </View>
 
@@ -113,7 +138,7 @@ const AdminShopPage = () => {
         {/* Shop Header */}
         <View style={styles.shopHeader}>
           <Image
-            source={{ uri: `https://172.27.243.94:8000/${shop.image}` }}
+            source={{ uri: `https://127.0.0.1:8000/${shop.image}` }}
             style={styles.shopImage}
           />
           <View style={styles.shopInfo}>
@@ -192,19 +217,22 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 15,
-    
-    borderBottomWidth: 1,
-    borderBottomColor: '#dcdcdc',
+    justifyContent: 'space-between',
+    padding: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
     elevation: 3,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    marginBottom: 10,
   },
   backButton: {
-    marginRight: 10,
-  },
-  backButtonText: {
-    fontSize: 16,
-    color: '#0073e6', // A mature and refined blue
-    fontWeight: '600',
+    borderRadius: 50,
+    backgroundColor: "#E0E0E0",
+    marginRight: 12,
   },
   headerTitle: {
     fontSize: 20,
@@ -238,6 +266,26 @@ const styles = StyleSheet.create({
   },
   shopInfo: {
     flex: 1,
+  },
+  shopIdContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  shopIdLabel: {
+    fontSize: 16,
+    color: 'black',
+    marginRight: 8,
+    fontWeight: '700',
+  },
+  shopId: {
+    fontSize: 16,
+    color: 'black',
+    marginRight: 1,
+  },
+  copyButton: {
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: "rgba(0, 122, 255, 0.1)",
   },
   shopName: {
     fontSize: 20,

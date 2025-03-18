@@ -16,7 +16,7 @@ const ShopProduct = () => {
     try {
       const formData = new FormData();
       formData.append('shop_id', shopId);
-      const response = await axios.post('https://172.27.243.94:8000/shop-products/', formData);
+      const response = await axios.post('https://127.0.0.1:8000/shop-products/', formData);
       setProducts(response.data);
     } catch (err) {
       console.error('Error fetching shop products:', err);
@@ -121,7 +121,9 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   backButton: {
-    marginRight: 10,
+    borderRadius: 50,
+    backgroundColor: "#E0E0E0",
+    marginRight: 12,
   },
   
   loader: {

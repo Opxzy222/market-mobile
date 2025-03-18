@@ -25,27 +25,26 @@ const ReceiptActions = () => {
       <View style={styles.buttonsContainer}>
         <TouchableOpacity 
           style={styles.button} 
-          onPress={() => router.push({ pathname: '/shop/ShopReceipts', params: { shopId: shopId, prevRoute: pathname } })}
-        >
-          <MaterialIcons name="receipt" size={28} color="#795548" />
-          <Text style={styles.buttonText}>Shop Receipts</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.button} 
           onPress={() => router.push({ pathname: '/shop/GenerateReceipt', params: { shopId, prevRoute: pathname } })}
         >
           <MaterialIcons name="post-add" size={28} color="#4caf50" />
           <Text style={styles.buttonText}>Generate Receipt</Text>
         </TouchableOpacity>
-        
         <TouchableOpacity 
           style={styles.button} 
-          onPress={() => router.push({ pathname: '/shop/GenerateReceipt', params: { shopId } })}
+          onPress={() => router.push({ pathname: '/shop/ShopReceipts', params: { shopId: shopId, prevRoute: pathname } })}
+        >
+          <MaterialIcons name="receipt" size={28} color="#795548" />
+          <Text style={styles.buttonText}>Receipts</Text>
+        </TouchableOpacity>
+        
+        {/*<TouchableOpacity 
+          style={styles.button} 
+          onPress={() => router.push({ pathname: '/shop/Signature', params: { shopId } })}
         >
           <MaterialIcons name="gesture" size={28} color="#9e9e9e" />
-          <Text style={styles.buttonText}>Shop Signature</Text>
-        </TouchableOpacity>
+          <Text style={styles.buttonText}>Signature</Text>
+        </TouchableOpacity> */}
       </View>
     </View>
   );
@@ -55,8 +54,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
-    paddingHorizontal: 16,
-    paddingTop: 20,
   },
   header: {
     flexDirection: "row",
@@ -73,7 +70,9 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   backButton: {
-    marginRight: 10,
+    borderRadius: 50,
+    backgroundColor: "#E0E0E0",
+    marginRight: 12,
   },
   headerTitle: {
     fontSize: 20,

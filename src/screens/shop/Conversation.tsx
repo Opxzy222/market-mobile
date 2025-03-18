@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useCallback, useRef, useState, useEffect } from "react";
+import { useFocusEffect } from "expo-router";
 import {
   View,
   Text,
@@ -7,6 +8,7 @@ import {
   FlatList,
   TextInput,
   Modal,
+  Alert, InteractionManager,
 } from 'react-native';
 import axios from 'axios';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -15,174 +17,272 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import SendImage from '../../components/shop/SendImage';
 import SendVideo from '../../components/shop/SendVideo';
 import SendPDF from '../../components/shop/SendPdf';
-import { Image } from 'react-native';
-import { Video } from 'expo-av';
+import ChatImage from '../../components/shop/ChatImage';
+import ChatVideo from '../../components/shop/ChatVideo';
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 import mime from "mime";
 
 const Conversation = () => {
+  const [userId, setUserId] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [inputMessage, setInputMessage] = useState('');
+  const [inputMessage, setInputMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [menuVisible, setMenuVisible] = useState(false);
-  const flatListRef = useRef(null);
   const [messagesLoaded, setMessagesLoaded] = useState(false);
+  const flatListRef = useRef(null);
   const websocketRef = useRef(null);
-  
   const receivedMessagesRef = useRef(new Set()); // Track received messages
+  const isScreenFocused = useRef(false); // Track if the screen is focused
 
   const params = useLocalSearchParams();
-  const { name, conversation_id, shop_id, prevRoute } = params;
   const router = useRouter();
+  const { conversation_id, shop_id, prevRoute, name } = params;
   const [sessionId, setSessionId] = useState(null);
 
   useEffect(() => {
     const fetchSessionId = async () => {
       const sessionIdString = await AsyncStorage.getItem("sessionToken");
-      setSessionId(sessionIdString); // No need to parse as an integer
+      setSessionId(sessionIdString);
     };
-
     fetchSessionId();
-    console.log(sessionId, 'heya')
   }, []);
 
   useEffect(() => {
-  const fetchMessages = async () => {
-    if (!conversation_id || !sessionId) return;
+    const fetchUserId = async () => {
+      try {
+        const userIdString = await AsyncStorage.getItem("user_id");
+        if (userIdString) {
+          setUserId(parseInt(userIdString, 10));
+        }
+      } catch (error) {
+        console.error("Error fetching user ID:", error);
+      }
+    };
+    fetchUserId();
+  }, []);
+
+  const markMessagesAsRead = async () => {
+    if (!conversation_id || !sessionId || messages.length === 0) return;
 
     try {
-      // Fetch messages with sessionId in headers
-      const response = await axios.get(
-        `https://172.27.243.94:8000/conversation/?conversation_id=${conversation_id}`,
-        {
-          headers: {
-            Authorization: sessionId, // Sending sessionId in headers
-          },
-        }
-      );
-
-      const uniqueMessages = response.data.filter(
-        (msg) => !receivedMessagesRef.current.has(msg.id)
-      );
-      uniqueMessages.forEach((msg) => receivedMessagesRef.current.add(msg.id));
-      setMessages(uniqueMessages);
-
-      // Mark messages as read with sessionId in headers
       await axios.post(
-        "https://172.27.243.94:8000/mark-messages-read/",
-        { conversation_id},
+        "https://127.0.0.1:8000/mark-messages-read/",
+        { conversation_id },
         {
           headers: {
             "Content-Type": "application/json",
-            Authorization: sessionId, // Sending sessionId in headers
+            Authorization: sessionId,
           },
         }
       );
     } catch (error) {
-      console.error("Error fetching messages:", error);
-    } finally {
-      setLoading(false);
+      console.error("Error marking messages as read:", error);
     }
   };
 
-  fetchMessages();
-}, [conversation_id, sessionId]);
+  useFocusEffect(
+    useCallback(() => {
+      isScreenFocused.current = true;
+      markMessagesAsRead(); // ✅ Marks messages only when screen is focused
+
+      return () => {
+        isScreenFocused.current = false;
+      };
+    }, [conversation_id, sessionId, messages])
+  );
 
   useEffect(() => {
-    if (!conversation_id || !sessionId) return;
+    const fetchMessages = async () => {
+  if (!conversation_id || !sessionId) return;
 
-    const connectWebSocket = () => {
-      const websocketUrl = `ws://172.27.243.94:8001/ws/chat/${conversation_id}/`;
-      websocketRef.current = new WebSocket(websocketUrl);
+  try {
+    const response = await axios.get(
+      `https://127.0.0.1:8000/conversation/?conversation_id=${conversation_id}`,
+      {
+        headers: { Authorization: sessionId },
+      }
+    );
 
-      websocketRef.current.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        console.log("WebSocket received:", data);
+    const uniqueMessages = response.data.filter(
+      (msg) => !receivedMessagesRef.current.has(Number(msg.id)) // ✅ Convert to number
+    );
 
-        const messageId = `${data.sender_id}-${data.timestamp}`;
+    uniqueMessages.forEach((msg) =>
+      receivedMessagesRef.current.add(Number(msg.id)) // ✅ Store as number
+    );
 
-        if (!receivedMessagesRef.current.has(messageId)) {
-          receivedMessagesRef.current.add(messageId);
+    setMessages(
+      uniqueMessages.map((msg) => ({
+        ...msg,
+        id: Number(msg.id), // ✅ Ensure ID is stored as a number
+      }))
+    );
 
-          // ✅ Ensure attachments are also added to messages
-          setMessages((prevMessages) => [
-            ...prevMessages,
-            {
-              id: messageId,
-              content: data.message || null, // Allow empty message content
-              sender_id: data.sender_id,
-              timestamp: data.timestamp || new Date().toISOString(),
-              attachment: data.attachment || null, // ✅ Add attachment
-              type: data.type || (data.attachment ? "image" : "text"), // ✅ Infer type
-            }
-          ]);
-        }
-      };
+    console.log(messages, "hello");
+
+    if (isScreenFocused.current && uniqueMessages.length > 0) {
+      markMessagesAsRead();
     }
-
-    connectWebSocket();
-
-    return () => {
-      websocketRef.current?.close();
-    };
+  } catch (error) {
+    console.error("Error fetching messages:", error);
+  } finally {
+    setLoading(false);
+  }
+};
+    fetchMessages();
   }, [conversation_id, sessionId]);
 
-  const toggleMenu = () => {
-    setMenuVisible(!menuVisible);
+ useEffect(() => {
+  const connectWebSocket = () => {
+    const websocketUrl = `ws://127.0.0.1:8001/ws/chat/${conversation_id}/`;
+    websocketRef.current = new WebSocket(websocketUrl);
+
+    websocketRef.current.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log("WebSocket received:", data);
+
+  if (data.type === "read_update") {
+    setMessages((prevMessages) => {
+      const updatedMessages = prevMessages.map((msg) =>
+        data.message_ids.includes(msg.id) ? { ...msg, read: true } : msg
+      );
+      return updatedMessages;
+    });
+  } else {
+    let messageId = Number(data.message_id);
+    let tempId = Number(data.temp_id); // ✅ Get temp_id
+
+    if (!messageId || isNaN(messageId)) {
+      console.warn("⚠️ Received invalid message ID, ignoring...");
+      return;
+    }
+
+    setMessages((prevMessages) => {
+      const existingIndex = prevMessages.findIndex(
+        (msg) => msg.id === tempId // ✅ Match tempId with optimistic message
+      );
+
+      if (existingIndex !== -1) {
+        // ✅ Replace temp message with real one
+        const updatedMessages = [...prevMessages];
+        updatedMessages[existingIndex] = {
+          ...prevMessages[existingIndex],
+          id: messageId,
+          pending: false,
+        };
+        return updatedMessages;
+      }
+
+      // If temp message wasn't found, add a new one
+      return [
+        ...prevMessages,
+        {
+          id: messageId,
+          content: data.message,
+          sender_id: data.sender_id,
+          timestamp: data.timestamp || new Date().toISOString(),
+          attachment: data.attachment || null,
+          type: data.msg_type || "text",
+          read: false,
+        },
+      ];
+    });
+
+    if (isScreenFocused.current) {
+      markMessagesAsRead();
+    }
+  }
+};
+
   };
+
+  connectWebSocket();
+
+  return () => {
+    console.log("Closing WebSocket...");
+    websocketRef.current?.close();
+  };
+}, [conversation_id]); // ✅ Removed sessionId to avoid unnecessary reconnections
 
   const handleSendMessage = () => {
-    if (!inputMessage.trim() || !websocketRef.current) return;
-    
-    try {
-      websocketRef.current.send(
-        JSON.stringify({
-          content: inputMessage,
-          sender_id: sessionId,
-          conversation_id: conversation_id,
-          timestamp: new Date().toISOString(),
-        })
-      );
-      setInputMessage('');
-    } catch (error) {
-      console.error('Error sending message:', error);
-    }
-  };
+  if (!inputMessage.trim() || !websocketRef.current) return;
+
+  // Generate a temporary ID
+  const tempId = Date.now();
+
+  // Optimistically add message to UI
+  setMessages((prevMessages) => [
+    ...prevMessages,
+    {
+      id: tempId, // Temporary ID
+      content: inputMessage,
+      sender_id: userId,
+      timestamp: new Date().toISOString(),
+      attachment: null,
+      type: "text",
+      read: false,
+      pending: true, // Mark as pending until confirmed
+    },
+  ]);
+
+  try {
+    websocketRef.current.send(
+      JSON.stringify({
+        content: inputMessage,
+        temp_id: tempId,
+        sender_id: userId,
+        conversation_id: conversation_id,
+        timestamp: new Date().toISOString(),
+      })
+    );
+    setInputMessage("");
+  } catch (error) {
+    console.error("Error sending message:", error);
+    Alert.alert("Message Failed", "Unable to send message. Please try again.");
+
+    // Remove the failed optimistic message
+    setMessages((prevMessages) =>
+      prevMessages.filter((msg) => msg.id !== tempId)
+    );
+  }
+};
 
   const handleSendAttachment = async (file, type) => {
-  if (!file || !file.uri) {
+  if (!file?.uri) {
     console.error("Invalid file selected");
     return;
   }
 
   const formData = new FormData();
-  formData.append("sender_id", sessionId);
+  formData.append("sender_id", userId);
   formData.append("shop_id", shop_id);
   formData.append("conversation_id", conversation_id);
 
   let newFile;
 
-  if (file.uri.startsWith("blob:")) {
-    const response = await fetch(file.uri);
-    const blob = await response.blob();
-    newFile = new File([blob], file.name || `file_${Date.now()}`, {
-      type: blob.type || "application/octet-stream",
-    });
-  } else {
-    newFile = {
-      uri: file.uri.startsWith("file://") ? file.uri : `file://${file.uri}`,
-      type: type === "photo" ? "image/jpeg" : type === "video" ? "video/mp4" : "application/octet-stream",
-      name: file.name || `file_${Date.now()}.${type === "photo" ? "jpg" : type === "video" ? "mp4" : "bin"}`,
-    };
-  }
-
-  console.log("Appending File:", newFile);
-  formData.append("file", newFile);
-
   try {
+    if (file.uri.startsWith("blob:")) {
+      const response = await fetch(file.uri);
+      if (!response.ok) throw new Error("Failed to fetch blob data");
+
+      const blob = await response.blob();
+      newFile = new File([blob], file.name || `file_${Date.now()}`, {
+        type: blob.type || "application/octet-stream",
+      });
+    } else {
+      newFile = {
+        uri: file.uri.startsWith("file://") ? file.uri : `file://${file.uri}`,
+        type: type === "photo" ? "image/jpeg" : type === "video" ? "video/mp4" : "application/octet-stream",
+        name: file.name || `file_${Date.now()}.${type === "photo" ? "jpg" : type === "video" ? "mp4" : "bin"}`,
+      };
+    }
+
+    console.log("Appending File:", newFile);
+    formData.append("file", newFile);
+
     const response = await axios.post(
-      `https://172.27.243.94:8000/upload/${conversation_id}/`,
+      `https://127.0.0.1:8000/upload/${conversation_id}/`,
       formData,
       {
         headers: { "Content-Type": "multipart/form-data" },
@@ -190,13 +290,11 @@ const Conversation = () => {
     );
 
     const data = response.data;
-    console.log("Upload Response:", data);
     if (!data.file_url) throw new Error("File upload failed");
 
-    // ✅ Send file URL via WebSocket but don't update state yet
     websocketRef.current.send(
       JSON.stringify({
-        sender_id: sessionId,
+        sender_id: userId,
         conversation_id: conversation_id,
         type,
         timestamp: new Date().toISOString(),
@@ -204,87 +302,101 @@ const Conversation = () => {
         attachment: data.file_url,
       })
     );
-
-    // ✅ WebSocket will handle updating state when message is received
   } catch (error) {
     console.error("Error uploading file:", error);
+    Alert.alert("Upload Failed", "Failed to upload file. Please try again.");
   }
 };
-
-
-  const handleBackClick = () => {
-    router.back();
-  };
 
   useEffect(() => {
     if (!loading) {
       setMessagesLoaded(true);
-      setTimeout(() => {
+      InteractionManager.runAfterInteractions(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+      });
     }
   }, [loading, messages]);
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.replace(prevRoute || '((tabs)/placeholder)')}
-          style={styles.backButton}
-        >
-          <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerText}>{name}</Text>
-      </View>
+  <View style={styles.container}>
+    <View style={styles.header}>
+      <TouchableOpacity
+        onPress={() => router.replace(prevRoute || '((tabs)/placeholder)')}
+        style={styles.backButton}
+      >
+        <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
+      </TouchableOpacity>
+      <Text style={styles.headerText}>{name}</Text>
+    </View>
 
-      <View style={styles.messagesWrapper}>
-  {loading && !messagesLoaded ? (
-    <Text style={styles.loadingText}>Loading messages...</Text>
-  ) : (
-    <FlatList
-      ref={flatListRef}
-      data={messages}
-      keyExtractor={(item, index) => (item.id ? `${item.id}` : `${index}`)}
-      renderItem={({ item }) => {
-        const isImage = item.attachment && (item.type?.includes("image") || item.attachment.match(/\.(jpg|jpeg|png|gif)$/i));
-        const isVideo = item.attachment && (item.type?.includes("video") || item.attachment.match(/\.(mp4|mov|avi|mkv)$/i));
+    <View style={styles.messagesWrapper}>
+      {loading && !messagesLoaded ? (
+        <Text style={styles.loadingText}>Loading messages...</Text>
+      ) : (
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          keyExtractor={(item, index) => (item.id ? `${item.id}` : `${index}`)}
+          renderItem={({ item }) => {
+            const isImage =
+              item.attachment &&
+              (item.type?.includes("image") ||
+                item.attachment.match(/\.(jpg|jpeg|png|gif)$/i));
+            const isVideo =
+              item.attachment &&
+              (item.type?.includes("video") ||
+                item.attachment.match(/\.(mp4|mov|avi|mkv)$/i));
 
-        return (
-          <View style={[styles.message, item.sender_id === sessionId ? styles.userMessage : styles.shopMessage]}>
-            {item.attachment ? (
-              isImage ? (
-                <>
-                  {console.log("Image URI:", `https://172.27.243.94:8000${item.attachment}`)}
-                  <Image 
-                    source={{ uri: `https://172.27.243.94:8000${item.attachment}` }} 
-                    onError={(e) => console.error("Image Load Error:", e)}
-                    style={{ width: 150, height: 150, borderRadius: 10 }}
+            const formattedTime = new Date(item.timestamp).toLocaleTimeString("en-US", {
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: true, // Ensures AM/PM format
+            });
+
+            // ✅ Log read status before rendering
+            console.log(`Rendering message ${item.id}: read=${item.read}`);
+
+            return (
+              <View
+                style={[
+                  styles.message,
+                  item.sender_id === userId ? styles.userMessage : styles.shopMessage,
+                ]}
+              >
+                {item.attachment ? (
+                  isImage ? (
+                    <ChatImage uri={`https://127.0.0.1:8000${item.attachment}`} />
+                  ) : isVideo ? (
+                    <ChatVideo uri={`https://127.0.0.1:8000${item.attachment}`} />
+                  ) : (
+                    <Text style={styles.attachmentText}>Unsupported file type</Text>
+                  )
+                ) : (
+                  <View style={styles.messageContent}>
+                    <Text style={styles.messageText}>{item.content}</Text>
+
+                    <View style={styles.timestampContainer}>
+                      <Text style={styles.timestampText}>{formattedTime}</Text>
+                        {item.sender_id === userId && (
+                    <MaterialIcons
+                      name={item.read ? "done-all" : "done"}
+                      size={18}
+                      color={item.read ? "#007BFF" : "gray"}
+                      style={styles.checkmark}
                   />
-                </>
-              ) : isVideo ? (
-                <Video
-                  source={{ uri: `https://172.27.243.94:8000${item.attachment}` }}
-                  style={{ width: 150, height: 150, borderRadius: 10 }}
-                  useNativeControls
-                  resizeMode="contain"
-                  shouldPlay={false}
-                />
-              ) : (
-                <Text style={styles.attachmentText}>Unsupported file type</Text>
-              )
-            ) : (
-              <Text style={styles.messageText}>{item.content}</Text>
-            )}
-          </View>
-        );
-      }}
-      contentContainerStyle={styles.messageList}
-      onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
-      onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
-    />
-  )}
-</View>
-
+                  )}
+                  </View>
+                  </View>
+                )}
+              </View>
+            );
+          }}
+          contentContainerStyle={styles.messageList}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
+          onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
+        />
+      )}
+    </View>
 
       <View style={styles.inputContainer}>
         <TextInput
@@ -353,6 +465,7 @@ const styles = StyleSheet.create({
   headerText: {
     fontSize: 18,
     fontWeight: 'bold',
+    marginLeft: 60,
   },
   messagesWrapper: {
     flex: 1,
@@ -378,6 +491,24 @@ const styles = StyleSheet.create({
   shopMessage: {
     alignSelf: 'flex-start',
     backgroundColor: '#ECECEC',
+  },
+  messageContent: {
+    flexDirection: "row", // Ensure text and timestamp are in the same row
+    alignItems: "flex-end", // Align timestamp slightly lower
+    flexWrap: "wrap", // Allow text wrapping if needed
+  },
+  timestampContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 8,
+    marginTop: 3, // Space between message text and timestamp
+  },
+  timestampText: {
+    fontSize: 12,
+    color: "gray",
+  },
+  checkmark: {
+    marginLeft: 3, // Add space between text and checkmark
   },
   messageText: {
     color: 'black',

@@ -35,7 +35,7 @@ const AllCategories = () => {
 
   useEffect(() => {
     axios
-      .get('https://172.27.243.94:8000/all-shop-categories/')
+      .get('https://127.0.0.1:8000/all-shop-categories/')
       .then((response) => {
         const categoryArray = Object.values(response.data);
         setCategories(categoryArray);

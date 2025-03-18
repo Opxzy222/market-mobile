@@ -27,7 +27,7 @@ const UpdateShopProducts = () => {
       try {
         const formData = new FormData();
         formData.append('shop_id', shop_id);
-        const response = await axios.post('https://172.27.243.94:8000/product-suggestion/', formData);
+        const response = await axios.post('https://127.0.0.1:8000/product-suggestion/', formData);
         const { product_suggestions, selected_products } = response.data;
 
         if (product_suggestions && selected_products) {
@@ -280,7 +280,7 @@ const handleSubmitProducts = async () => {
             formData.append(`subcategory_custom_${index}`, customProduct.subcategory_id || ''); 
         });
 
-        const response = await axios.post('https://172.27.243.94:8000/update-shop-products/', formData, {
+        const response = await axios.post('https://127.0.0.1:8000/update-shop-products/', formData, {
             headers: {
                 'Content-Type': 'multipart/form-data',
             },

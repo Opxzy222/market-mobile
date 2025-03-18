@@ -36,7 +36,7 @@ const AllFollowedShops = () => {
       console.log(sessionId, 'heya')
       const fetchAllFollowedShops = async () => {
         try {
-          const response = await axios.get("https://172.27.243.94:8000/shops/followed/", {
+          const response = await axios.get("https://127.0.0.1:8000/shops/followed/", {
             headers: {
               Authorization: sessionId,
             },
@@ -67,7 +67,7 @@ const AllFollowedShops = () => {
       }}
     >
       <Image
-        source={{ uri: `https://172.27.243.94:8000/${item.image}` }}
+        source={{ uri: `https://127.0.0.1:8000/${item.image}` }}
         style={styles.shopImage}
       />
       <View style={styles.shopDetails}>

@@ -27,7 +27,7 @@ export default function SignUp() {
     formData.append("password", password);
 
     try {
-      const response = await axios.post("https://172.27.243.94:8000/create-user/", formData);
+      const response = await axios.post("https://127.0.0.1:8000/create-user/", formData);
       const responseData = response.data;
       console.log(responseData.message, 'okay')
 

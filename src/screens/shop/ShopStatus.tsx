@@ -18,12 +18,13 @@ import * as MediaLibrary from "expo-media-library";
 import { Video } from "expo-av";
 import { format } from "date-fns";
 import { Ionicons } from '@expo/vector-icons';
+import { MaterialIcons } from '@expo/vector-icons';
 import { useLocalSearchParams } from "expo-router";
 import StatusViewer from "../../components/shop/ShopStatusViewer";
 import SubscriptionProvider, { SubscriptionContext } from '../../components/SubscriptionProvider';
 import SubscriptionRequired from "@/components/RequiredSubscription";
 
-const BACKEND_URL = "https://172.27.243.94:8000";
+const BACKEND_URL = "https://127.0.0.1:8000";
 
 const StatusScreen = () => {
   const [statuses, setStatuses] = useState([]);
@@ -241,6 +242,13 @@ const StatusScreen = () => {
   // Inside your component's return:
 return (
   <View style={styles.container}>
+    <View style={styles.header}>
+      <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
+      </TouchableOpacity>
+      <Text style={styles.headerTitle}>My Status</Text>
+    </View>
+    <View style={styles.card}>
     {/* My Status Section */}
     <TouchableOpacity style={styles.myStatus} onPress={() => {}}>
       <Image
@@ -411,7 +419,8 @@ return (
         initialIndex={currentStatusIndex}
         onClose={handleCloseViewer}
       />
-    )}
+      )}
+    </View>
   </View>
 );
 };
@@ -423,11 +432,32 @@ const styles = StyleSheet.create({
     padding: 15,
   },
   header: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#333",
-    marginBottom: 15,
-    textAlign: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: "bold",
+    marginLeft: 75,
+    color: "black",
+  },
+  backButton: {
+    borderRadius: 50,
+    backgroundColor: "#E0E0E0",
+    marginRight: 12,
+  },
+  card: {
+    flex: 1,
+    padding: 15,
   },
   myStatus: {
     flexDirection: "row",

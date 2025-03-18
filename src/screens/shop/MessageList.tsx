@@ -37,7 +37,7 @@ const MessageList = () => {
 
     setLoading(true);
     try {
-      const response = await axios.get("https://172.27.243.94:8000/message-list/", {
+      const response = await axios.get("https://127.0.0.1:8000/message-list/", {
         headers: {
           Authorization: sessionId,
         },
@@ -100,7 +100,7 @@ const MessageList = () => {
           keyExtractor={(item, index) => `${item.id}-${index}`}
           renderItem={({ item }) => (
             <TouchableOpacity
-              style={styles.messageItem}
+              style={[styles.messageItem, !item.status && styles.unreadMessage]}
               onPress={() => handleMessageClick(item)}
               activeOpacity={0.85}
             >
@@ -108,17 +108,23 @@ const MessageList = () => {
                 source={{
                   uri: item.profile_image || "https://your-default-image-url.com/default-profile.png",
                 }}
-                style={styles.profileImage}
+                style={[styles.profileImage, !item.status && styles.unreadProfileImage]}
                 onError={(e) => console.log("Image Load Error:", e.nativeEvent.error)}
               />
 
               <View style={styles.textContainer}>
                 <View style={styles.messageHeader}>
-                  <Text style={styles.name}>{item.name}</Text>
-                  <Text style={styles.date}>{new Date(item.date).toLocaleDateString()}</Text>
+                  <Text style={[styles.name, !item.status && styles.unreadText]}>{item.name}</Text>
+                  <Text style={[styles.date, !item.status && styles.unreadText]}>
+                    {new Date(item.date).toLocaleDateString()}
+                  </Text>
                 </View>
-                <Text style={styles.lastMessage} numberOfLines={1} ellipsizeMode="tail">
-                  {item.last_message}
+                <Text
+                  style={[styles.lastMessage, !item.status && styles.unreadText]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {item.last_message || (item.attachment ? "📎 Media" : "")}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -166,8 +172,8 @@ const styles = StyleSheet.create({
   },
   messageItem: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 20, 
-    padding: 16, 
+    borderRadius: 20,
+    padding: 16,
     marginHorizontal: 16,
     marginVertical: 8,
     flexDirection: "row",
@@ -175,15 +181,27 @@ const styles = StyleSheet.create({
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
-    shadowRadius: 10, 
+    shadowRadius: 10,
     elevation: 5,
   },
+  unreadMessage: {
+    borderWidth: 1,
+    borderColor: "#007AFF",
+  },
+  unreadProfileImage: {
+    
+  },
+  unreadText: {
+    fontWeight: "bold",
+    color: "#007AFF",
+    fontSize: 16,
+  },
   profileImage: {
-    width: 58, 
+    width: 58,
     height: 58,
     borderRadius: 30,
     marginRight: 14,
-    borderWidth: 3, 
+    borderWidth: 3,
     borderColor: "#3A7BD5",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
@@ -200,18 +218,8 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     alignItems: "center",
   },
-  name: {
-    fontSize: 18, 
-    fontWeight: "bold",
-    color: "#2C3E50",
-  },
-  date: {
-    fontSize: 13, 
-    color: "#7B8D93",
-    fontWeight: "600",
-  },
   lastMessage: {
-    fontSize: 15, 
+    fontSize: 15,
     color: "#444",
     opacity: 0.9,
   },

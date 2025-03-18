@@ -45,7 +45,7 @@ const ShopPosts = ({ posts, shopId }) => {
     if (isVideo) {
       return (
         <Video
-          source={{ uri: `https://172.27.243.94:8000${media.url}` }}
+          source={{ uri: `https://127.0.0.1:8000${media.url}` }}
           style={styles.media}
           resizeMode="cover"
           useNativeControls
@@ -55,7 +55,7 @@ const ShopPosts = ({ posts, shopId }) => {
 
     return (
       <Image
-        source={{ uri: `https://172.27.243.94:8000${media.url}` }}
+        source={{ uri: `https://127.0.0.1:8000${media.url}` }}
         style={styles.media}
         resizeMode="cover"
       />
@@ -77,7 +77,7 @@ const ShopPosts = ({ posts, shopId }) => {
               {item.media && item.media.length > 0 ? (
                 <Image
                   source={{
-                    uri: `https://172.27.243.94:8000${item.media[0].url}`,
+                    uri: `https://127.0.0.1:8000${item.media[0].url}`,
                   }}
                   style={styles.thumbnail}
                   resizeMode="cover"

@@ -27,7 +27,7 @@ export default function GeolocationSearch({ onSearch }) {
       const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       const { latitude, longitude } = location.coords;
 
-      const response = await axios.get('https://172.27.243.94:8000/shop-product-search/', {
+      const response = await axios.get('https://127.0.0.1:8000/shop-product-search/', {
         params: { input: searchQuery, lat: latitude, lon: longitude },
       });
 

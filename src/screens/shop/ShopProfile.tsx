@@ -51,7 +51,7 @@ export default function ShopProfileScreen() {
   useEffect(() => {
     const fetchShopDetails = async () => {
       try {
-        const response = await axios.get(`https://172.27.243.94:8000/shop/profile/${shopId}/`, {
+        const response = await axios.get(`https://127.0.0.1:8000/shop/profile/${shopId}/`, {
           headers: {
             Authorization: sessionId, // Send sessionId in headers
           },
@@ -83,7 +83,7 @@ export default function ShopProfileScreen() {
   useEffect(() => {
     const fetchParentCategories = async () => {
       try {
-        const response = await axios.post("https://172.27.243.94:8000/category/dropdown-options/");
+        const response = await axios.post("https://127.0.0.1:8000/category/dropdown-options/");
         setParentCategories(response.data.categories.map(cat => ({ key: cat.id, value: cat.name })));
       } catch (error) {
         console.error("Error fetching parent categories:", error);
@@ -101,7 +101,7 @@ export default function ShopProfileScreen() {
         const formData = new FormData();
         formData.append("parent_id", selectedParentCategory);
 
-        const response = await axios.post("https://172.27.243.94:8000/category/subcategories/", formData, {
+        const response = await axios.post("https://127.0.0.1:8000/category/subcategories/", formData, {
           headers: { "Content-Type": "multipart/form-data" },
         });
 
@@ -195,7 +195,7 @@ export default function ShopProfileScreen() {
             return;
         }
 
-        await axios.post(`https://172.27.243.94:8000/shop/profile/${shopId}/`, formData, {
+        await axios.post(`https://127.0.0.1:8000/shop/profile/${shopId}/`, formData, {
             headers: {
                 "Content-Type": "multipart/form-data",
                 Authorization: sessionId,
@@ -213,7 +213,7 @@ export default function ShopProfileScreen() {
 };
 
   return (
-    <LinearGradient colors={["#F7F7F7", "#EAEAEA"]} style={styles.container}>
+    <LinearGradient colors={["#F5F5F5", "#E0E0E0"]} style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.replace(prevRoute || '((tabs)/myshop)')}>
           <MaterialIcons name="arrow-back" size={26} color="black" />

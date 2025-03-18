@@ -48,7 +48,7 @@ const ReviewForm = ({ shopId, onReviewSubmitted }) => {
 
     try {
       const response = await axios.post(
-        'https://172.27.243.94:8000/shops/reviews/submit/',
+        'https://127.0.0.1:8000/shops/reviews/submit/',
         formData,
         {
           headers: {

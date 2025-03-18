@@ -25,7 +25,7 @@ const MyShop = () => {
 
     try {
       const response = await axios.post(
-        'https://172.27.243.94:8000/shops-product-count/',
+        'https://127.0.0.1:8000/shops-product-count/',
         {},
         {
           headers: {
@@ -54,7 +54,7 @@ const MyShop = () => {
         text: 'Close Shop',
         onPress: async () => {
           try {
-            await axios.delete(`https://172.27.243.94:8000/close-shop/${shopId}/`);
+            await axios.delete(`https://127.0.0.1:8000/close-shop/${shopId}/`);
             setShops((prev) => prev.filter((shop) => shop.id !== shopId));
             Alert.alert('Success', 'Shop closed successfully.');
           } catch (error) {

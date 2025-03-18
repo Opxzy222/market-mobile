@@ -23,7 +23,7 @@ const RecentlyVisitedShops = () => {
   useEffect(() => {
     const fetchRecentlyVisitedShops = async () => {
       try {
-        const response = await axios.get("https://172.27.243.94:8000/shops/all-recently-visited/", {
+        const response = await axios.get("https://127.0.0.1:8000/shops/all-recently-visited/", {
         headers: {
           Authorization: sessionId,
         },
@@ -46,7 +46,7 @@ const RecentlyVisitedShops = () => {
       style={styles.shopCard}
       onPress={() => router.push({ pathname: '/shop/shop-page', params: { shopId: item.id } })}
     >
-      <Image source={{ uri: `https://172.27.243.94:8000/${item.image}` }} style={styles.shopImage} />
+      <Image source={{ uri: `https://127.0.0.1:8000/${item.image}` }} style={styles.shopImage} />
       <View style={styles.shopInfo}>
         <Text style={styles.shopName}>{item.name}</Text>
         <Text style={styles.visitedAt}>Visited: {new Date(item.visited_at).toLocaleDateString()}</Text>

@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { Tabs } from 'expo-router';
-import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
+import React, { useState, useEffect } from "react";
+import { Tabs } from "expo-router";
+import { Ionicons, MaterialIcons, FontAwesome5 } from "@expo/vector-icons";
 import SubscriptionProvider from "@/components/SubscriptionProvider";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function RootLayout() {
   const [userId, setUserId] = useState<number | null>(null);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+  const [socket, setSocket] = useState<WebSocket | null>(null);
 
   useEffect(() => {
     const fetchUserId = async () => {
@@ -25,6 +27,39 @@ export default function RootLayout() {
     fetchUserId();
   }, []);
 
+  useEffect(() => {
+    if (!userId) return;
+
+    const ws = new WebSocket(`ws://127.0.0.1:8001/ws/unread-messages/?userId=${userId}`);
+
+    ws.onopen = () => {
+      console.log("WebSocket connected");
+      ws.send(JSON.stringify({ action: "get_unread_count" }));
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.unread_count !== undefined) {
+        setUnreadCount(data.unread_count);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error("WebSocket error:", error);
+    };
+
+    ws.onclose = () => {
+      console.log("WebSocket closed. Reconnecting...");
+      setTimeout(() => setSocket(new WebSocket(`ws://127.0.0.1/ws/unread-messages/?userId=${userId}`)), 5000);
+    };
+
+    setSocket(ws);
+
+    return () => {
+      ws.close();
+    };
+  }, [userId]);
+
   return (
     <SubscriptionProvider userId={userId}>
       <Tabs
@@ -32,83 +67,66 @@ export default function RootLayout() {
           headerShown: false,
           tabBarShowLabel: true,
           tabBarStyle: {
-            backgroundColor: '#ffffff',
+            backgroundColor: "#ffffff",
             borderTopWidth: 0,
             elevation: 10,
             height: 60,
           },
           tabBarLabelStyle: {
             fontSize: 12,
-            fontWeight: '600',
+            fontWeight: "600",
             marginBottom: 5,
           },
-          tabBarActiveTintColor: '#007AFF',
-          tabBarInactiveTintColor: '#000000',
+          tabBarActiveTintColor: "#007AFF",
+          tabBarInactiveTintColor: "#000000",
         }}
       >
-        {/* Home */}
         <Tabs.Screen
           name="(tabs)/shop"
           options={{
-            title: 'Home',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="home" color={color} size={size || 24} />
-            ),
+            title: "Home",
+            tabBarIcon: ({ color, size }) => <Ionicons name="home" color={color} size={size || 24} />,
           }}
         />
 
-        {/* Messages */}
         <Tabs.Screen
           name="(tabs)/placeholder"
           options={{
-            title: 'Messages',
-            tabBarIcon: ({ color, size }) => (
-              <MaterialIcons name="message" color={color} size={size || 24} />
-            ),
+            title: "Messages",
+            tabBarIcon: ({ color, size }) => <MaterialIcons name="message" color={color} size={size || 24} />,
+            tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
           }}
         />
 
-        {/* Status */}
         <Tabs.Screen
           name="(tabs)/status"
           options={{
-            title: 'Status',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="time-outline" color={color} size={size || 24} />
-            ),
+            title: "Status",
+            tabBarIcon: ({ color, size }) => <Ionicons name="time-outline" color={color} size={size || 24} />,
           }}
         />
 
-        {/* My Shop */}
         <Tabs.Screen
           name="(tabs)/myshop"
           options={{
-            title: 'My Shop',
-            tabBarIcon: ({ color, size }) => (
-              <FontAwesome5 name="store" color={color} size={size || 24} />
-            ),
+            title: "My Shop",
+            tabBarIcon: ({ color, size }) => <FontAwesome5 name="store" color={color} size={size || 24} />,
           }}
         />
 
-        {/* Account */}
         <Tabs.Screen
           name="(tabs)/account"
           options={{
-            title: 'Account',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="card-outline" color={color} size={size || 24} />
-            ),
+            title: "Account",
+            tabBarIcon: ({ color, size }) => <Ionicons name="card-outline" color={color} size={size || 24} />,
           }}
         />
 
-        {/* Profile */}
         <Tabs.Screen
           name="(tabs)/profile"
           options={{
-            title: 'Profile',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="person-circle" color={color} size={size || 24} />
-            ),
+            title: "Profile",
+            tabBarIcon: ({ color, size }) => <Ionicons name="person-circle" color={color} size={size || 24} />,
           }}
         />
 

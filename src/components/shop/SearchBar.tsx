@@ -34,7 +34,7 @@ export default function ShopSearchComponent() {
   return (
     <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
       <View style={styles.filterContainer}>
-        {['geolocation', 'location', 'shopId'].map((filter) => (
+        {['geolocation', 'location', 'shop ID'].map((filter) => (
           <TouchableOpacity
             key={filter}
             style={[styles.filterButton, activeFilter === filter && styles.activeFilter]}
@@ -50,7 +50,7 @@ export default function ShopSearchComponent() {
       <Animated.View style={[styles.searchContainer, { opacity: fadeAnim }]}>
         {activeFilter === 'geolocation' && <GeolocationSearch onSearch={handleSearch} />}
         {activeFilter === 'location' && <LocationSearch onSearch={handleSearch} />}
-        {activeFilter === 'shopId' && <ShopIdSearch onSearch={handleSearch} />}
+        {activeFilter === 'shop ID' && <ShopIdSearch onSearch={handleSearch} />}
       </Animated.View>
     </LinearGradient>
   );

@@ -19,7 +19,7 @@ const LocationSearch = ({ onSearch }) => {
   useEffect(() => {
     const fetchTopLevelLocations = async () => {
       try {
-        const response = await axios.post("https://172.27.243.94:8000/location/states/");
+        const response = await axios.post("https://127.0.0.1:8000/location/states/");
         setLocations(response.data.locations.map(loc => ({ key: loc.id, value: loc.name })));
       } catch (error) {
         console.error("Error fetching locations:", error);
@@ -40,7 +40,7 @@ const LocationSearch = ({ onSearch }) => {
       formData.append("parent_id", selectedOption);
 
       const response = await axios.post(
-        "https://172.27.243.94:8000/location/children/",
+        "https://127.0.0.1:8000/location/children/",
         formData,
         { headers: { "Content-Type": "multipart/form-data" } }
       );
@@ -61,7 +61,7 @@ const LocationSearch = ({ onSearch }) => {
       formData.append("parent_id", selectedOption);
 
       const response = await axios.post(
-        "https://172.27.243.94:8000/location/children/",
+        "https://127.0.0.1:8000/location/children/",
         formData,
         { headers: { "Content-Type": "multipart/form-data" } }
       );
@@ -91,7 +91,7 @@ const LocationSearch = ({ onSearch }) => {
 
     setLoading(true);
     try {
-      const response = await axios.get("https://172.27.243.94:8000/location/search/", {
+      const response = await axios.get("https://127.0.0.1:8000/location/search/", {
         params: { location_id: locationId, input: searchTerm.trim() }
       });
 

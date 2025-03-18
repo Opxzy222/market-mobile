@@ -33,7 +33,7 @@ const AdminShopPosts = ({ posts, shopId }) => {
 
   const handleDelete = async (postId) => {
     try {
-      await axios.delete(`https://172.27.243.94:8000/shops/${shopId}/posts/${postId}/`);
+      await axios.delete(`https://127.0.0.1:8000/shops/${shopId}/posts/${postId}/`);
       alert("Post deleted successfully");
       handleCloseModal();
     } catch (error) {
@@ -55,7 +55,7 @@ const AdminShopPosts = ({ posts, shopId }) => {
     if (isVideo) {
       return (
         <Video
-          source={{ uri: `https://172.27.243.94:8000${media.url}` }}
+          source={{ uri: `https://127.0.0.1:8000${media.url}` }}
           style={styles.media}
           resizeMode="cover"
           useNativeControls
@@ -65,7 +65,7 @@ const AdminShopPosts = ({ posts, shopId }) => {
 
     return (
       <Image
-        source={{ uri: `https://172.27.243.94:8000${media.url}` }}
+        source={{ uri: `https://127.0.0.1:8000${media.url}` }}
         style={styles.media}
         resizeMode="cover"
       />
@@ -87,7 +87,7 @@ const AdminShopPosts = ({ posts, shopId }) => {
               {item.media && item.media.length > 0 ? (
                 <Image
                   source={{
-                    uri: `https://172.27.243.94:8000${item.media[0].url}`,
+                    uri: `https://127.0.0.1:8000${item.media[0].url}`,
                   }}
                   style={styles.thumbnail}
                   resizeMode="cover"

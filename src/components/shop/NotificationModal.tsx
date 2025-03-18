@@ -57,7 +57,7 @@ const NotificationDropdown = () => {
   const connectWebSocket = () => {
     if (socketRef.current) return;
 
-    const wsUrl = `ws://172.27.243.94:8001/ws/notifications/?user_id=${userId}`;
+    const wsUrl = `ws://127.0.0.1:8001/ws/notifications/?user_id=${userId}`;
     socketRef.current = new WebSocket(wsUrl);
 
     socketRef.current.onopen = () => {

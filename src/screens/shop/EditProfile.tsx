@@ -32,7 +32,7 @@ const EditProfileScreen = () => {
 
   useEffect(() => {
     if (sessionId) {
-      axios.get(`https://172.27.243.94:8000/user/profile/`, {
+      axios.get(`https://127.0.0.1:8000/user/profile/`, {
         headers: {
           Authorization: sessionId,
         },
@@ -85,7 +85,7 @@ const EditProfileScreen = () => {
 
     try {
       const response = await axios.post(
-        `https://172.27.243.94:8000/user/profile/`,
+        `https://127.0.0.1:8000/user/profile/`,
         formData,
         {
           headers: {
@@ -136,11 +136,12 @@ const EditProfileScreen = () => {
   }
 
   return (
-    <LinearGradient colors={["#F7F7F7", "#EAEAEA"]} style={styles.container}>
+    <LinearGradient colors={["#F5F5F5", "#E0E0E0"]} style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.replace(prevRoute || '/(tabs)/profile')}>
           <MaterialIcons name="arrow-back" size={26} color="#6B4226" />
         </TouchableOpacity>
+        <Text style={styles.headerTitle}>Profile Edit</Text>
       </View>
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.profileCard}>
@@ -204,15 +205,27 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    padding: 18,
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 5,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
+    backdropFilter: "blur(10px)", // Glass effect
+  },
+  backButton: {
+    marginRight: 10,
+    marginTop: 12,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: "bold",
+    textAlign: "center",
+    color: "#222",
+    flex: 1,
   },
   scrollContainer: {
     paddingVertical: 30,
@@ -220,7 +233,7 @@ const styles = StyleSheet.create({
   },
   profileCard: {
     width: "90%",
-    backgroundColor: "rgba(255, 255, 255, 0.3)", // Adjusted transparency for clarity
+    backgroundImage: "linear-gradient(rgba(255,255,255,0.6), rgba(240,240,240,0.4))",
     padding: 22,
     borderRadius: 20,
     shadowColor: "#000",
@@ -273,14 +286,14 @@ const styles = StyleSheet.create({
     marginBottom: 5,
   },
   input: {
-    backgroundColor: "rgba(255, 255, 255, 0.6)", // Softer contrast
+    backgroundColor: "rgba(255, 255, 255, 0.8)", // Softer contrast
     padding: 14,
     borderRadius: 10,
     fontSize: 16,
     color: "#2D3748",
   },
   inputField: {
-    backgroundColor: "rgba(255, 255, 255, 0.8)", // More solid for better readability
+    backgroundColor: "white",
     padding: 14,
     borderRadius: 10,
     fontSize: 16,

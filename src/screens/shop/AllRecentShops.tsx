@@ -29,7 +29,7 @@ const AllRecentlyVisitedShops = () => {
 
     const fetchRecentlyVisitedShops = async () => {
       try {
-        const response = await axios.get("https://172.27.243.94:8000/shops/all-recently-visited/", {
+        const response = await axios.get("https://127.0.0.1:8000/shops/all-recently-visited/", {
           headers: {
           Authorization: sessionId,
         },
@@ -53,7 +53,7 @@ const AllRecentlyVisitedShops = () => {
       <View style={styles.shopHeader}>
         {item.image && (
           <Image
-            source={{ uri: `https://172.27.243.94:8000/${item.image}` }}
+            source={{ uri: `https://127.0.0.1:8000/${item.image}` }}
             style={styles.shopImage}
           />
         )}

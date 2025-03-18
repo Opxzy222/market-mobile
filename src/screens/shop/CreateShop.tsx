@@ -45,7 +45,7 @@ export default function CreateShopScreen({ navigation }) {
     const fetchCategories = async () => {
       try {
         const response = await axios.post(
-          "https://172.27.243.94:8000/category/dropdown-options/"
+          "https://127.0.0.1:8000/category/dropdown-options/"
         );
         setCategories(
           response.data.categories.map((cat) => ({
@@ -77,7 +77,7 @@ export default function CreateShopScreen({ navigation }) {
     const fetchTopLevelLocations = async () => {
       try {
         const response = await axios.post(
-          "https://172.27.243.94:8000/location/states/"
+          "https://127.0.0.1:8000/location/states/"
         );
         setLocations(
           response.data.locations.map((loc) => ({
@@ -103,7 +103,7 @@ export default function CreateShopScreen({ navigation }) {
       formData.append("parent_id", selectedOption);
   
       const response = await axios.post(
-        "https://172.27.243.94:8000/location/children/",
+        "https://127.0.0.1:8000/location/children/",
         formData,
         {
           headers: {
@@ -132,7 +132,7 @@ export default function CreateShopScreen({ navigation }) {
       formData.append("parent_id", selectedOption);
   
       const response = await axios.post(
-        "https://172.27.243.94:8000/location/children/",
+        "https://127.0.0.1:8000/location/children/",
         formData,
         {
           headers: {
@@ -165,7 +165,7 @@ export default function CreateShopScreen({ navigation }) {
       formData.append("parent_id", selectedOption);
 
       const response = await axios.post(
-        "https://172.27.243.94:8000/category/subcategories/",
+        "https://127.0.0.1:8000/category/subcategories/",
         formData,
         {
           headers: { "Content-Type": "multipart/form-data" },
@@ -246,7 +246,7 @@ export default function CreateShopScreen({ navigation }) {
         );
 
         const response = await axios.post(
-            "https://172.27.243.94:8000/create-shop/",
+            "https://127.0.0.1:8000/create-shop/",
             formData,
             { 
                 headers: { 

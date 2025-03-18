@@ -2,6 +2,7 @@ import React, { useContext, useState } from 'react';
 import { View, Text, TextInput, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import SubscriptionProvider, { SubscriptionContext } from '../SubscriptionProvider';
 import SubscriptionRequired from '../RequiredSubscription';
+import { LinearGradient } from "expo-linear-gradient";
 
 const ShopProduct = ({ products }) => {
   const { subscriptionStatus, loading } = useContext(SubscriptionContext);
@@ -51,7 +52,7 @@ const ShopProduct = ({ products }) => {
     .filter(category => category.subcategories.length > 0); // Remove empty categories
 
   return (
-    <View style={styles.container}>
+    <LinearGradient colors={["#F7F7F7", "#EAEAEA"]} style={styles.container}>
       {/* Search Bar */}
       <TextInput
         style={styles.searchInput}
@@ -99,7 +100,7 @@ const ShopProduct = ({ products }) => {
           ))
         )}
       </ScrollView>
-    </View>
+    </LinearGradient>
   );
 };
 

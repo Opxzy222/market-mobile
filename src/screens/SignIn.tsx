@@ -19,7 +19,7 @@ async function login(email: string, password: string) {
   formData.append("email", email);
   formData.append("password", password);
 
-  const response = await axios.post("https://172.27.243.94:8000/login/", formData);
+  const response = await axios.post("https://127.0.0.1:8000/login/", formData);
   if (response.data.message === "login successful") {
     const { user_id, session_id, user_name, userId } = response.data;
     await AsyncStorage.setItem("sessionToken", session_id);

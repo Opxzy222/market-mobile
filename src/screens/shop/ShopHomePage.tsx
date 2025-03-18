@@ -9,7 +9,6 @@ import RecentShops from '../../components/shop/RecentShops';
 
 const App = () => {
   return (
-    <LinearGradient colors={["#F7F7F7", "#EAEAEA"]} style={styles.gradient}>
       <ScrollView contentContainerStyle={styles.container}>
         <Header />
         <SearchBar />
@@ -17,16 +16,13 @@ const App = () => {
         <RecentShops />
         <FollowedShops />
       </ScrollView>
-    </LinearGradient>
   );
 };
 
 const styles = StyleSheet.create({
-  gradient: {
-    flex: 1,
-  },
   container: {
     paddingBottom: 20, // Prevents content from touching the edge
+    backgroundColor: 'white'
   },
 });
 

@@ -11,6 +11,8 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter, useLocalSearchParams } from "expo-router";
+import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 
 const ChangePassword = () => {
   const [oldPassword, setOldPassword] = useState("");
@@ -20,6 +22,10 @@ const ChangePassword = () => {
   const [showOldPassword, setShowOldPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  const router = useRouter();
+  const params = useLocalSearchParams();
+  const { prevRoute } = params;
 
   const handleChangePassword = async () => {
     if (!oldPassword || !newPassword || !confirmPassword) {
@@ -44,7 +50,7 @@ const ChangePassword = () => {
       }
 
       // API Request
-      const response = await fetch("https://172.27.243.94:8000/change-password/", {
+      const response = await fetch("https://127.0.0.1:8000/change-password/", {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -77,9 +83,14 @@ const ChangePassword = () => {
   };
 
   return (
-    <LinearGradient colors={["#F7F7F7", "#EAEAEA"]} style={styles.container}>
+    <LinearGradient colors={["#F5F5F5", "#E0E0E0"]} style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.replace(prevRoute || '/(tabs)/profile')}>
+          <MaterialIcons name="arrow-back" size={26} color="#6B4226" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Change Password</Text>
+      </View>
       <View style={styles.card}>
-        <Text style={styles.title}>Change Password</Text>
 
         {/* Old Password Input */}
         <View style={styles.inputContainer}>
@@ -145,11 +156,35 @@ const ChangePassword = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: "center",
-    paddingHorizontal: 20,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 18,
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 5,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    marginBottom: 12,
+    backdropFilter: "blur(10px)", // Glass effect
+  },
+  backButton: {
+    marginRight: 10,
+    marginTop: 12,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: "bold",
+    textAlign: "center",
+    color: "#222",
+    flex: 1,
   },
   card: {
-    backgroundColor: "white",
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
     borderRadius: 12,
     padding: 20,
     elevation: 5,
@@ -157,13 +192,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.1,
     shadowRadius: 6,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: "bold",
-    textAlign: "center",
-    marginBottom: 20,
-    color: "#333",
+    marginTop: 20,
   },
   inputContainer: {
     flexDirection: "row",

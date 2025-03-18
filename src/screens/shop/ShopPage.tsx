@@ -6,7 +6,7 @@ import {
   Image,
   TouchableOpacity,
   ScrollView,
-  ActivityIndicator, Alert, Clipboard
+  ActivityIndicator, Alert, Clipboard, ToastAndroid, Platform
 } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -19,6 +19,7 @@ import ShopProduct from '../../components/shop/ShopProduct';
 import ShopPosts from '../../components/shop/ShopPost';
 import ShopLocation from '../../components/shop/MapFeatures';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { LinearGradient } from "expo-linear-gradient";
 
 
 const ShopPage = () => {
@@ -35,6 +36,7 @@ const ShopPage = () => {
   const [error, setError] = useState('');
   const [sessionId, setSessionId] = useState(null);
   const [plan, setPlan] = useState('');
+  const [copied, setCopied] = useState(false);
 
 
   useEffect(() => {
@@ -66,7 +68,7 @@ useEffect(() => {
 
     try {
       const response = await axios.get(
-        `https://172.27.243.94:8000/shops/${shopId}/combined/`,
+        `https://127.0.0.1:8000/shops/${shopId}/combined/`,
         {
           headers: {
             Authorization: sessionId, // Sending sessionId in headers
@@ -113,7 +115,7 @@ useEffect(() => {
     try {
       console.log("Marking shop as visited:", shopId, sessionId);
       await axios.post(
-        "https://172.27.243.94:8000/shops/recently-visited/",
+        "https://127.0.0.1:8000/shops/recently-visited/",
         { shop_id: shopId },
         {
           headers: {
@@ -142,13 +144,24 @@ useEffect(() => {
     return <ActivityIndicator size="large" color="#f39c12" />;
   }
 
-  const handleCopyShopId = () => {
-    Clipboard.setString(shop.shop_id);
-    Alert.alert("Copied!", "Shop ID has been copied to the clipboard.");
+  const copyToClipboard = () => {
+    if (shop.shop_id) {
+      Clipboard.setString(shop.shop_id);
+      setCopied(true);
+
+      if (Platform.OS === "android") {
+        ToastAndroid.show("Profile ID copied!", ToastAndroid.SHORT);
+      } else {
+        Alert.alert("Copied", "Profile ID copied to clipboard!");
+      }
+
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
+
   return (
-    <View style={styles.container}>
+    <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
       {/* Back Button Header */}
       <View style={styles.header}>
         <View style={styles.backContainer}>
@@ -159,8 +172,8 @@ useEffect(() => {
         <View style={styles.shopIdContainer}>
           <Text style={styles.shopIdLabel}>SHOP ID:</Text>
           <Text style={styles.shopId}>{shop.shop_id}</Text>
-        <TouchableOpacity onPress={handleCopyShopId}>
-          <Ionicons name="copy" size={20} color="#007BFF" style={styles.copyIcon} />
+        <TouchableOpacity onPress={copyToClipboard} style={styles.copyButton}>
+          <Ionicons name={copied ? "checkmark-circle" : "copy-outline"} size={22} color={copied ? "#4CAF50" : "#007AFF"} />
         </TouchableOpacity>
       </View>
       </View>
@@ -170,7 +183,7 @@ useEffect(() => {
         <View style={styles.shopHeader}>
           <View>
           <Image
-            source={{ uri: `https://172.27.243.94:8000/${shop.image}` }}
+            source={{ uri: `https://127.0.0.1:8000/${shop.image}` }}
             style={styles.shopImage}
           />
           </View>
@@ -249,7 +262,7 @@ useEffect(() => {
             </View>}
         </View>
       </ScrollView>
-    </View>
+    </LinearGradient>
   );
 };
 
@@ -373,7 +386,7 @@ const styles = StyleSheet.create({
   },
   description: {
     fontSize: 14,
-    color: '#5d6d7e', // Refined grey for descriptions
+    color: 'black', // Refined grey for descriptions
     lineHeight: 22,
   },
   nav: {
@@ -395,7 +408,7 @@ const styles = StyleSheet.create({
   },
   navTabText: {
     fontSize: 15,
-    color: '#7f8c8d',
+    color: 'black',
   },
   activeTabText: {
     color: '#1abc9c',
@@ -432,8 +445,10 @@ const styles = StyleSheet.create({
     color: 'black',
     marginRight: 1,
   },
-  copyIcon: {
-    marginLeft: 4,
+  copyButton: {
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: "rgba(0, 122, 255, 0.1)",
   },
 });
 
