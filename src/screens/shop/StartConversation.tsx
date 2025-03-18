@@ -103,12 +103,12 @@ useEffect(() => {
 }, [userId, shopId]);
   
   const markMessagesAsRead = async () => {
-      if (!conversationId || !sessionId || messages.length === 0) return;
+    if (!conversationId || !sessionId || messages.length === 0) return;
   
       try {
         await axios.post(
           "https://127.0.0.1:8000/mark-messages-read/",
-          { conversationId },
+          { conversation_id: conversationId },
           {
             headers: {
               "Content-Type": "application/json",
@@ -351,12 +351,9 @@ useEffect(() => {
   return (
   <View style={styles.container}>
     <View style={styles.header}>
-      <TouchableOpacity
-        onPress={() => router.replace(prevRoute || '((tabs)/placeholder)')}
-        style={styles.backButton}
-      >
-        <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
-      </TouchableOpacity>
+       <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
+        </TouchableOpacity>
       <Text style={styles.headerText}>{name}</Text>
     </View>
 

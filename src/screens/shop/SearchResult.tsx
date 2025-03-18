@@ -53,9 +53,10 @@ const SearchResults = () => {
   const [filteredResults, setFilteredResults] = useState(searchResults);
 
   const allDistancesNull = useMemo(
-    () => searchResults.every((shop) => shop.distance === null),
-    [searchResults]
-  );
+  () => searchResults.length > 0 && searchResults.every((shop) => shop.distance == null),
+  [searchResults]
+);
+
 
   useEffect(() => {
     setMinRating(0);
