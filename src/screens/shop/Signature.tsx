@@ -49,7 +49,7 @@ const Signature = () => {
       formData.append('signature', file);
 
       const res = await axios.post(
-        'https://127.0.0.1:8000/upload-signature/',
+        'https://retail-alvinia-goza-f6a0e4f7.koyeb.app/upload-signature/',
         formData,
         {
           headers: {

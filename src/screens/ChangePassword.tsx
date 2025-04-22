@@ -50,7 +50,7 @@ const ChangePassword = () => {
       }
 
       // API Request
-      const response = await fetch("https://127.0.0.1:8000/change-password/", {
+      const response = await fetch("https://retail-alvinia-goza-f6a0e4f7.koyeb.app/change-password/", {
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -172,16 +172,16 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     backdropFilter: "blur(10px)", // Glass effect
   },
-  backButton: {
-    marginRight: 10,
-    marginTop: 12,
-  },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "bold",
-    textAlign: "center",
-    color: "#222",
-    flex: 1,
+    marginLeft: 75,
+    color: "black",
+  },
+  backButton: {
+    borderRadius: 50,
+    backgroundColor: "#E0E0E0",
+    marginRight: 12,
   },
   card: {
     backgroundColor: "rgba(255, 255, 255, 0.8)",

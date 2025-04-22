@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { 
   View, 
   Text, 
@@ -8,18 +8,22 @@ import {
   Clipboard, 
   ToastAndroid,
   Platform,
-  Alert
+  Alert,
+  ActivityIndicator
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useRouter, usePathname } from 'expo-router';
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios from "axios";
 
 const ProfileScreen = () => {
   const router = useRouter();
   const pathname = usePathname();
   const [userId, setUserId] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchSessionId = async () => {
@@ -27,6 +31,19 @@ const ProfileScreen = () => {
       setUserId(userIdString);
     };
     fetchSessionId();
+  }, []);
+
+  useEffect(() => {
+    fetchSessionId();
+  }, []);
+
+  const fetchSessionId = useCallback(async () => {
+    try {
+      const sessionIdString = await AsyncStorage.getItem('sessionToken');
+      setSessionId(sessionIdString);
+    } catch (error) {
+      console.error('Error fetching sessionToken:', error);
+    }
   }, []);
 
   const copyToClipboard = () => {
@@ -44,10 +61,56 @@ const ProfileScreen = () => {
     }
   };
 
+  const confirmAndLogout = () => {
+    Alert.alert(
+      "Confirm Logout",
+      "Are you sure you want to logout?",
+      [
+        {
+          text: "No",
+          style: "cancel"
+        },
+        {
+          text: "Yes",
+          onPress: () => handleLogout()
+        }
+      ],
+      { cancelable: true }
+    );
+  };
+
+  const handleLogout = async () => {
+    if (!sessionId) {
+      Alert.alert('No session found');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const response = await fetch("https://retail-alvinia-goza-f6a0e4f7.koyeb.app/logout/", {
+      method: "POST",
+      headers: { Authorization: sessionId },
+    });
+
+      if (response.status === 200) {
+        await AsyncStorage.clear();
+        Alert.alert('Logout successful');
+        router.push("login");
+      } else {
+        Alert.alert('Logout failed');
+      }
+    } catch (error) {
+      console.error('Logout error:', error);
+      Alert.alert('An error occurred during logout');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContainer}>
-        {/* Profile ID Section */}
         {userId && (
           <View style={styles.profileCard}>
             <Text style={styles.profileTitle}>Profile ID</Text>
@@ -60,14 +123,15 @@ const ProfileScreen = () => {
           </View>
         )}
 
-        {/* Menu Options */}
         <View style={styles.menuContainer}>
           <MenuItem icon="person" title="Edit Profile" onPress={() => router.push({ pathname: '/shop/EditProfile', prevRoute: pathname})} />
           <MenuItem icon="lock-closed" title="Change Password" onPress={() => router.push({ pathname: 'ChangePassword', prevRoute: pathname})} />
           <MenuItem icon="shield-checkmark" title="Account Verification" onPress={() => router.push("AccountVerification")} />
           <MenuItem icon="trash" title="Delete Account" onPress={() => router.push("DeleteAccount")} color="#D32F2F" />
-          <MenuItem icon="log-out-outline" title="Logout" onPress={() => console.log("Logging out...")} color="#D32F2F" />
+          <MenuItem icon="log-out-outline" title="Logout" onPress={confirmAndLogout} color="#D32F2F" />
         </View>
+
+        {loading && <ActivityIndicator size="large" color="#0000ff" style={{ marginTop: 20 }} />}
       </ScrollView>
     </LinearGradient>
   );

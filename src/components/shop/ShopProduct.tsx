@@ -73,24 +73,26 @@ const ShopProduct = ({ products }) => {
                   <Text style={styles.subcategoryTitle}>{subcategoryData.subcategory}</Text>
                   <View style={styles.table}>
                     <View style={styles.tableHeader}>
-                      <Text style={[styles.tableCell, styles.cellWide, styles.headerCell]}>Product</Text>
-                      <Text style={[styles.tableCell, styles.headerCell]}>Available</Text>
-                      <Text style={[styles.tableCell, styles.headerCell]}>Price</Text>
-                    </View>
+  <Text style={[styles.tableCell, styles.cellWide, styles.headerCell]}>Product</Text>
+  <Text style={[styles.tableCell, styles.availableCell, styles.headerCell]}>Available</Text>
+  <Text style={[styles.tableCells, styles.priceCell, styles.headerCell]}>Price</Text>
+</View>
                     {subcategoryData.products.map((product, index) => (
                       <View
                         key={product.id}
                         style={[styles.tableRow, index % 2 === 0 && styles.alternateRow]}
                       >
                         <Text style={[styles.tableCell, styles.cellWide]}>{product.product_name}</Text>
-                        <Text style={styles.tableCell}>
+                        <Text style={styles.AvailableCell}>
                           {product.is_available ? '✔️' : '❌'}
                         </Text>
-                        <Text style={styles.tableCell}>
+                        <Text style={[styles.tableCell, styles.priceCell]}>
                           {product.price !== null && product.price !== undefined && !isNaN(Number(product.price))
-                            ? `₦${Number(product.price)}`
+                            ? `₦${Number(product.price).toLocaleString()}`
                             : 'N/A'}
                         </Text>
+
+
                       </View>
                     ))}
                   </View>
@@ -107,7 +109,7 @@ const ShopProduct = ({ products }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 10,
+    padding: 0,
     backgroundColor: '#f8fafc',
   },
   searchInput: {
@@ -170,12 +172,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: '#e0f2fe',
     paddingVertical: 12,
-    paddingHorizontal: 8,
+    paddingHorizontal: 1,
   },
   tableRow: {
     flexDirection: 'row',
     paddingVertical: 12,
-    paddingHorizontal: 8,
+    paddingHorizontal: 1,
     borderBottomWidth: 1,
     borderColor: '#cbd5e1',
   },
@@ -183,11 +185,32 @@ const styles = StyleSheet.create({
     backgroundColor: '#f9fafb',
   },
   tableCell: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 14,
-    color: '#1e293b',
+  flexShrink: 0,
+  paddingHorizontal: 0,
   },
+  tableCells: {
+  flexShrink: 0,
+  marginRight: -12,
+  paddingHorizontal: 0,
+  },
+  AvailableCell: {
+  flexShrink: 0,
+  paddingHorizontal: 12,
+  },
+  
+  priceCell: {
+  width: 90, // or something reasonable like 80–100
+  textAlign: 'center',
+  fontSize: 14,
+  color: '#1e293b',
+  overflow: 'hidden',
+  paddingHorizontal: 8,
+  },
+  availableCell: {
+  width: 62,
+  textAlign: 'left',
+},
+
   cellWide: {
     flex: 2,
     textAlign: 'left',

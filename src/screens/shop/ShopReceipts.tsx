@@ -38,12 +38,15 @@ const ShopReceipts = () => {
 
 
   useEffect(() => {
+  if (shopId && sessionId) {
     fetchReceipts();
-  }, []);
+  }
+}, [shopId, sessionId]); // 🔥 Now it runs when `shopId` or `sessionId` changes
+
 
   const fetchReceipts = async () => {
     try {
-      const response = await axios.get(`https://127.0.0.1:8000/shop/${shopId}/receipts/`, {
+      const response = await axios.get(`https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop/${shopId}/receipts/`, {
         headers: {
           Authorization: sessionId, // Send sessionId in headers
         },
@@ -59,7 +62,7 @@ const ShopReceipts = () => {
 
   const handleVoidReceipt = async (receiptId) => {
     try {
-      await axios.post(`https://127.0.0.1:8000/receipts/${receiptId}/void/`);
+      await axios.post(`https://retail-alvinia-goza-f6a0e4f7.koyeb.app/receipts/${receiptId}/void/`);
       Alert.alert("Success", "Receipt voided successfully.");
       setReceipts((prev) =>
         prev.map((receipt) =>

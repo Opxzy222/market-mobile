@@ -67,7 +67,7 @@ const styles = StyleSheet.create({
     elevation: 3,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
-    marginBottom: 10,
+    marginBottom: 17,
   },
   backButton: {
     borderRadius: 50,
@@ -88,7 +88,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     padding: 16,
     borderRadius: 12,
-    width: '100%',
+    width: '93%',
     maxWidth: 400,
     marginBottom: 12,
     elevation: 3,

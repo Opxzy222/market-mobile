@@ -68,7 +68,7 @@ useEffect(() => {
 
     try {
       const response = await axios.get(
-        `https://127.0.0.1:8000/shops/${shopId}/combined/`,
+        `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/${shopId}/combined/`,
         {
           headers: {
             Authorization: sessionId, // Sending sessionId in headers
@@ -82,11 +82,13 @@ useEffect(() => {
         description: data.shop.description,
         image: data.shop.image,
         categories: data.shop.categories,
+        category: data.shop.category,
         products: data.shop.products,
         address: data.shop.address,
         shop_id: data.shop.shop_id,
         latitude: data.shop.geo_location?.latitude,
         longitude: data.shop.geo_location?.longitude,
+        is_open: data.shop.is_open
       });
       setReviews(data.reviews);
       setFollowerCount(data.follower_count);
@@ -104,32 +106,6 @@ useEffect(() => {
 
   fetchShopData();
 }, [sessionId, shopId]); // ✅ Runs when sessionId or shopId changes
-
-useEffect(() => {
-  const markShopAsVisited = async () => {
-    if (!sessionId || !shopId) {
-      console.log("Skipping markShopAsVisited - sessionId or shopId not set");
-      return; // Exit if either sessionId or shopId is missing
-    }
-
-    try {
-      console.log("Marking shop as visited:", shopId, sessionId);
-      await axios.post(
-        "https://127.0.0.1:8000/shops/recently-visited/",
-        { shop_id: shopId },
-        {
-          headers: {
-            Authorization: sessionId, // Sending sessionId in headers
-          },
-        }
-      );
-    } catch (error) {
-      console.error("Error marking shop as visited:", error);
-    }
-  };
-
-  markShopAsVisited(); // ✅ Call function correctly
-}, [sessionId, shopId]); // ✅ Separate useEffect for marking shop as visited
 
   const handleTabChange = (tab) => setActiveTab(tab);
   const handleReviewSubmitted = (newReview) => {
@@ -170,7 +146,7 @@ useEffect(() => {
         </TouchableOpacity>
         </View>
         <View style={styles.shopIdContainer}>
-          <Text style={styles.shopIdLabel}>SHOP ID:</Text>
+          <Text style={styles.shopIdLabel}>SPACE ID:</Text>
           <Text style={styles.shopId}>{shop.shop_id}</Text>
         <TouchableOpacity onPress={copyToClipboard} style={styles.copyButton}>
           <Ionicons name={copied ? "checkmark-circle" : "copy-outline"} size={22} color={copied ? "#4CAF50" : "#007AFF"} />
@@ -183,7 +159,7 @@ useEffect(() => {
         <View style={styles.shopHeader}>
           <View>
           <Image
-            source={{ uri: `https://127.0.0.1:8000/${shop.image}` }}
+            source={{ uri: `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${shop.image}` }}
             style={styles.shopImage}
           />
           </View>
@@ -191,25 +167,49 @@ useEffect(() => {
           
           <View style={styles.shopInfo}>
             <Text style={styles.shopName}>{shop.name}</Text>
-            <Text style={styles.followerCount}>{followerCount} Followers</Text>
-            <View style={styles.addressContainer}>
-              <MaterialIcons name="store" size={18} color="#4CAF50" style={styles.icon} />
-              <Text style={styles.shopAddress}>{shop.address}</Text>
+            <View style={styles.shopStatusContainer}>
+              <Ionicons 
+                name={shop.is_open ? "checkmark-circle" : "alert-circle"} 
+                size={18} 
+                color={shop.is_open ? "#4CAF50" : "#FF9800"}  
+              />
+              <Text style={[styles.shopStatusText, shop.is_open ? styles.shopOpen : styles.shopClosed]}>
+                {shop.is_open ? "Open" : "Closed"}
+              </Text>
             </View>
-            <ShopLocation shopLat={shop.latitude} shopLng={shop.longitude} />
 
-      <View style={styles.buttons}>
+            <View style={styles.addressContainer}>
+              <MaterialIcons 
+                name="store" 
+                size={18} 
+                color="#4CAF50" 
+                style={styles.icon} 
+            />
+              <Text style={styles.shopAddress} numberOfLines={2}>
+                {shop.address}
+              </Text>
+            </View>
+
+            <ShopLocation shopLat={shop.latitude} shopLng={shop.longitude} />
+            <Text style={styles.followerCount}>{followerCount} Customers</Text>
+
+            <View style={styles.buttonsContainer}>
   <FollowButton shopId={shopId} />
-  <TouchableOpacity style={styles.messageButton} onPress={() => {
-          router.push({
-            pathname: '/shop/StartConversation',
-            params: { shopId: shopId, name: shop.name},
-          });
-        }}
-        >
+  
+  <TouchableOpacity 
+    style={styles.messageButton} 
+    onPress={() => {
+      router.push({
+        pathname: '/shop/StartConversation',
+        params: { shopId: shopId, name: shop.name },
+      });
+    }}
+  >
+    <Ionicons name="chatbubble-ellipses-outline" size={18} color="#FFF" style={styles.buttonIcon} />
     <Text style={styles.buttonText}>Message</Text>
   </TouchableOpacity>
 </View>
+
     </View>
     </View>
 
@@ -226,23 +226,27 @@ useEffect(() => {
 
         {/* Tab Navigation */}
         <View style={styles.nav}>
-          {['posts', 'products', 'followers', 'reviews'].map((tab) => (
-            <TouchableOpacity
-              key={tab}
-              style={[styles.navTab, activeTab === tab && styles.activeTab]}
-              onPress={() => handleTabChange(tab)}
-            >
-              <Text
-                style={[
-                  styles.navTabText,
-                  activeTab === tab && styles.activeTabText,
-                ]}
-              >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+  {(shop.category?.name === 'Services'
+    ? ['posts', 'services', 'customers', 'reviews']
+    : ['posts', 'products', 'customers', 'reviews']
+  ).map((tab) => (
+    <TouchableOpacity
+      key={tab}
+      style={[styles.navTab, activeTab === tab && styles.activeTab]}
+      onPress={() => handleTabChange(tab)}
+    >
+      <Text
+        style={[
+          styles.navTabText,
+          activeTab === tab && styles.activeTabText,
+        ]}
+      >
+        {tab.charAt(0).toUpperCase() + tab.slice(1)}
+      </Text>
+    </TouchableOpacity>
+  ))}
+</View>
+
 
         {/* Tab Content */}
         <View style={styles.tabContent}>
@@ -254,7 +258,7 @@ useEffect(() => {
           )
         )}
           {activeTab === 'products' && <ShopProduct key={shopId} products={shop.products} />}
-          {activeTab === 'followers' && <Followers followers={followers} />}
+          {activeTab === 'customers' && <Followers followers={followers} />}
           {activeTab === 'reviews' && 
             <View>
               <ReviewForm shopId={shopId} onReviewSubmitted={handleReviewSubmitted} />
@@ -269,7 +273,7 @@ useEffect(() => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f4f4f4', // Neutral, light background for a professional look
+    backgroundColor: '#f4f4f4',
   },
   header: {
     flexDirection: 'row',
@@ -286,15 +290,13 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 20,
     marginBottom: 10,
   },
-  backContainer: {
-    
-  },
+  backContainer: {},
   backButton: {
     marginRight: 5,
   },
   headerTitle: {
     fontSize: 20,
-    color: '#2c3e50', // A rich, deep grey-blue
+    color: '#2c3e50',
     fontWeight: 'bold',
   },
   content: {
@@ -307,7 +309,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#ffffff',
     padding: 15,
-    borderRadius: 10,
+    borderRadius: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
@@ -320,7 +322,8 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     marginRight: 15,
     borderWidth: 1,
-    borderColor: '#b0c4de', // Subtle border for sophistication
+    borderColor: '#b0c4de',
+    marginLeft: -15,
   },
   shopInfo: {
     flex: 1,
@@ -328,52 +331,70 @@ const styles = StyleSheet.create({
   shopName: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#2c3e50', // Darker text for better readability
+    color: '#2c3e50',
   },
   followerCount: {
     fontSize: 14,
-    color: '#7f8c8d', // Subtle, mature secondary text color
-    marginVertical: 5,
+    color: '#7f8c8d',
+    marginTop: 10,
+    marginLeft: 10,
   },
   addressContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 3,
+    alignItems: 'flex-start',
+    flexWrap: 'wrap',
+    gap: 5,
   },
   icon: {
-    marginRight: 5,
+    marginTop: 3,
   },
   shopAddress: {
     fontSize: 14,
-    color: 'black', // Same as followerCount for consistency
-    marginTop: 0, // Small spacing above the address
+    color: 'black',
+    flex: 1,
+    flexShrink: 1,
+    marginTop: 2,
   },
-  buttons: {
+
+  // 🔧 FIXED BUTTON STYLES 🔧
+  buttonsContainer: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-evenly',
+    width: '100%',
+    marginTop: 2,
+    paddingHorizontal: 10,
     gap: 10,
-    marginTop: 10,
   },
-  followButton: {
-    backgroundColor: '#28a745', 
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 25,
-    flex: 1,
-    alignItems: 'center',
-  },
+  
   messageButton: {
-    backgroundColor: '#007bff', 
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 25,
-    flex: 1,
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: '#fff',
-    fontWeight: '600',
-    textAlign: 'center',
-    fontSize: 14,
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#007BFF',
+  paddingVertical: 8,
+  paddingHorizontal: 12, // reduced from 18
+  borderRadius: 20,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.1,
+  shadowRadius: 4,
+  elevation: 2,
+  flex: 1,
+  flexShrink: 1,
+  minWidth: 90,
+  maxWidth: 140,
+  maxHeight: 42,
+},
+
+buttonText: {
+  color: '#fff',
+  fontWeight: '600',
+  textAlign: 'center',
+  fontSize: 13, // slightly smaller
+},
+
+  buttonIcon: {
+    marginRight: 5,
   },
   details: {
     marginVertical: 15,
@@ -381,12 +402,12 @@ const styles = StyleSheet.create({
   category: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#34495e', // Deep slate grey for text accents
+    color: '#34495e',
     marginBottom: 8,
   },
   description: {
     fontSize: 14,
-    color: 'black', // Refined grey for descriptions
+    color: 'black',
     lineHeight: 22,
   },
   nav: {
@@ -404,7 +425,7 @@ const styles = StyleSheet.create({
   },
   activeTab: {
     borderBottomWidth: 2,
-    borderBottomColor: '#1abc9c', // Elegant teal for active indicator
+    borderBottomColor: '#1abc9c',
   },
   navTabText: {
     fontSize: 15,
@@ -423,7 +444,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 3,
-    marginTop: 8, // Reduced spacing
+    marginTop: 8,
   },
   tabText: {
     fontSize: 14,
@@ -449,6 +470,27 @@ const styles = StyleSheet.create({
     padding: 6,
     borderRadius: 8,
     backgroundColor: "rgba(0, 122, 255, 0.1)",
+  },
+  shopStatusContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 0,
+    borderRadius: 6,
+    marginBottom: 5,
+    alignSelf: "flex-start",
+  },
+  shopStatusText: {
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  shopOpen: {
+    color: "#4CAF50",
+  },
+  shopClosed: {
+    color: "#FF9800",
   },
 });
 

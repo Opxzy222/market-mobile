@@ -6,14 +6,14 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StyleSheet,
-  Alert,
+  Alert, ScrollView
 } from 'react-native';
 import axios from 'axios';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import * as Location from 'expo-location';
 
-const API_BASE_URL = 'https://127.0.0.1:8000';
+const API_BASE_URL = 'https://retail-alvinia-goza-f6a0e4f7.koyeb.app';
 
 const SubCategoryList = () => {
   const { categoryId, categoryName, prevRoute } = useLocalSearchParams();
@@ -99,7 +99,7 @@ const SubCategoryList = () => {
   }
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.replace(prevRoute || '((tabs)/shop)')} style={styles.backButton}>
           <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
@@ -127,7 +127,7 @@ const SubCategoryList = () => {
         )}
       />
       </View>
-    </View>
+    </ScrollView>
   );
 };
 

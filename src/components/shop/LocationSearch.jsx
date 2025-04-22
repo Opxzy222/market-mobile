@@ -19,7 +19,7 @@ const LocationSearch = ({ onSearch }) => {
   useEffect(() => {
     const fetchTopLevelLocations = async () => {
       try {
-        const response = await axios.post("https://127.0.0.1:8000/location/states/");
+        const response = await axios.post("https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/states/");
         setLocations(response.data.locations.map(loc => ({ key: loc.id, value: loc.name })));
       } catch (error) {
         console.error("Error fetching locations:", error);
@@ -40,7 +40,7 @@ const LocationSearch = ({ onSearch }) => {
       formData.append("parent_id", selectedOption);
 
       const response = await axios.post(
-        "https://127.0.0.1:8000/location/children/",
+        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/children/",
         formData,
         { headers: { "Content-Type": "multipart/form-data" } }
       );
@@ -61,7 +61,7 @@ const LocationSearch = ({ onSearch }) => {
       formData.append("parent_id", selectedOption);
 
       const response = await axios.post(
-        "https://127.0.0.1:8000/location/children/",
+        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/children/",
         formData,
         { headers: { "Content-Type": "multipart/form-data" } }
       );
@@ -91,7 +91,7 @@ const LocationSearch = ({ onSearch }) => {
 
     setLoading(true);
     try {
-      const response = await axios.get("https://127.0.0.1:8000/location/search/", {
+      const response = await axios.get("https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/search/", {
         params: { location_id: locationId, input: searchTerm.trim() }
       });
 
@@ -106,6 +106,13 @@ const LocationSearch = ({ onSearch }) => {
   return (
     <View style={styles.container}>
       <View style={styles.card}>
+        <TextInput
+          style={styles.input}
+          placeholder="What are you looking for?"
+          value={searchTerm}
+          onChangeText={setSearchTerm}
+        />
+        {formErrors.searchTerm && <Text style={styles.error}>{formErrors.searchTerm}</Text>}
         
 
         <Text style={styles.label}>Select Location</Text>
@@ -143,15 +150,6 @@ const LocationSearch = ({ onSearch }) => {
             />
           </>
         )}
-
-        <Text style={styles.label}>Search Term</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="What are you looking for?"
-          value={searchTerm}
-          onChangeText={setSearchTerm}
-        />
-        {formErrors.searchTerm && <Text style={styles.error}>{formErrors.searchTerm}</Text>}
 
         <TouchableOpacity style={styles.searchButton} onPress={handleSearch} disabled={loading}>
           {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.searchButtonText}>Search</Text>}

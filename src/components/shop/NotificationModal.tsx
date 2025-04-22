@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Modal from 'react-native-modal';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from "expo-router";
 
 const MERGE_TYPES = new Set(['shop_follower', 'shop_review', 'status_update']);
 
@@ -17,8 +18,8 @@ const NotificationDropdown = () => {
   const socketRef = useRef(null);
   const isConnected = useRef(false);
   const isManuallyClosed = useRef(false);
-  const navigation = useNavigation();
-
+  const router = useRouter();
+  
   useEffect(() => {
     const fetchUserId = async () => {
       const userIdString = await AsyncStorage.getItem('user_id');
@@ -57,7 +58,7 @@ const NotificationDropdown = () => {
   const connectWebSocket = () => {
     if (socketRef.current) return;
 
-    const wsUrl = `ws://127.0.0.1:8001/ws/notifications/?user_id=${userId}`;
+    const wsUrl = `wss://retail-alvinia-goza-f6a0e4f7.koyeb.app/ws/notifications/?user_id=${userId}`;
     socketRef.current = new WebSocket(wsUrl);
 
     socketRef.current.onopen = () => {
@@ -143,11 +144,72 @@ const updateUnreadCount = (notifications) => {
   };
 
   const handleNotificationPress = (item) => {
-    markNotificationAsRead();
-    if (item.type === 'shop_post' && item.shop_id) {
-      navigation.navigate('ShopPost', { shopId: item.shop_id });
-    }
-  };
+  setMenuVisible(false); // Close modal first
+  markNotificationAsRead();
+
+  const type = item.type.toLowerCase(); // Normalize to lowercase for consistency
+
+  switch (type) {
+    case "new_post": // Match "NEW_POST" correctly
+    case "shop_post":
+      if (item.shop_id) {
+        router.push({
+          pathname: "/shop/shop-page",
+          params: { shopId: item.shop_id },
+        });
+      }
+      break;
+
+    case "new_review": // Ensure it matches correctly
+    case "shop_review":
+      if (item.shop_id) {
+        router.push({
+          pathname: "/shop/shop-page",
+          params: { shopId: item.shop_id },
+        });
+      }
+      break;
+
+    case "new_follower":
+    case "shop_follower":
+      router.push("/shop/shop-page");
+      break;
+
+    case "receipt_created":
+      if (item.receipt_id) {
+        router.push({
+          pathname: "shop/CustomerReceipts"
+        });
+      }
+      break;
+
+    case "receipt_status":
+      if (item.receipt_id) {
+        if (item.status === "voided") {
+          // Customer sees voided receipts
+          router.push({
+            pathname: "/shop/CustomerReceipts",
+            params: { receiptId: item.receipt_id },
+          });
+        } else {
+          // Shop sees accepted/rejected receipts
+          router.push({
+            pathname: "/shop/ShopReceipts",
+            params: { shopId: item.shop_id },
+          });
+        }
+      }
+      break;
+
+    case "status_update":
+      router.push("/shop/status");
+      break;
+
+    default:
+      console.warn("Unhandled notification type:", item.type);
+      break;
+  }
+};
 
   const handleMenuOpen = () => {
   const updatedNotifications = notifications.map(n => ({

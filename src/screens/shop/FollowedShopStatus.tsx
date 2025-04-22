@@ -31,7 +31,7 @@ const FollowedShopStatusScreen = () => {
       const userId = parseInt(userIdString, 10);
       setUserId(userId);
 
-      const response = await axios.get(`https://127.0.0.1:8000/statuses/?user_id=${userId}`);
+      const response = await axios.get(`https://retail-alvinia-goza-f6a0e4f7.koyeb.app/statuses/?user_id=${userId}`);
       const fetchedStatuses = response.data.statuses;
 
       const groupedStatuses = fetchedStatuses.reduce((acc, status) => {

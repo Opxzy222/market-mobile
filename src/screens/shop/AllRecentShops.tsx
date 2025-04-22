@@ -29,7 +29,7 @@ const AllRecentlyVisitedShops = () => {
 
     const fetchRecentlyVisitedShops = async () => {
       try {
-        const response = await axios.get("https://127.0.0.1:8000/shops/all-recently-visited/", {
+        const response = await axios.get("https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/all-recently-visited/", {
           headers: {
           Authorization: sessionId,
         },
@@ -53,7 +53,7 @@ const AllRecentlyVisitedShops = () => {
       <View style={styles.shopHeader}>
         {item.image && (
           <Image
-            source={{ uri: `https://127.0.0.1:8000/${item.image}` }}
+            source={{ uri: `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${item.image}` }}
             style={styles.shopImage}
           />
         )}
@@ -96,10 +96,11 @@ const AllRecentlyVisitedShops = () => {
         <TouchableOpacity onPress={() => router.replace(prevRoute || '((tabs)/shop)')} style={styles.backButton}>
           <MaterialIcons name="arrow-back" size={26} color="#007BFF" />
         </TouchableOpacity>
-        <Text style={styles.heading}>Recently Visited Shops</Text>
+        <Text style={styles.heading}>Recently Visited</Text>
       </View>
 
-      {loading ? (
+      <View style={styles.wrapper}>
+        {loading ? (
         <ActivityIndicator size="large" color="#007BFF" style={{ marginTop: 20 }} />
       ) : shops.length === 0 ? (
         <Text style={styles.noDataText}>No recently visited shops yet.</Text>
@@ -111,6 +112,7 @@ const AllRecentlyVisitedShops = () => {
           contentContainerStyle={styles.listContainer}
         />
       )}
+      </View>
     </View>
   );
 };
@@ -118,31 +120,37 @@ const AllRecentlyVisitedShops = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F4F6F9",
-    paddingHorizontal: 20,
-    paddingTop: 20,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    padding: 18,
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 5,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
-    marginBottom: 10,
-  },
-  backButton: {
-    marginRight: 10,
+    marginBottom: 12,
+    backdropFilter: "blur(10px)", // Glass effect
   },
   heading: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#333",
+    fontSize: 22,
+    fontWeight: "bold",
+    marginLeft: 75,
+    color: "black",
+  },
+  backButton: {
+    borderRadius: 50,
+    backgroundColor: "#E0E0E0",
+    marginRight: 12,
+  },
+  wrapper: {
+    flex: 1,
+    paddingHorizontal: 15,
+    paddingTop: 15,
   },
   listContainer: {
     paddingBottom: 20,

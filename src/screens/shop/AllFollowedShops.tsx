@@ -36,7 +36,7 @@ const AllFollowedShops = () => {
       console.log(sessionId, 'heya')
       const fetchAllFollowedShops = async () => {
         try {
-          const response = await axios.get("https://127.0.0.1:8000/shops/followed/", {
+          const response = await axios.get("https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/followed/", {
             headers: {
               Authorization: sessionId,
             },
@@ -67,7 +67,7 @@ const AllFollowedShops = () => {
       }}
     >
       <Image
-        source={{ uri: `https://127.0.0.1:8000/${item.image}` }}
+        source={{ uri: `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${item.image}` }}
         style={styles.shopImage}
       />
       <View style={styles.shopDetails}>
@@ -92,13 +92,15 @@ const AllFollowedShops = () => {
         </TouchableOpacity>
         <Text style={styles.heading}>Followed Shops</Text>
       </View>
+      <View style={styles.wrapper}>
       <FlatList
         data={shops}
         renderItem={renderShopItem}
         keyExtractor={(item) => item.id.toString()}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
-      />
+        />
+      </View>
     </View>
   );
 };
@@ -106,35 +108,40 @@ const AllFollowedShops = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f3f4f6",
-    padding: 16,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    padding: 18,
+    backgroundColor: "rgba(255, 255, 255, 0.8)",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 5,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
-    marginBottom: 10,
-  },
-  backButton: {
-    marginRight: 1,
+    marginBottom: 12,
+    backdropFilter: "blur(10px)", // Glass effect
   },
   heading: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#111827",
+    fontSize: 22,
+    fontWeight: "bold",
+    marginLeft: 75,
+    color: "black",
+  },
+  backButton: {
+    borderRadius: 50,
+    backgroundColor: "#E0E0E0",
+    marginRight: 12,
+  },
+  wrapper: {
     flex: 1,
-    textAlign: "center",
+    paddingHorizontal: 15,
+    paddingTop: 15,
   },
   listContainer: {
-    paddingTop: 16,
+    paddingTop: 0,
   },
   shopCard: {
     flexDirection: "row",

@@ -34,7 +34,7 @@ export default function ShopSearchComponent() {
   return (
     <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
       <View style={styles.filterContainer}>
-        {['geolocation', 'location', 'shop ID'].map((filter) => (
+        {['geolocation', 'location', 'Space ID'].map((filter) => (
           <TouchableOpacity
             key={filter}
             style={[styles.filterButton, activeFilter === filter && styles.activeFilter]}
@@ -65,49 +65,53 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     flexWrap: 'wrap',
-    gap: 10,
+    backgroundColor: '#F2F7FC',
+    padding: 10,
+    borderRadius: 25,
     marginBottom: 15,
-    paddingVertical: 12,
-    borderRadius: 20,
   },
   filterButton: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     marginHorizontal: 4,
-    borderRadius: 20,
+    borderRadius: 25,
     backgroundColor: 'white',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#78A9E0',
+    borderColor: '#A7C7E7',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+    transition: 'all 0.3s ease',
   },
   activeFilter: {
     backgroundColor: '#4785CC',
     borderColor: '#356EB5',
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 5,
   },
   filterText: {
     fontSize: 16,
-    color: 'black',
+    color: '#5A5A5A',
     fontWeight: '500',
   },
   activeFilterText: {
     color: '#fff',
-    fontWeight: '600',
+    fontWeight: '700',
   },
   searchContainer: {
     flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
     borderRadius: 20,
     padding: 18,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowRadius: 5,
+    elevation: 3,
   },
 });

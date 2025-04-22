@@ -120,49 +120,67 @@ const SearchResults = () => {
     return <ActivityIndicator size="large" color="#007BFF" style={styles.loader} />;
   }
 
-  const renderShopCard = ({ item }) => (
-    <LinearGradient colors={["rgba(255,255,255,0.6)", "rgba(240,240,240,0.4)"]} style={styles.shopCard}>
-      <View style={styles.imageContainer}>
-        {item.average_rating !== null && (
-          <View style={styles.ratingBadge}>
-            <MaterialIcons name="star" size={14} color="#FFD700" />
-            <Text style={styles.ratingText}>{item.average_rating}</Text>
-          </View>
-        )}
-        {item.image ? (
-          <Image source={{ uri: `https://127.0.0.1:8000/${item.image}` }} style={styles.shopImage} />
-        ) : (
-          <View style={styles.noImageContainer}>
-            <Text style={styles.noImageText}>No Image</Text>
-          </View>
-        )}
-      </View>
-      <View style={styles.detailsContainer}>
-        <Text style={styles.shopName}>{item.name || "Unnamed Shop"}</Text>
-        <View style={styles.row}>
-          <MaterialIcons name="store" size={18} color="#4CAF50" />
-          <Text style={styles.shopAddress}>{item.address || "No Address"}</Text>
+ const renderShopCard = ({ item }) => (
+  <LinearGradient colors={["rgba(255,255,255,0.6)", "rgba(240,240,240,0.4)"]} style={styles.shopCard}>
+    <View style={styles.imageContainer}>
+      {/* Rating & Verified Badge Container */}
+      {(item.average_rating !== null || item.verified) && (
+        <View style={styles.ratingContainer}>
+          {item.verified && (
+            <View style={styles.verifiedBadge}>
+              <MaterialIcons name="verified" size={14} color="#0FA958" />
+              <Text style={styles.verifiedText}>Verified</Text>
+            </View>
+          )}
+          {item.average_rating !== null && (
+            <View style={styles.ratingBadge}>
+              <MaterialIcons name="star" size={14} color="#FFD700" />
+              <Text style={styles.ratingText}>{item.average_rating}</Text>
+            </View>
+          )}
         </View>
-        <View style={styles.row}>
-          <MaterialIcons name="place" size={18} color="#555" />
-          <Text style={styles.shopDistance}>
-            Distance: {item.distance !== null && item.distance !== undefined ? `${item.distance} km` : "N/A"}
-          </Text>
+      )}
+
+      {/* Shop Image */}
+      {item.image ? (
+        <Image source={{ uri: `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${item.image}` }} style={styles.shopImage} />
+      ) : (
+        <View style={styles.noImageContainer}>
+          <Text style={styles.noImageText}>No Image</Text>
         </View>
+      )}
+    </View>
+
+    {/* Shop Details */}
+    <View style={styles.detailsContainer}>
+      <Text style={styles.shopName}>{item.name || "Unnamed Shop"}</Text>
+      <View style={styles.row}>
+        <MaterialIcons name="store" size={18} color="#4CAF50" />
+        <Text style={styles.shopAddress}>{item.address || "No Address"}</Text>
       </View>
-      <TouchableOpacity
-        style={styles.goToShopButton}
-        onPress={() => {
-          router.push({
-            pathname: '/shop/shop-page',
-            params: { shopId: item.id },
-          });
-        }}
-      >
-        <Text style={styles.buttonText}>Go to Shop</Text>
-      </TouchableOpacity>
-    </LinearGradient>
-  );
+      <View style={styles.row}>
+        <MaterialIcons name="place" size={18} color="#555" />
+        <Text style={styles.shopDistance}>
+          Distance: {item.distance !== null && item.distance !== undefined ? `${item.distance} km` : "N/A"}
+        </Text>
+      </View>
+    </View>
+
+    {/* Go to Shop Button */}
+    <TouchableOpacity
+      style={styles.goToShopButton}
+      onPress={() => {
+        router.push({
+          pathname: '/shop/shop-page',
+          params: { shopId: item.id },
+        });
+      }}
+    >
+      <Text style={styles.buttonText}>Go to Space</Text>
+    </TouchableOpacity>
+  </LinearGradient>
+);
+
 
   return (
   <SafeAreaView style={styles.safeArea}>
@@ -178,12 +196,11 @@ const SearchResults = () => {
       </View>
 
       {/* Filter Button */}
-      <TouchableOpacity onPress={handleFilterPress} style={styles.filterButton}>
-        <LinearGradient colors={["#007BFF", "#0056b3"]} style={styles.buttonGradient}>
-          <Ionicons name="filter-outline" size={20} color="#FFF" style={styles.buttonIcon} />
-          <Text style={styles.filterButtonText}>Filter</Text>
-        </LinearGradient>
-      </TouchableOpacity>
+      <TouchableOpacity onPress={handleFilterPress} style={styles.filterContainer}>
+  <Ionicons name="filter-outline" size={20} color="#007BFF" style={styles.filterIcon} />
+  <Text style={styles.filterText}>Filter</Text>
+</TouchableOpacity>
+
 
       {/* Shop List */}
       <FlatList
@@ -335,14 +352,18 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6,
   },
-  ratingBadge: {
+  ratingContainer: {
     position: "absolute",
     top: 8,
     right: 8,
     flexDirection: "row",
     alignItems: "center",
+  },
+  ratingBadge: {
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: "#222",
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 20,
     shadowColor: "#000",
@@ -355,8 +376,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "bold",
     color: "#FFD700",
-    marginLeft: 6,
+    marginLeft: 4,
   },
+  verifiedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#E3FCEF",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#0FA958",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 3,
+    marginRight: 6,
+  },
+  verifiedText: {
+    fontSize: 12,
+    fontWeight: "bold",
+    color: "#0FA958",
+    marginLeft: 4,
+  },
+
   imageContainer: {
     marginBottom: 12,
   },
@@ -564,6 +608,28 @@ resetButtonText: {
   fontWeight: "bold",
   textTransform: "uppercase",
   letterSpacing: 1,
+},
+filterContainer: {
+  flexDirection: "row",
+  alignItems: "center",
+  paddingVertical: 8,
+  paddingHorizontal: 16,
+  borderBottomWidth: 1,
+  borderBottomColor: "#E0E0E0",
+  marginTop: 10,
+  top: 0,
+  width: "100%",
+  zIndex: 10, // Ensures it stays above scrollable content
+},
+
+filterIcon: {
+  marginRight: 6,
+},
+
+filterText: {
+  fontSize: 18,
+  fontWeight: "700",
+  color: "#222",
 },
 
 });

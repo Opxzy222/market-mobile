@@ -1,7 +1,13 @@
-import React, { useState } from 'react';
-import { View, TouchableOpacity, Text, Alert, StyleSheet } from 'react-native';
-import * as DocumentPicker from 'expo-document-picker';
-import { Ionicons } from '@expo/vector-icons';
+import React, { useState } from "react";
+import {
+  View,
+  TouchableOpacity,
+  Text,
+  Alert,
+  StyleSheet,
+} from "react-native";
+import * as DocumentPicker from "expo-document-picker";
+import { Ionicons } from "@expo/vector-icons";
 
 const SendPDF = ({ onSend }) => {
   const [selectedPDF, setSelectedPDF] = useState(null);
@@ -9,14 +15,20 @@ const SendPDF = ({ onSend }) => {
   const pickPDF = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: 'application/pdf',
+        type: "application/pdf",
+        copyToCacheDirectory: true, // Ensure file is accessible
       });
 
-      if (result.type === 'success') {
-        setSelectedPDF(result);
+      if (!result.canceled && result.assets?.length > 0) {
+        const { uri, name } = result.assets[0];
+        setSelectedPDF({
+          uri,
+          name: name || `document_${Date.now()}.pdf`,
+        });
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to pick a document.');
+      console.error("Error picking PDF:", error);
+      Alert.alert("Error", "Failed to select document. Please try again.");
     }
   };
 
@@ -24,20 +36,38 @@ const SendPDF = ({ onSend }) => {
     setSelectedPDF(null);
   };
 
+  const handleSend = () => {
+    if (selectedPDF) {
+      onSend(selectedPDF);
+      setSelectedPDF(null); // Clear selection after sending
+    }
+  };
+
   return (
     <View style={styles.container}>
-      <TouchableOpacity onPress={pickPDF} style={styles.selectButton}>
-        <Text style={styles.selectButtonText}>Select PDF</Text>
+      <TouchableOpacity onPress={pickPDF} style={styles.optionCard}>
+        <Ionicons
+          name="document-text-outline"
+          size={24}
+          color="#2980b9"
+          style={styles.optionIcon}
+        />
+        <Text style={styles.optionText}>Select Document</Text>
       </TouchableOpacity>
-      
+
       {selectedPDF && (
         <View style={styles.previewContainer}>
-          <Text style={styles.previewText}>{selectedPDF.name}</Text>
+          <Text style={styles.previewText} numberOfLines={1} ellipsizeMode="tail">
+            {selectedPDF.name}
+          </Text>
           <View style={styles.actionButtons}>
-            <TouchableOpacity onPress={handleRemovePDF} style={styles.removeButton}>
+            <TouchableOpacity
+              onPress={handleRemovePDF}
+              style={styles.removeButton}
+            >
               <Ionicons name="trash" size={24} color="#ff4d4d" />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => onSend(selectedPDF)} style={styles.sendButton}>
+            <TouchableOpacity onPress={handleSend} style={styles.sendButton}>
               <Text style={styles.sendButtonText}>Send</Text>
             </TouchableOpacity>
           </View>
@@ -49,52 +79,66 @@ const SendPDF = ({ onSend }) => {
 
 const styles = StyleSheet.create({
   container: {
-    padding: 20,
-    backgroundColor: '#f8f9fa',
-    flex: 1,
+    padding: 10,
   },
-  selectButton: {
-    backgroundColor: '#007bff',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
+  optionCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
     marginBottom: 15,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
   },
-  selectButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
+  optionIcon: {
+    marginRight: 10,
+  },
+  optionText: {
+    fontSize: 16,
+    color: "#333",
+    fontWeight: "600",
   },
   previewContainer: {
     marginTop: 20,
-    alignItems: 'center',
+    alignItems: "center",
   },
   previewText: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: "600",
+    color: "#333",
     marginBottom: 10,
+    maxWidth: 200, // Prevent overflow
   },
   actionButtons: {
-    flexDirection: 'row',
+    flexDirection: "row",
     marginTop: 10,
-    alignItems: 'center',
+    alignItems: "center",
     gap: 20,
   },
   removeButton: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     padding: 10,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#ff4d4d',
+    borderColor: "#ff4d4d",
   },
   sendButton: {
-    backgroundColor: '#28a745',
+    backgroundColor: "#28a745",
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 8,
   },
   sendButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 16,
   },
 });
 

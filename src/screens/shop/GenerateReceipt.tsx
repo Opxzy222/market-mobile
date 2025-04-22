@@ -1,47 +1,52 @@
-import React, { useState, useEffect, useContext, useMemo  } from "react";
-import { 
-  View, Text, TextInput, ActivityIndicator, FlatList, Alert, TouchableOpacity, StyleSheet, Platform 
+import React, { useState, useEffect, useContext, useMemo } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  ActivityIndicator,
+  FlatList,
+  Alert,
+  TouchableOpacity,
+  StyleSheet,
+  Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 import axios from "axios";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import SubscriptionProvider, { SubscriptionContext } from '../../components/SubscriptionProvider';
+import { useLocalSearchParams, useRouter } from "expo-router";
+import SubscriptionProvider, { SubscriptionContext } from "../../components/SubscriptionProvider";
 import SubscriptionRequired from "@/components/RequiredSubscription";
-import { MaterialIcons } from '@expo/vector-icons';
-import { LinearGradient } from "expo-linear-gradient";
+import { MaterialIcons } from "@expo/vector-icons";
 
 const GenerateReceipt = () => {
-  const [customerId, setCustomerId] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [items, setItems] = useState([]);
   const [newItem, setNewItem] = useState({ name: "", qty: "", price: "" });
-  const [totalAmount, setTotalAmount] = useState("0");
+  const [totalAmount, setTotalAmount] = useState(0);
   const [receiptUrl, setReceiptUrl] = useState(null);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [shopProducts, setShopProducts] = useState([]);
   const [NameLoading, setNameLoading] = useState(false);
-  
+  const [editIndex, setEditIndex] = useState(null);
+
   const params = useLocalSearchParams();
-  const { shopId } = params;
+  const { shopId, senderId } = params;
   const router = useRouter();
   const { subscriptionStatus, loading } = useContext(SubscriptionContext);
+
+  const [customerId, setCustomerId] = useState(senderId || "");
 
   const isSubscribed = useMemo(() => {
     return subscriptionStatus === "standard" || subscriptionStatus === "premium";
   }, [subscriptionStatus]);
 
   useEffect(() => {
-    if (customerId.length === 8) {
-      fetchCustomerName(customerId);
-    }
-  }, [customerId]);
-
-  // ✅ Ensure all hooks run before any return
-  useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const response = await axios.get(`https://127.0.0.1:8000/shop/${shopId}/products/`);
+        const response = await axios.get(
+          `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop/${shopId}/products/`
+        );
         setShopProducts(response.data.shop_products);
       } catch (error) {
         console.error("Error fetching shop products:", error);
@@ -50,43 +55,19 @@ const GenerateReceipt = () => {
     fetchProducts();
   }, [shopId]);
 
-  // 🚀 Only return after hooks
-  if (loading) {
-    return <ActivityIndicator size="large" color="#007BFF" />;
-  }
-
-  if (!isSubscribed) {
-    return <SubscriptionRequired />;
-  }
-  // Filter product names as user types
-  const handleSearch = (text) => {
-    setNewItem({ ...newItem, name: text });
-
-    if (text.length > 0) {
-      const filtered = shopProducts.filter((product) =>
-        product.toLowerCase().startsWith(text.toLowerCase())
-      );
-      setFilteredProducts(filtered);
-      console.log(filteredProducts, 'omo')
-    } else {
-      setFilteredProducts([]);
+  useEffect(() => {
+    if (customerId.length === 8) {
+      fetchCustomerName(customerId);
     }
-  };
-
-  // Set selected product name in input
-  const selectProduct = (product) => {
-    setNewItem({ ...newItem, name: product }); // Set item name
-    setFilteredProducts([]); // Hide suggestions
-  };
+  }, [customerId]);
 
   const fetchCustomerName = async (customerId) => {
     setNameLoading(true);
     try {
-      const response = await axios.get("https://127.0.0.1:8000/customer-fullname/", {
+      const response = await axios.get("https://retail-alvinia-goza-f6a0e4f7.koyeb.app/customer-fullname/", {
         params: { customer_id: customerId },
       });
       setCustomerName(response.data.full_name);
-      console.log('yes oo', customerName)
     } catch (error) {
       Alert.alert("Error", "Customer not found.");
       setCustomerName("");
@@ -94,20 +75,70 @@ const GenerateReceipt = () => {
     setNameLoading(false);
   };
 
+  const calculateTotal = (items) => {
+    const total = items.reduce((sum, item) => sum + Number(item.total || 0), 0);
+    setTotalAmount(total);
+  };
+
+  const removeItem = (index) => {
+    const updatedItems = items.filter((_, i) => i !== index);
+    setItems(updatedItems);
+    calculateTotal(updatedItems);
+  };
+
+  const editItem = (index) => {
+    const itemToEdit = items[index];
+    setNewItem({
+      name: itemToEdit.name || "",
+      qty: itemToEdit.qty.toString() || "",
+      price: itemToEdit.price.toString() || "",
+    });
+    setEditIndex(index);
+  };
+
   const addItem = () => {
     if (!newItem.name || !newItem.qty || !newItem.price) {
       Alert.alert("Error", "Please fill all item fields.");
       return;
     }
-    const updatedItems = [...items, { 
-      ...newItem, 
-      qty: Number(newItem.qty), 
-      price: Number(newItem.price),
-      total: (Number(newItem.qty) * Number(newItem.price)).toFixed(2)
-    }];
+
+    const qty = Number(newItem.qty);
+    const price = Number(newItem.price);
+    if (isNaN(qty) || isNaN(price) || qty <= 0 || price <= 0) {
+      Alert.alert("Error", "Please enter valid positive quantity and price.");
+      return;
+    }
+
+    const updatedItems = [...items];
+    const total = (qty * price).toFixed(2);
+
+    if (editIndex !== null) {
+      updatedItems[editIndex] = { ...newItem, qty, price, total };
+      setEditIndex(null);
+    } else {
+      updatedItems.push({ ...newItem, qty, price, total });
+    }
+
     setItems(updatedItems);
-    setTotalAmount(updatedItems.reduce((sum, item) => sum + parseFloat(item.total), 0).toFixed(2));
+    calculateTotal(updatedItems);
     setNewItem({ name: "", qty: "", price: "" });
+  };
+
+  const handleSearch = (text) => {
+    // Removed setNewItem since it's handled in onChangeText
+    if (text.length > 0) {
+      const filtered = shopProducts.filter((product) =>
+        product.toLowerCase().startsWith(text.toLowerCase())
+      );
+      setFilteredProducts(filtered);
+    } else {
+      setFilteredProducts([]);
+    }
+  };
+
+  const selectProduct = (product) => {
+    setNewItem({ ...newItem, name: product });
+    setFilteredProducts([]);
   };
 
   const generateReceipt = async () => {
@@ -120,14 +151,16 @@ const GenerateReceipt = () => {
     formData.append("shop_id", shopId);
     formData.append("customer_name", customerName);
     formData.append("items", JSON.stringify(items));
-    formData.append("total_amount", totalAmount);
+    formData.append("total_amount", totalAmount.toString());
     formData.append("customer_id", customerId);
 
     try {
-      const response = await axios.post("https://127.0.0.1:8000/generate-receipt/", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      
+      const response = await axios.post(
+        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/generate-receipt/",
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+
       if (response.data.template_url) {
         setReceiptUrl(response.data.template_url);
       } else {
@@ -146,16 +179,18 @@ const GenerateReceipt = () => {
       return;
     }
 
-    const fileName = `receipt_₦{receiptData.id}.pdf`;
+    const fileName = `receipt_${receiptData.id}.pdf`;
 
     if (Platform.OS === "web") {
       try {
         const byteCharacters = atob(receiptData.pdf_content.replace(/\s/g, ""));
-        const byteNumbers = new Array(byteCharacters.length).fill(0).map((_, i) => byteCharacters.charCodeAt(i));
+        const byteNumbers = new Array(byteCharacters.length)
+          .fill(0)
+          .map((_, i) => byteCharacters.charCodeAt(i));
         const byteArray = new Uint8Array(byteNumbers);
         const blob = new Blob([byteArray], { type: "application/pdf" });
         const url = URL.createObjectURL(blob);
-        
+
         const link = document.createElement("a");
         link.href = url;
         link.download = fileName;
@@ -175,7 +210,7 @@ const GenerateReceipt = () => {
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(receiptUri);
         } else {
-          Alert.alert("Receipt saved!", `Saved at: ₦{receiptUri}`);
+          Alert.alert("Receipt saved!", `Saved at: ${receiptUri}`);
         }
       } catch (error) {
         console.error("Error saving receipt:", error);
@@ -183,99 +218,147 @@ const GenerateReceipt = () => {
     }
   };
 
-  return (
-    <View style={styles.container}>
+  // Log for debugging
+  console.log("Items:", items);
+  console.log("Filtered Products:", filteredProducts);
+
+  // Memoize filteredProducts to prevent unnecessary re-computations
+  const filteredProductsMemo = useMemo(() => {
+    if (newItem.name.length > 0) {
+      return shopProducts.filter((product) =>
+        product.toLowerCase().startsWith(newItem.name.toLowerCase())
+      );
+    }
+    return [];
+  }, [newItem.name, shopProducts]);
+
+  // Memoize renderHeader to prevent unnecessary re-renders
+  const renderHeader = useMemo(() => (
+    <View style={styles.card}>
       <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Generate Receipt</Text>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Generate Receipt</Text>
       </View>
-      <View style={styles.card}> 
+      <View>
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            placeholder="Customer Profile ID"
+            value={customerId}
+            keyboardType="numeric"
+            maxLength={8}
+            onChangeText={setCustomerId}
+          />
+          {NameLoading && <ActivityIndicator size="small" color="#007BFF" />}
+        </View>
 
-      <View style={styles.inputContainer}>
         <TextInput
-          style={styles.input}
-          placeholder="Customer Profile ID"
-          value={customerId}
-          keyboardType="numeric"
-          maxLength={8}
-          onChangeText={setCustomerId}
+          style={styles.disabledInput}
+          placeholder="Customer Name"
+          value={customerName}
+          editable={false}
         />
-        {NameLoading && <ActivityIndicator size="small" color="#007BFF" />}
+
+        {/* Item Input Fields */}
+        <View style={styles.itemInputRow}>
+          <TextInput
+            style={[styles.itemInput, styles.itemsInput]}
+            placeholder="Item Name"
+            value={newItem.name}
+            onChangeText={(text) => {
+              setNewItem({ ...newItem, name: text });
+              handleSearch(text);
+            }}
+          />
+          <TextInput
+            style={[styles.itemInput, styles.qtyInput]}
+            placeholder="Qty"
+            keyboardType="numeric"
+            value={newItem.qty}
+            onChangeText={(text) => setNewItem({ ...newItem, qty: text })}
+          />
+          <TextInput
+            style={[styles.itemInput, styles.priceInput]}
+            placeholder="Price"
+            keyboardType="numeric"
+            value={newItem.price}
+            onChangeText={(text) => setNewItem({ ...newItem, price: text })}
+          />
+        </View>
+
+        {/* Product Suggestions */}
+        {filteredProductsMemo.length > 0 && (
+          <View style={styles.suggestionContainer}>
+            <FlatList
+              data={filteredProductsMemo}
+              style={styles.suggestionsList}
+              keyExtractor={(item, index) => index.toString()}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.suggestion}
+                  onPress={() => selectProduct(item)}
+                >
+                  <Text style={styles.suggestionText}>{item || "N/A"}</Text>
+                </TouchableOpacity>
+              )}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
+            />
+          </View>
+        )}
+
+        <TouchableOpacity style={styles.button} onPress={addItem}>
+          <Text style={styles.buttonText}>Add Item</Text>
+        </TouchableOpacity>
       </View>
+    </View>
+  ), [customerId, customerName, newItem, filteredProductsMemo, NameLoading, shopProducts]);
 
-      <TextInput
-        style={styles.disabledInput}
-        placeholder="Customer Name"
-        value={customerName}
-        editable={false}
-      />
-
-      {/* Item Input Fields */}
-      <View style={styles.itemInputRow}>
-        <TextInput
-          style={styles.itemInput}
-          placeholder="Item Name"
-          value={newItem.name}
-          onChangeText={(text) => {
-            setNewItem({ ...newItem, name: text });
-            handleSearch(text);
-          }}
-        />
-        <TextInput
-          style={[styles.itemInput, styles.qtyInput]}
-          placeholder="Qty"
-          keyboardType="numeric"
-          value={newItem.qty}
-          onChangeText={(text) => setNewItem({ ...newItem, qty: text })}
-        />
-        <TextInput
-          style={[styles.itemInput, styles.priceInput]}
-          placeholder="Price"
-          keyboardType="numeric"
-          value={newItem.price}
-          onChangeText={(text) => setNewItem({ ...newItem, price: text })}
-        />
-      </View>
-
-      {/* Product Suggestions */}
-      {filteredProducts.length > 0 && (
-        <FlatList
-          data={filteredProducts}
-          style={styles.suggestionsList}
-          keyExtractor={(item, index) => index.toString()}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={[styles.suggestion, { borderWidth: 0.5, borderColor: "gray", backgroundColor: "white" }]}
-              onPress={() => selectProduct(item)}
-            >
-              <Text style={[styles.suggestionText, { color: "black" }]}>{item}</Text>
-            </TouchableOpacity>
-          )}
-        />
-      )}
-
-      <TouchableOpacity style={styles.button} onPress={addItem}>
-        <Text style={styles.buttonText}>Add Item</Text>
-      </TouchableOpacity>
-
-      {/* Added Items */}
+  // Memoize renderContent to prevent unnecessary re-renders
+  const renderContent = useMemo(() => (
+    <View style={styles.card}>
       <FlatList
         data={items}
         keyExtractor={(item, index) => index.toString()}
-        renderItem={({ item }) => (
-          <View style={styles.tableRow}>
-            <Text style={styles.tableRowText}>{item.name}</Text>
-            <Text style={styles.tableRowText}>{item.qty}</Text>
-            <Text style={styles.tableRowText}>₦{item.price}</Text>
-            <Text style={styles.tableRowText}>₦{item.total}</Text>
+        ListHeaderComponent={() => (
+          <View style={styles.tableHeader}>
+            <Text style={[styles.tableHeaderText, styles.tableRowItem]}>Item</Text>
+            <Text style={[styles.tableHeaderText, styles.tableRowQtyy]}>Qty</Text>
+            <Text style={[styles.tableHeaderText, styles.tableRowPrice]}>Price</Text>
+            <Text style={[styles.tableHeaderText, styles.tableRowTotal]}>Total</Text>
+            <View style={styles.removeButton} />
           </View>
         )}
+        renderItem={({ item, index }) => (
+          <View style={styles.tableRow}>
+            <Text style={[styles.tableRowText, styles.tableRowItem]}>
+              {item.name || "N/A"}
+            </Text>
+            <Text style={[styles.tableRowText, styles.tableRowQty]}>
+              {item.qty || "0"}
+            </Text>
+            <Text style={[styles.tableRowText, styles.tableRowPrice]}>
+              ₦{item.price || "0"}
+            </Text>
+            <Text style={[styles.tableRowText, styles.tableRowTotal]}>
+              ₦{Number(item.total || 0).toLocaleString(undefined, {
+                minimumFractionDigits: Number(item.total || 0) % 1 === 0 ? 0 : 2,
+                maximumFractionDigits: 2,
+              })}
+            </Text>
+            <TouchableOpacity onPress={() => removeItem(index)} style={styles.removeButton}>
+              <MaterialIcons name="delete" size={18} color="red" />
+            </TouchableOpacity>
+          </View>
+        )}
+        nestedScrollEnabled
       />
-
       <View style={styles.totalContainer}>
-        <Text style={styles.totalText}>Total: ₦{totalAmount}</Text>
+        <Text style={styles.totalText}>
+          Total: ₦{Number(totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+        </Text>
       </View>
 
       <TouchableOpacity onPress={generateReceipt} style={styles.primaryButton}>
@@ -289,12 +372,28 @@ const GenerateReceipt = () => {
         >
           <Text style={{ color: "white" }}>Download Receipt</Text>
         </TouchableOpacity>
-        )}
-        </View>
+      )}
     </View>
+  ), [items, totalAmount, receiptUrl]);
+
+  return (
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
+    >
+      <FlatList
+        data={[{ id: "content" }]}
+        keyExtractor={(item) => item.id}
+        renderItem={() => renderContent}
+        ListHeaderComponent={renderHeader}
+        contentContainerStyle={{ flexGrow: 1 }}
+      />
+    </KeyboardAvoidingView>
   );
 };
 
+// Styles remain unchanged
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -303,52 +402,65 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    backgroundColor: "#FFFFFF",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
   },
   headerTitle: {
     fontSize: 22,
     fontWeight: "bold",
-    marginLeft: 75,
-    color: "black",
+    marginLeft: 60,
+    color: "#000",
   },
   backButton: {
     borderRadius: 50,
     backgroundColor: "#E0E0E0",
-    marginRight: 12,
+    padding: 6,
   },
   card: {
     flex: 1,
-    padding: 16
+    padding: 16,
   },
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#fff",
-    borderRadius: 12,
-    paddingHorizontal: 10, // Reduced padding
-    elevation: 4,
+    borderRadius: 10,
+    paddingHorizontal: 10,
     marginBottom: 14,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowOffset: { width: 0, height: 3 },
-    borderWidth: 1,  // Move border styling here
+    borderWidth: 1,
     borderColor: "#DDD",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   input: {
     flex: 1,
     height: 50,
     fontSize: 16,
     color: "#333",
-    borderRadius: 10,  // Can remove this if needed
-    paddingHorizontal: 10, // Adjusted padding
+    paddingHorizontal: 10,
   },
   disabledInput: {
     height: 50,
@@ -368,33 +480,46 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   itemInput: {
-    flex: 1,
     height: 50,
     fontSize: 16,
     backgroundColor: "#fff",
-    paddingHorizontal: 14,
     borderRadius: 10,
-    marginHorizontal: 5,
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: 2 },
+    paddingHorizontal: 10,
+    marginHorizontal: 4,
     borderWidth: 1,
     borderColor: "#DDD",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  itemsInput: {
+    flex: 1.4,
   },
   qtyInput: {
-    width: 55,
+    flex: 0.6,
   },
   priceInput: {
-    width: 85,
+    flex: 0.9,
   },
   button: {
     backgroundColor: "#007BFF",
-    padding: 14,
+    paddingVertical: 14,
     borderRadius: 10,
     alignItems: "center",
     marginVertical: 12,
-    elevation: 4,
+    ...Platform.select({
+      android: {
+        elevation: 3,
+      },
+    }),
   },
   buttonText: {
     color: "#fff",
@@ -405,31 +530,60 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     backgroundColor: "#17A2B8",
-    padding: 12,
+    padding: 10,
     borderRadius: 8,
     marginBottom: 6,
   },
   tableHeaderText: {
     fontSize: 14,
-    fontWeight: "bold",
     color: "#fff",
-    flex: 1,
-    textAlign: "center",
+    textAlign: "left",
+    fontWeight: "600",
   },
   tableRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    alignItems: "center",
     backgroundColor: "#fff",
-    padding: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
     borderRadius: 8,
     marginBottom: 6,
-    elevation: 3,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   tableRowText: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#333",
-    flex: 1,
+    paddingHorizontal: 4,
+    textAlign: "left",
+  },
+  tableRowItem: {
+    flex: 1.3,
+  },
+  tableRowQty: {
+    flex: 0.5,
     textAlign: "center",
+  },
+  tableRowQtyy: {
+    flex: 0.5,
+  },
+  tableRowPrice: {
+    flex: 1.3,
+  },
+  tableRowTotal: {
+    flex: 1.5,
+  },
+  removeButton: {
+    paddingHorizontal: 4,
   },
   totalContainer: {
     marginTop: 12,
@@ -445,11 +599,15 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     backgroundColor: "#28A745",
-    padding: 14,
+    paddingVertical: 14,
     borderRadius: 10,
     alignItems: "center",
     marginVertical: 12,
-    elevation: 4,
+    ...Platform.select({
+      android: {
+        elevation: 3,
+      },
+    }),
   },
   primaryButtonText: {
     color: "#fff",
@@ -457,32 +615,39 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   suggestionContainer: {
-    position: "absolute",
-    top: 100, // Adjust based on your layout
-    left: 20,
-    right: 20,
+    marginTop: 5,
     backgroundColor: "#fff",
-    borderRadius: 8,
-    elevation: 5,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    zIndex: 1000,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: "red",
+    borderColor: "#DDD",
+    maxHeight: 150,
+    zIndex: 999,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  suggestionsList: {
+    paddingHorizontal: 10,
   },
   suggestion: {
-    padding: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "#ddd",
+    borderColor: "#EEE",
   },
   suggestionText: {
-    fontSize: 16,
-    color: "black",
+    fontSize: 14,
+    color: "#333",
   },
 });
-
 
 export default (props) => (
   <SubscriptionProvider>

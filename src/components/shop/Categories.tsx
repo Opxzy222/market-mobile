@@ -3,22 +3,10 @@ import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity } from 'react
 import axios from 'axios';
 import { useRouter, usePathname } from 'expo-router';
 
-const Categories = () => {
-  const [categories, setCategories] = useState([]);
+const Categories = ({ categories }) => {
+  console.log(categories, 'categories')
   const router = useRouter();
   const pathname = usePathname()
-
-  useEffect(() => {
-    axios
-      .get('https://127.0.0.1:8000/shop-categories/')
-      .then((response) => {
-        const categoryArray = Object.values(response.data);
-        setCategories(categoryArray);
-      })
-      .catch((error) => {
-        console.error('Error fetching categories:', error);
-      });
-  }, []);
 
   const categoryIconMap = {
     vehicles: require('../../../assets/Image/car-icon.svg'),
@@ -57,7 +45,7 @@ const Categories = () => {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Shop Categories</Text>
+        <Text style={styles.title}>Categories</Text>
         <TouchableOpacity style={styles.seeAllContainer}
           onPress={() => router.push({ pathname: '/shop/AllCategories', params: { prevRoute: pathname } })}>
           <Text style={styles.seeAll}>See All</Text>

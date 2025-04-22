@@ -48,7 +48,7 @@ const ReviewForm = ({ shopId, onReviewSubmitted }) => {
 
     try {
       const response = await axios.post(
-        'https://127.0.0.1:8000/shops/reviews/submit/',
+        'https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/reviews/submit/',
         formData,
         {
           headers: {

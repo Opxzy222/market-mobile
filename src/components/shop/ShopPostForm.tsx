@@ -1,219 +1,283 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   Image,
-  StyleSheet,
   ScrollView,
   Alert,
-  FlatList,
-  Platform,
-} from 'react-native';
-import * as MediaLibrary from 'expo-media-library';
-import { Video } from 'expo-av';
-import axios from 'axios';
+  StyleSheet,
+  ActivityIndicator,
+} from "react-native";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
+import { Ionicons } from "@expo/vector-icons";
+import axios from "axios";
 
 const ShopPostForm = ({ shopId }) => {
-  const [description, setDescription] = useState('');
+  console.log("ShopPostForm render start");
+
+  const [description, setDescription] = useState("");
   const [media, setMedia] = useState([]);
-  const [allMedia, setAllMedia] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [permissionGranted, setPermissionGranted] = useState(false);
 
-  useEffect(() => {
-    if (Platform.OS === 'web') {
-      // Skip media library permissions on web
-      setPermissionGranted(true);
-    } else {
-      requestPermissions();
-    }
-  }, []);
-
-  const requestPermissions = async () => {
-    const { status } = await MediaLibrary.requestPermissionsAsync();
-    if (status === 'granted') {
-      setPermissionGranted(true);
-      fetchMedia();
-    } else {
-      Alert.alert('Permission Denied', 'We need access to your media library.');
-    }
-  };
-
-  const fetchMedia = async () => {
-    if (Platform.OS !== 'web') {
-      const { assets } = await MediaLibrary.getAssetsAsync({
-        mediaType: ['photo', 'video'],
-        first: 50,
+  const pickMedia = async () => {
+    try {
+      console.log("Launching document picker...");
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["image/*", "video/*"],
+        copyToCacheDirectory: true,
+        multiple: true,
       });
-      setAllMedia(assets);
-    }
-  };
 
-  const handleSelectMedia = (item) => {
-    const isSelected = media.some((m) => m.id === item.id);
+      console.log("Picker result:", JSON.stringify(result, null, 2));
 
-    if (isSelected) {
-      setMedia(media.filter((m) => m.id !== item.id));
-    } else {
-      if (item.mediaType === 'video' && item.duration > 120) {
-        Alert.alert('Warning', 'Videos longer than 2 minutes are not allowed.');
-        return;
+      if (!result.canceled && result.assets?.length > 0) {
+        const newMediaPromises = result.assets.map(async (asset) => {
+          const { uri, name, mimeType, size } = asset;
+          const isVideo = mimeType?.startsWith("video/");
+          const isImage = mimeType?.startsWith("image/");
+
+          if (!isImage && !isVideo) {
+            Alert.alert(
+              "Warning",
+              `File "${name || "selected file"}" is not a valid image or video.`
+            );
+            return null;
+          }
+
+          // Validate URI and size
+          try {
+            console.log("Validating URI:", uri);
+            const info = await FileSystem.getInfoAsync(uri);
+            if (!info.exists || info.isDirectory) {
+              throw new Error("File not found");
+            }
+            console.log("URI valid, size:", info.size);
+
+            // Limit file size (e.g., 10 MB)
+            if (info.size > 10 * 1024 * 1024) {
+              Alert.alert(
+                "Warning",
+                `File "${name || "selected file"}" is too large (max 10 MB).`
+              );
+              return null;
+            }
+
+            // Skip duration check
+            if (isVideo) {
+              console.log(
+                "Skipping duration check for:",
+                name,
+                "(videos longer than 2 minutes may be rejected)"
+              );
+            }
+
+            return {
+              id: `${uri}_${Date.now()}`,
+              uri,
+              name: name || `media_${Date.now()}.${isVideo ? "mp4" : "jpg"}`,
+              type: isVideo ? "video" : "image",
+              valid: true,
+            };
+          } catch (error) {
+            console.error("Validation failed for:", uri, error);
+            Alert.alert(
+              "Warning",
+              `File "${name || "selected file"}" is invalid and will be skipped.`
+            );
+            return null;
+          }
+        });
+
+        const newMedia = (await Promise.all(newMediaPromises)).filter(
+          (item) => item !== null
+        );
+        setMedia((prevMedia) => [...prevMedia, ...newMedia]);
+      } else {
+        console.log("Picker canceled or no assets selected.");
       }
-      setMedia([...media, item]);
+    } catch (error) {
+      console.error("Error picking media:", error);
+      Alert.alert("Error", "Failed to select media. Please try again.");
     }
   };
 
-  const handleSelectMediaWeb = (event) => {
-    const files = Array.from(event.target.files);
-    const selectedMedia = files.map((file) => ({
-      id: file.name,
-      uri: URL.createObjectURL(file),
-      mediaType: file.type.startsWith('image') ? 'photo' : 'video',
-      name: file.name,
-    }));
-    setMedia((prevMedia) => [...prevMedia, ...selectedMedia]);
+  const removeMedia = (id) => {
+    console.log("Removing media:", id);
+    setMedia((prevMedia) => prevMedia.filter((m) => m.id !== id));
   };
 
   const handleSubmit = async () => {
     if (!description.trim() || media.length === 0) {
-      Alert.alert('Error', 'Please add a description and at least one media file.');
+      Alert.alert("Error", "Please add a description and at least one media file.");
       return;
     }
-  
+
+    setLoading(true);
     const formData = new FormData();
-    formData.append('shop_id', shopId);
-    formData.append('description', description);
-  
-    for (let index = 0; index < media.length; index++) {
-      const file = media[index];
-      let newFile;
-  
-      if (file.uri.startsWith('blob:')) {
-        const response = await fetch(file.uri);
-        const blob = await response.blob();
-        newFile = new File([blob], file.name, { type: blob.type || 'application/octet-stream' });
-      } else {
-        newFile = {
-          uri: file.uri.startsWith('file://') ? file.uri.replace('file://', '') : file.uri,
-          type: file.mediaType === 'photo' ? 'image/jpeg' : 'video/mp4',
-          name: file.name || `file_${index}.${file.mediaType === 'photo' ? 'jpg' : 'mp4'}`,
-        };
+    formData.append("shop_id", shopId);
+    formData.append("description", description);
+
+    // Validate media before appending
+    const validMedia = [];
+    for (const file of media) {
+      if (file.valid) {
+        try {
+          const info = await FileSystem.getInfoAsync(file.uri);
+          if (!info.exists) {
+            console.log("File inaccessible:", file.uri);
+            Alert.alert(
+              "Warning",
+              `File "${file.name}" is no longer accessible and will be skipped.`
+            );
+            continue;
+          }
+          const newFile = {
+            uri: file.uri.startsWith("file://") ? file.uri : `file://${file.uri}`,
+            type: file.type === "image" ? "image/jpeg" : "video/mp4",
+            name: file.name,
+          };
+          console.log("Appending File:", newFile);
+          formData.append("files", newFile);
+          validMedia.push(file);
+        } catch (error) {
+          console.error("File validation failed before submit:", file.uri, error);
+          Alert.alert(
+            "Warning",
+            `File "${file.name}" is invalid and will be skipped.`
+          );
+        }
       }
-  
-      console.log('Appending File:', newFile); // Debug log
-      formData.append('files', newFile);
     }
-  
+
+    if (validMedia.length === 0) {
+      setLoading(false);
+      Alert.alert("Error", "No valid media files to submit.");
+      setMedia([]);
+      return;
+    }
+
     try {
+      console.log("Sending FormData with files:", validMedia.length);
       const response = await axios.post(
-        `https://127.0.0.1:8000/shops/${shopId}/posts/create/`,
+        `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/${shopId}/posts/create/`,
         formData,
         {
           headers: {
-            'Content-Type': 'multipart/form-data',
+            "Content-Type": "multipart/form-data",
           },
+          timeout: 30000, // 30s timeout
         }
       );
-  
-      console.log('Server Response:', response.data); // Debug log
-      Alert.alert('Success', 'Post created successfully!');
-      setDescription('');
+
+      console.log("Server Response:", response.data);
+      Alert.alert("Success", "Post created successfully!");
+      setDescription("");
       setMedia([]);
     } catch (error) {
-      console.error('Error submitting post:', error.response?.data || error.message);
-      Alert.alert('Error', 'Failed to submit post.');
+      console.error(
+        "Error submitting post:",
+        error.response?.data || error.message
+      );
+      let errorMessage = "Failed to submit post.";
+      if (error.code === "ECONNABORTED") {
+        errorMessage = "Request timed out. Please check your network.";
+      } else if (error.response) {
+        errorMessage = `Server error: ${
+          error.response.data?.message || error.response.status
+        }`;
+      } else if (error.message.includes("Network Error")) {
+        errorMessage = "Network error. Please check your connection.";
+      }
+      Alert.alert("Error", errorMessage);
+    } finally {
+      setLoading(false);
     }
   };
-  
-  const renderMediaItem = ({ item }) => {
-    const isSelected = media.some((m) => m.id === item.id);
 
-    return (
-      <TouchableOpacity
-        style={[styles.mediaItem, isSelected && styles.mediaItemSelected]}
-        onPress={() => handleSelectMedia(item)}
-      >
-        {item.mediaType === 'photo' ? (
-          <Image source={{ uri: item.uri }} style={styles.mediaThumbnail} />
-        ) : (
-          <Video
-            source={{ uri: item.uri }}
-            style={styles.mediaThumbnail}
-            resizeMode="cover"
-            isMuted
-          />
-        )}
-        {isSelected && <View style={styles.selectionOverlay} />}
-      </TouchableOpacity>
-    );
-  };
-
-  if (!permissionGranted) {
-    return (
-      <View style={styles.container}>
-        <Text>Waiting for media library permissions...</Text>
-      </View>
-    );
-  }
+  console.log("ShopPostForm render end, media count:", media.length);
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Create a Post</Text>
-      
+
       <Text style={styles.subtitle}>Select Media (Images or Videos)</Text>
-      {Platform.OS === 'web' ? (
-        <View>
-          <input
-            type="file"
-            accept="image/*,video/*"
-            multiple
-            onChange={handleSelectMediaWeb}
-            style={{ marginBottom: 20 }}
-          />
-        </View>
-      ) : (
-        <FlatList
-          data={allMedia}
-          renderItem={renderMediaItem}
-          keyExtractor={(item) => item.id}
-          numColumns={3}
-          contentContainerStyle={styles.mediaList}
+      <TouchableOpacity onPress={pickMedia} style={styles.optionCard}>
+        <Ionicons
+          name="image-outline"
+          size={24}
+          color="#e67e22"
+          style={styles.optionIcon}
         />
-      )}
+        <Text style={styles.optionText}>Add Images or Videos</Text>
+      </TouchableOpacity>
+
       <View style={styles.mediaPreviewContainer}>
-        {media.map((item, index) => {
-          if (item.mediaType === 'photo') {
-            return <Image key={index} source={{ uri: item.uri }} style={styles.mediaPreview} />;
-          }
-          if (item.mediaType === 'video') {
-            return (
-              <Video
-                key={index}
+        {media.map((item) => (
+          <View key={item.id} style={styles.mediaPreviewWrapper}>
+            {!item.valid ? (
+              <View style={styles.placeholder}>
+                <Ionicons
+                  name={item.type === "image" ? "image-outline" : "videocam-outline"}
+                  size={40}
+                  color="#999"
+                  style={styles.placeholderIcon}
+                />
+                <Text style={styles.errorText}>No preview</Text>
+              </View>
+            ) : item.type === "image" ? (
+              <Image
                 source={{ uri: item.uri }}
                 style={styles.mediaPreview}
                 resizeMode="cover"
-                paused
               />
-            );
-          }
-          return null;
-        })}
+            ) : (
+              <View style={styles.mediaPreview}>
+                <Image
+                  source={{ uri: item.uri }}
+                  style={styles.mediaPreview}
+                  resizeMode="cover"
+                />
+                <View style={styles.playIconContainer}>
+                  <Ionicons
+                    name="play-circle"
+                    size={40}
+                    color="rgba(255, 255, 255, 0.8)"
+                  />
+                </View>
+              </View>
+            )}
+            <TouchableOpacity
+              style={styles.removeMediaButton}
+              onPress={() => removeMedia(item.id)}
+            >
+              <Ionicons name="close-circle" size={24} color="#ff4d4d" />
+            </TouchableOpacity>
+          </View>
+        ))}
       </View>
+
       <TextInput
         style={styles.input}
         placeholder="Enter post description"
         value={description}
         onChangeText={setDescription}
         multiline
+        numberOfLines={4}
       />
+
       <TouchableOpacity
         style={[styles.button, loading && styles.buttonDisabled]}
         onPress={handleSubmit}
         disabled={loading}
       >
-        <Text style={styles.buttonText}>{loading ? 'Submitting...' : 'Post'}</Text>
+        {loading ? (
+          <ActivityIndicator size="small" color="#fff" />
+        ) : (
+          <Text style={styles.buttonText}>Post</Text>
+        )}
       </TouchableOpacity>
     </ScrollView>
   );
@@ -222,78 +286,113 @@ const ShopPostForm = ({ shopId }) => {
 const styles = StyleSheet.create({
   container: {
     padding: 20,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: "#f9f9f9",
   },
   title: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     marginBottom: 20,
-    textAlign: 'center',
-    color: '#333',
+    textAlign: "center",
+    color: "#333",
   },
   subtitle: {
     fontSize: 16,
     marginBottom: 10,
-    color: '#555',
+    color: "#555",
   },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 10,
-    padding: 10,
-    fontSize: 16,
-    backgroundColor: '#fff',
+  optionCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
     marginBottom: 15,
-    textAlignVertical: 'top',
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
   },
-  mediaList: {
-    marginBottom: 20,
+  optionIcon: {
+    marginRight: 10,
   },
-  mediaItem: {
-    position: 'relative',
-    margin: 5,
-    width: 100,
-    height: 100,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  mediaItemSelected: {
-    borderColor: '#007BFF',
-    borderWidth: 2,
-  },
-  mediaThumbnail: {
-    width: '100%',
-    height: '100%',
-  },
-  selectionOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 123, 255, 0.5)',
+  optionText: {
+    fontSize: 16,
+    color: "#333",
+    fontWeight: "600",
   },
   mediaPreviewContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     marginBottom: 20,
+    gap: 10,
+  },
+  mediaPreviewWrapper: {
+    position: "relative",
+    marginBottom: 10,
   },
   mediaPreview: {
     width: 80,
     height: 80,
     borderRadius: 8,
-    marginRight: 10,
-    marginBottom: 10,
+  },
+  playIconContainer: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    transform: [{ translateX: -20 }, { translateY: -20 }],
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    borderRadius: 20,
+    padding: 5,
+  },
+  placeholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    backgroundColor: "#f0f0f0",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  placeholderIcon: {
+    marginBottom: 5,
+  },
+  errorText: {
+    color: "#ff4d4d",
+    fontSize: 10,
+    textAlign: "center",
+  },
+  removeMediaButton: {
+    position: "absolute",
+    top: -8,
+    right: -8,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 10,
+    padding: 10,
+    fontSize: 16,
+    backgroundColor: "#fff",
+    marginBottom: 15,
+    minHeight: 100,
+    textAlignVertical: "top",
   },
   button: {
-    backgroundColor: '#28a745',
+    backgroundColor: "#28a745",
     borderRadius: 10,
     padding: 15,
-    alignItems: 'center',
+    alignItems: "center",
   },
   buttonDisabled: {
-    backgroundColor: '#6c757d',
+    backgroundColor: "#6c757d",
   },
   buttonText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
 });
 

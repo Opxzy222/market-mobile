@@ -5,12 +5,11 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Pressable,
-  ScrollView,
-  Alert,
+  ScrollView, Pressable, FlatList,
+  Alert, KeyboardAvoidingView, Platform,
 } from "react-native";
 import { SelectList } from "react-native-dropdown-select-list";
-import { MultiSelect } from "react-multi-select-component";
+import MultiSelect from 'react-native-multiple-select';
 import * as Location from "expo-location";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from "expo-router";
@@ -30,6 +29,7 @@ export default function CreateShopScreen({ navigation }) {
   const [formErrors, setFormErrors] = useState({});
   const [sessionId, setSessionId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showGeoFields, setShowGeoFields] = useState(false); // Initially hidden
 
   const [locations, setLocations] = useState([]); // Top-level locations
   const [selectedLocation, setSelectedLocation] = useState(null); // First-level selection
@@ -45,7 +45,7 @@ export default function CreateShopScreen({ navigation }) {
     const fetchCategories = async () => {
       try {
         const response = await axios.post(
-          "https://127.0.0.1:8000/category/dropdown-options/"
+          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/category/dropdown-options/"
         );
         setCategories(
           response.data.categories.map((cat) => ({
@@ -77,7 +77,7 @@ export default function CreateShopScreen({ navigation }) {
     const fetchTopLevelLocations = async () => {
       try {
         const response = await axios.post(
-          "https://127.0.0.1:8000/location/states/"
+          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/states/"
         );
         setLocations(
           response.data.locations.map((loc) => ({
@@ -103,7 +103,7 @@ export default function CreateShopScreen({ navigation }) {
       formData.append("parent_id", selectedOption);
   
       const response = await axios.post(
-        "https://127.0.0.1:8000/location/children/",
+        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/children/",
         formData,
         {
           headers: {
@@ -132,7 +132,7 @@ export default function CreateShopScreen({ navigation }) {
       formData.append("parent_id", selectedOption);
   
       const response = await axios.post(
-        "https://127.0.0.1:8000/location/children/",
+        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/children/",
         formData,
         {
           headers: {
@@ -159,13 +159,14 @@ export default function CreateShopScreen({ navigation }) {
 
   const handleCategoryChange = async (selectedOption) => {
     setSelectedCategory(selectedOption);
+    setSelectedSubcategories([]);
 
     try {
       const formData = new FormData();
       formData.append("parent_id", selectedOption);
 
       const response = await axios.post(
-        "https://127.0.0.1:8000/category/subcategories/",
+        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/category/subcategories/",
         formData,
         {
           headers: { "Content-Type": "multipart/form-data" },
@@ -203,6 +204,7 @@ export default function CreateShopScreen({ navigation }) {
         lat: location.coords.latitude.toString(),
         lng: location.coords.longitude.toString(),
       });
+      setShowGeoFields(true);
 
       setGeoError(""); // Clear any previous errors
       Alert.alert("Location Pinned", "Coordinates added successfully.");
@@ -241,12 +243,13 @@ export default function CreateShopScreen({ navigation }) {
         formData.append("lga", selectedChildLocation);
         formData.append("location", selectedGrandChildLocation);
 
-        selectedSubcategories.forEach((sub) =>
-            formData.append("subcategories[]", sub.value)
-        );
+       selectedSubcategories.forEach((subId) =>
+        formData.append("subcategories[]", subId)
+      );
+
 
         const response = await axios.post(
-            "https://127.0.0.1:8000/create-shop/",
+            "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/create-shop/",
             formData,
             { 
                 headers: { 
@@ -261,7 +264,7 @@ export default function CreateShopScreen({ navigation }) {
       Alert.alert("Success", "Your shop has been created!");
       
       // Navigate immediately after the alert
-      router.push({ pathname: '/shop/UpdateProduct', params: { shop_id: shopId } });
+      router.push({ pathname: '/shop/WelcomeWorkingHours', params: { shopId: shopId } });
     } catch (error) {
       console.error("Error creating shop:", error);
       Alert.alert("Error", "Something went wrong. Please try again.");
@@ -272,154 +275,196 @@ export default function CreateShopScreen({ navigation }) {
   
 
   return (
-    <View style={{ flex: 1 }}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Back</Text>
-      </View>
-      
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <View style={styles.card}>
-          <Text style={styles.heading}>Create Your Digital Shop</Text>
-  
-          <Text style={styles.label}>Name</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Input shop name"
-            value={name}
-            onChangeText={setName}
-          />
-          {formErrors.name && <Text style={styles.error}>{formErrors.name}</Text>}
-  
-          <Text style={styles.label}>Description</Text>
-          <TextInput
-            style={[styles.input, styles.description]}
-            placeholder="Input Shop Description"
-            value={description}
-            onChangeText={setDescription}
-            multiline
-          />
-          {formErrors.description && <Text style={styles.error}>{formErrors.description}</Text>}
-  
-          <Text style={styles.label}>Category</Text>
-          <SelectList
-            setSelected={handleCategoryChange}
-            data={categories}
-            placeholder="Select Category"
-            save="key"
-            searchPlaceholder="Search categories"
-            boxStyles={styles.dropdown}
-          />
-  
-          {selectedCategory && subcategories.length > 0 && (
-            <>
-              <Text style={styles.label}>Subcategories</Text>
-              <MultiSelect
-                options={subcategories.map((sub) => ({
-                  label: sub.value,
-                  value: sub.key,
-                }))}
-                value={selectedSubcategories}
-                onChange={setSelectedSubcategories}
-                labelledBy="Select Subcategories"
-              />
-            </>
-          )}
-  
-          {/* Location Select Section */}
-          <Text style={styles.label}>State</Text>
-          <SelectList
-            setSelected={handleLocationChange}
-            data={locations}
-            placeholder="Select Location"
-            save="key"
-            boxStyles={styles.dropdown}
-          />
-          {formErrors.location && <Text style={styles.error}>{formErrors.location}</Text>}
-  
-          {selectedLocation && (
-            <>
-              <Text style={styles.label}>Local Government</Text>
-              <SelectList
-                setSelected={handleChildLocationChange}
-                data={childLocations}
-                placeholder="Select Child Location"
-                save="key"
-                boxStyles={styles.dropdown}
-              />
-              {formErrors.childLocation && <Text style={styles.error}>{formErrors.childLocation}</Text>}
-            </>
-          )}
-  
-          {selectedChildLocation && (
-            <>
-              <Text style={styles.label}>Location</Text>
-              <SelectList
-                setSelected={handleGrandChildLocationChange}
-                data={grandChildLocations}
-                placeholder="Select Grandchild Location"
-                save="key"
-                boxStyles={styles.dropdown}
-              />
-              {formErrors.grandChildLocation && (
-                <Text style={styles.error}>{formErrors.grandChildLocation}</Text>
-              )}
-            </>
-          )}
-  
-          <Text style={styles.label}>Address</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Input your shop address"
-            value={address}
-            onChangeText={setAddress}
-          />
-          {formErrors.address && <Text style={styles.error}>{formErrors.address}</Text>}
-  
-          <View style={styles.geoSection}>
-            <View style={styles.geoInputContainer}>
-              <Text style={styles.geoLabel}>Latitude</Text>
-              <TextInput
-                style={[styles.input, styles.readOnly]}
-                placeholder="Latitude"
-                value={geoLocation.lat}
-                editable={false}
-              />
-            </View>
-            <View style={styles.geoInputContainer}>
-              <Text style={styles.geoLabel}>Longitude</Text>
-              <TextInput
-                style={[styles.input, styles.readOnly]}
-                placeholder="Longitude"
-                value={geoLocation.lng}
-                editable={false}
-              />
-            </View>
-  
-            <TouchableOpacity style={styles.pinButton} onPress={handlePinLocation}>
-              <Text style={styles.pinButtonText}>Pin Location</Text>
-            </TouchableOpacity>
-          </View>
-          {geoError && <Text style={styles.error}>{geoError}</Text>}
-          {formErrors.geoLocation && <Text style={styles.error}>{formErrors.geoLocation}</Text>}
-  
-          <Pressable
-            style={[
-              styles.submitButton,
-              isSubmitting && styles.disabledButton,
-            ]}
-            onPress={handleSubmit}
-            disabled={isSubmitting}
-          >
-            <Text style={styles.submitButtonText}>
-              {isSubmitting ? "Submitting..." : "Create Shop"}
-            </Text>
-          </Pressable>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={100}
+    >
+      <View style={{ flex: 1 }}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Back</Text>
         </View>
-      </ScrollView>
-    </View>
+
+        <FlatList
+          data={[]}
+          keyExtractor={(_, index) => index.toString()}
+          ListHeaderComponent={
+            <View style={styles.card}>
+              <Text style={styles.heading}>Create Your Digital Shop</Text>
+
+              <Text style={styles.label}>Name</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Input shop name"
+                value={name}
+                onChangeText={setName}
+              />
+              {formErrors.name && <Text style={styles.error}>{formErrors.name}</Text>}
+
+              <Text style={styles.label}>Description</Text>
+              <TextInput
+                style={[styles.input, styles.description]}
+                placeholder="Input Shop Description"
+                value={description}
+                onChangeText={setDescription}
+                multiline
+              />
+              {formErrors.description && <Text style={styles.error}>{formErrors.description}</Text>}
+
+              <Text style={styles.label}>Category</Text>
+              <SelectList
+                setSelected={handleCategoryChange}
+                data={categories}
+                placeholder="Select Category"
+                save="key"
+                searchPlaceholder="Search categories"
+                boxStyles={styles.dropdown}
+              />
+
+              {selectedCategory && subcategories.length > 0 && (
+                <>
+                  <Text style={styles.label}>Subcategories</Text>
+                  <MultiSelect
+                    key={selectedCategory}
+                    items={subcategories.map((sub) => ({
+                      id: sub.key,
+                      name: sub.value,
+                    }))}
+                    uniqueKey="id"
+                    onSelectedItemsChange={setSelectedSubcategories}
+                    selectedItems={selectedSubcategories}
+                    selectText="Select Subcategories"
+                    searchInputPlaceholderText="Search Subcategories..."
+                    displayKey="name"
+                    styleDropdownMenuSubsection={{
+                      backgroundColor: "#fff",
+                      borderColor: "#ddd",
+                      borderWidth: 1,
+                      borderRadius: 8,
+                      paddingHorizontal: 10,
+                      paddingVertical: 18,
+                      marginLeft: 10,
+                    }}
+                    altFontFamily="ProximaNova-Light"
+                    tagRemoveIconColor="#CCC"
+                    tagBorderColor="#CCC"
+                    tagTextColor="#CCC"
+                    selectedItemTextColor="#CCC"
+                    selectedItemIconColor="#CCC"
+                    itemTextColor="#000"
+                    searchInputStyle={{ color: "#CCC" }}
+                    submitButtonColor="#00BFA5"
+                    submitButtonText="Submit"
+                  />
+                </>
+              )}
+
+              <Text style={styles.label}>State</Text>
+              <SelectList
+                setSelected={handleLocationChange}
+                data={locations}
+                placeholder="Select Location"
+                save="key"
+                boxStyles={styles.dropdown}
+              />
+              {formErrors.location && <Text style={styles.error}>{formErrors.location}</Text>}
+
+              {selectedLocation && (
+                <>
+                  <Text style={styles.label}>Local Government</Text>
+                  <SelectList
+                    setSelected={handleChildLocationChange}
+                    data={childLocations}
+                    placeholder="Select Child Location"
+                    save="key"
+                    boxStyles={styles.dropdown}
+                  />
+                  {formErrors.childLocation && (
+                    <Text style={styles.error}>{formErrors.childLocation}</Text>
+                  )}
+                </>
+              )}
+
+              {selectedChildLocation && (
+                <>
+                  <Text style={styles.label}>Location</Text>
+                  <SelectList
+                    setSelected={handleGrandChildLocationChange}
+                    data={grandChildLocations}
+                    placeholder="Select Grandchild Location"
+                    save="key"
+                    boxStyles={styles.dropdown}
+                  />
+                  {formErrors.grandChildLocation && (
+                    <Text style={styles.error}>{formErrors.grandChildLocation}</Text>
+                  )}
+                </>
+              )}
+
+              <Text style={styles.label}>Address</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Input your shop address"
+                value={address}
+                onChangeText={setAddress}
+              />
+              {formErrors.address && <Text style={styles.error}>{formErrors.address}</Text>}
+
+              <View style={styles.geoSection}>
+                {showGeoFields && (
+                  <>
+                    <View style={styles.geoInputContainer}>
+                      <Text style={styles.geoLabel}>Latitude</Text>
+                      <TextInput
+                        style={[styles.input, styles.readOnly]}
+                        placeholder="Click 'Detect My Location' to auto-fill"
+                        value={geoLocation.lat}
+                        editable={false}
+                      />
+                    </View>
+
+                    <View style={styles.geoInputContainer}>
+                      <Text style={styles.geoLabel}>Longitude</Text>
+                      <TextInput
+                        style={[styles.input, styles.readOnly]}
+                        placeholder="Click 'Detect My Location' to auto-fill"
+                        value={geoLocation.lng}
+                        editable={false}
+                      />
+                    </View>
+                  </>
+                )}
+
+                <TouchableOpacity style={styles.pinButton} onPress={handlePinLocation}>
+                  <MaterialIcons name="my-location" style={styles.pinIcon} />
+                  <Text style={styles.pinButtonText}>
+                    {geoLocation.lat && geoLocation.lng ? "Update Location" : "Detect My Location"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {geoError && <Text style={styles.error}>{geoError}</Text>}
+              {formErrors.geoLocation && <Text style={styles.error}>{formErrors.geoLocation}</Text>}
+
+              <Pressable
+                style={[styles.submitButton, isSubmitting && styles.disabledButton]}
+                onPress={handleSubmit}
+                disabled={isSubmitting}
+              >
+                <Text style={styles.submitButtonText}>
+                  {isSubmitting ? "Submitting..." : "Create Shop"}
+                </Text>
+              </Pressable>
+            </View>
+          }
+          renderItem={null}
+          keyboardShouldPersistTaps="handled"
+        />
+      </View>
+    </KeyboardAvoidingView>
   );
 }  
 
@@ -488,13 +533,30 @@ const styles = StyleSheet.create({
   geoInput: { width: "100%" },
   readOnly: { backgroundColor: "#e9ecef" },
   pinButton: {
-    backgroundColor: "#007BFF",
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    borderRadius: 8,
+    backgroundColor: "#007BFF", // Vibrant blue color
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
     alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    marginTop: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3, // For Android shadow
   },
-  pinButtonText: { color: "#fff", fontWeight: "bold" },
+  pinButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
+    marginLeft: 5,
+  },
+  pinIcon: {
+    fontSize: 18,
+    color: "#fff",
+  },
   submitButton: {
     backgroundColor: "#4CAF50",
     paddingVertical: 15,
@@ -514,4 +576,13 @@ const styles = StyleSheet.create({
     borderWidth: 1, // Optional: Add a border for definition
     borderColor: '#FFCCC7', // Match the border with the background
   },
+  helperText: {
+  fontSize: 14,
+  color: "#6c757d", // Subtle gray color
+  textAlign: "center",
+  marginTop: 5,
+  marginBottom: 10,
+  fontStyle: "italic",
+},
+
 });

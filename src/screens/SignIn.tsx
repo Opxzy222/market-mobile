@@ -8,41 +8,55 @@ import {
   ActivityIndicator,
   StyleSheet,
   Image,
+  ScrollView,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { useNavigation } from "@react-navigation/native";
+import { Ionicons } from "@expo/vector-icons";
 
-// Authentication logic
-async function login(email: string, password: string) {
-  const formData = new FormData();
-  formData.append("email", email);
-  formData.append("password", password);
+const API_URL = "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/login/";
 
-  const response = await axios.post("https://127.0.0.1:8000/login/", formData);
-  if (response.data.message === "login successful") {
-    const { user_id, session_id, user_name, userId } = response.data;
-    await AsyncStorage.setItem("sessionToken", session_id);
-    await AsyncStorage.setItem("user_id", user_id.toString());
-    await AsyncStorage.setItem("userId", userId);
-    await AsyncStorage.setItem("user_name", user_name);
-    return { id: user_id, name: user_name };
+async function login(email, password) {
+  try {
+    const formData = new URLSearchParams();
+    formData.append("email", email);
+    formData.append("password", password);
+
+    const response = await axios.post(API_URL, formData.toString(), {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+    });
+
+    if (response.data.message === "login successful") {
+      const { user_id, session_id, user_name, userId } = response.data;
+      console.log(user_id)
+      await AsyncStorage.setItem("sessionToken", session_id);
+      await AsyncStorage.setItem("user_id", user_id.toString());
+      await AsyncStorage.setItem("userId", userId);
+      await AsyncStorage.setItem("user_name", user_name);
+      return { id: user_id, name: user_name };
+    }
+    throw new Error(response.data.message || "Login failed");
+  } catch (error) {
+    throw new Error(error.response?.data?.error || "Invalid credentials");
   }
-  throw new Error(response.data.message || "Login failed");
 }
 
-// SignIn component
 export default function SignIn() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [secureText, setSecureText] = useState(true);
   const navigation = useNavigation();
 
   const handleSignIn = async () => {
     setLoading(true);
     try {
       const user = await login(email, password);
-      await AsyncStorage.setItem("userSession", JSON.stringify(user)); // Save session
+      await AsyncStorage.setItem("userSession", JSON.stringify(user));
       Alert.alert("Welcome", `Logged in as ${user.name}`);
       navigation.navigate("homepage");
     } catch (error) {
@@ -53,57 +67,51 @@ export default function SignIn() {
   };
 
   return (
-    <View style={styles.container}>
-      <Image
-        source={require('../../assets/images/icon1.png')} // Replace with your image path
-        style={styles.image}
-        resizeMode="contain"
-      />
+    <ScrollView contentContainerStyle={styles.container}>
+          <Image
+            source={require('../../assets/images/icon1.png')} // Replace with your image path
+            style={styles.image}
+            resizeMode="contain"
+          />
       <Text style={styles.title}>Login</Text>
       <TextInput
-        placeholder="Email ID"
+        placeholder="Email"
         onChangeText={setEmail}
         value={email}
         style={styles.input}
         keyboardType="email-address"
         autoCapitalize="none"
-        placeholderTextColor="#888"
+        placeholderTextColor="#bbb"
       />
-      <TextInput
-        placeholder="Password"
-        onChangeText={setPassword}
-        value={password}
-        secureTextEntry
-        style={styles.input}
-        placeholderTextColor="#888"
-      />
+      <View style={styles.passwordContainer}>
+        <TextInput
+          placeholder="Password"
+          onChangeText={setPassword}
+          value={password}
+          secureTextEntry={secureText}
+          style={styles.passwordInput}
+          placeholderTextColor="#bbb"
+        />
+        <TouchableOpacity onPress={() => setSecureText(!secureText)}>
+          <Ionicons name={secureText ? "eye-off" : "eye"} size={24} color="#777" />
+        </TouchableOpacity>
+      </View>
       <TouchableOpacity onPress={handleSignIn} disabled={loading} style={styles.button}>
         {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Login</Text>}
       </TouchableOpacity>
-      
-      <Text style={styles.orText}>OR</Text>
-      <TouchableOpacity style={styles.googleButton}>
-        <Text style={styles.googleButtonText}>Login with Google</Text>
+      <TouchableOpacity onPress={() => navigation.navigate("RequestToken")}>
+        <Text style={styles.linkText}>Don't have an account? Register</Text>
       </TouchableOpacity>
-      <TouchableOpacity
-        onPress={() => navigation.navigate("signup")}
-        style={styles.registerLink}
-      >
-        <Text style={styles.linkText}>Don't have an account yet? Register</Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        onPress={() => navigation.navigate("ForgotPassword")}
-        style={styles.forgotPassword}
-      >
+      <TouchableOpacity onPress={() => navigation.navigate("ForgotPassword")}>
         <Text style={styles.linkText}>Forgot Password?</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
@@ -124,51 +132,41 @@ const styles = StyleSheet.create({
     width: "100%",
     padding: 15,
     borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
+    borderColor: "#ccc",
+    borderRadius: 10,
     marginBottom: 15,
-    backgroundColor: "#fff",
+    backgroundColor: "#f9f9f9",
   },
-  forgotPassword: {
-    alignSelf: "center",
-    marginTop: 15,
+  passwordContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: "100%",
+    padding: 7,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 10,
+    backgroundColor: "#f9f9f9",
   },
-  linkText: {
-    color: "blue",
-    fontSize: 16,
+  passwordInput: {
+    flex: 1,
+    paddingRight: 10,
   },
   button: {
-    backgroundColor: "#3498db",
+    backgroundColor: "#007AFF",
     padding: 15,
-    borderRadius: 8,
+    borderRadius: 10,
     width: "100%",
     alignItems: "center",
+    marginTop: 20,
   },
   buttonText: {
     color: "#fff",
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: "bold",
   },
-  orText: {
-    marginVertical: 15,
-    fontSize: 14,
-    color: "#888",
-  },
-  googleButton: {
-    backgroundColor: "#fff",
-    padding: 15,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    width: "100%",
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  googleButtonText: {
-    color: "#555",
+  linkText: {
+    color: "#007AFF",
     fontSize: 16,
-  },
-  registerLink: {
-    marginTop: 20,
+    marginTop: 10,
   },
 });

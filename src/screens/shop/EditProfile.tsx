@@ -26,13 +26,14 @@ const EditProfileScreen = () => {
     const fetchSessionId = async () => {
       const sessionIdString = await AsyncStorage.getItem("sessionToken");
       setSessionId(sessionIdString);
+      console.log(sessionId, 'hello')
     };
     fetchSessionId();
   }, []);
 
   useEffect(() => {
     if (sessionId) {
-      axios.get(`https://127.0.0.1:8000/user/profile/`, {
+      axios.get(`https://retail-alvinia-goza-f6a0e4f7.koyeb.app/user/profile/`, {
         headers: {
           Authorization: sessionId,
         },
@@ -48,6 +49,24 @@ const EditProfileScreen = () => {
       setLoading(false);
     }
   }, [sessionId]);
+
+  const logStorageUsage = async () => {
+  try {
+    const keys = await AsyncStorage.getAllKeys();
+    let totalSize = 0;
+    for (const key of keys) {
+      const data = await AsyncStorage.getItem(key);
+      totalSize += ((data?.length || 0) * 2) / 1024; // Approximate KB
+    }
+    console.log(`AsyncStorage usage: ${totalSize.toFixed(2)} KB`);
+  } catch (error) {
+    console.error('Error logging storage usage:', error);
+  }
+};
+
+useEffect(() => {
+  logStorageUsage();
+}, []);
 
   const handleUpdate = async () => {
     if (!sessionId) {
@@ -85,7 +104,7 @@ const EditProfileScreen = () => {
 
     try {
       const response = await axios.post(
-        `https://127.0.0.1:8000/user/profile/`,
+        `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/user/profile/`,
         formData,
         {
           headers: {

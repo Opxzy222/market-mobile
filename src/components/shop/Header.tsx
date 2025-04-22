@@ -5,21 +5,35 @@ import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const Header = () => {
-  const [name, setName] = useState(null)
+  const [name, setName] = useState(null);
+  const [timeGreeting, setTimeGreeting] = useState("Hello");
 
   useEffect(() => {
-    const fetchName = async () => {
+    const fetchNameAndGreeting = async () => {
       const nameString = await AsyncStorage.getItem("user_name");
       setName(nameString);
+
+      const hour = new Date().getHours();
+
+      if (hour >= 5 && hour < 12) {
+        setTimeGreeting("Good Morning!");
+      } else if (hour >= 12 && hour < 17) {
+        setTimeGreeting("Good Afternoon!");
+      } else if (hour >= 17 && hour < 21) {
+        setTimeGreeting("Good Evening!");
+      } else {
+        setTimeGreeting("Welcome!");
+      }
     };
-    fetchName();
+
+    fetchNameAndGreeting();
   }, []);
 
   return (
     <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.header}>
       <View>
         <Text style={styles.greeting}>Hello, {name}</Text>
-        <Text style={styles.subGreeting}>Good Evening!</Text>
+        <Text style={styles.subGreeting}>{timeGreeting}</Text>
       </View>
       <NotificationDropdown />
     </LinearGradient>

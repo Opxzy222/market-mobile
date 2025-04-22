@@ -37,7 +37,7 @@ export default function CreateShopScreen({ navigation }) {
     const fetchCategories = async () => {
       try {
         const response = await axios.post(
-          "https://127.0.0.1:8000/category/dropdown-options/"
+          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/category/dropdown-options/"
         );
         setCategories(
           response.data.categories.map((cat) => ({
@@ -70,7 +70,7 @@ export default function CreateShopScreen({ navigation }) {
       formData.append("parent_id", selectedOption);
 
       const response = await axios.post(
-        "https://127.0.0.1:8000/category/subcategories/",
+        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/category/subcategories/",
         formData,
         {
           headers: { "Content-Type": "multipart/form-data" },
@@ -146,7 +146,7 @@ export default function CreateShopScreen({ navigation }) {
       );
   
       const response = await axios.post(
-        "https://127.0.0.1:8000/create-shop/",
+        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/create-shop/",
         formData,
         { headers: { "Content-Type": "multipart/form-data" } }
       );

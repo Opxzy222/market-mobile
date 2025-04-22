@@ -50,7 +50,7 @@ const AdminShopPage = () => {
     try {
       const sessionId = await AsyncStorage.getItem("sessionToken");
 
-      const response = await axios.get(`https://127.0.0.1:8000/shops/${shopId}/combined/`, {
+      const response = await axios.get(`https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/${shopId}/combined/`, {
         headers: {
           Authorization: sessionId, // Send session ID in headers
         },
@@ -64,9 +64,11 @@ const AdminShopPage = () => {
         description: data.shop.description,
         image: data.shop.image,
         categories: data.shop.categories,
+        category: data.shop.category,
         products: data.shop.products,
         address: data.shop.address,
         shop_id: data.shop.shop_id,
+        is_open: data.shop.is_open
       });
 
       setReviews(data.reviews);
@@ -138,11 +140,22 @@ const AdminShopPage = () => {
         {/* Shop Header */}
         <View style={styles.shopHeader}>
           <Image
-            source={{ uri: `https://127.0.0.1:8000/${shop.image}` }}
+            source={{ uri: `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${shop.image}` }}
             style={styles.shopImage}
           />
           <View style={styles.shopInfo}>
-      <Text style={styles.shopName}>{shop.name}</Text>
+            <Text style={styles.shopName}>{shop.name}</Text>
+            <View style={styles.shopStatusContainer}>
+              <Ionicons 
+                name={shop.is_open ? "checkmark-circle" : "alert-circle"} 
+                size={18} 
+                color={shop.is_open ? "#4CAF50" : "#FF9800"}  
+              />
+              <Text style={[styles.shopStatusText, shop.is_open ? styles.shopOpen : styles.shopClosed]}>
+                {shop.is_open ? "Open" : "Closed"}
+              </Text>
+            </View>
+            
       <Text style={styles.followerCount}>{followerCount} Followers</Text>
       <View style={styles.addressContainer}>
         <MaterialIcons name="location-on" size={18} color="black" style={styles.icon} />
@@ -168,23 +181,27 @@ const AdminShopPage = () => {
 
         {/* Tab Navigation */}
         <View style={styles.nav}>
-          {['posts', 'products', 'followers', 'reviews'].map((tab) => (
-            <TouchableOpacity
-              key={tab}
-              style={[styles.navTab, activeTab === tab && styles.activeTab]}
-              onPress={() => handleTabChange(tab)}
-            >
-              <Text
-                style={[
-                  styles.navTabText,
-                  activeTab === tab && styles.activeTabText,
-                ]}
-              >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+  {(shop.category?.name === 'Services'
+    ? ['posts', 'services', 'customers', 'reviews']
+    : ['posts', 'products', 'customers', 'reviews']
+  ).map((tab) => (
+    <TouchableOpacity
+      key={tab}
+      style={[styles.navTab, activeTab === tab && styles.activeTab]}
+      onPress={() => handleTabChange(tab)}
+    >
+      <Text
+        style={[
+          styles.navTabText,
+          activeTab === tab && styles.activeTabText,
+        ]}
+      >
+        {tab.charAt(0).toUpperCase() + tab.slice(1)}
+      </Text>
+    </TouchableOpacity>
+  ))}
+</View>
+
 
         {/* Tab Content */}
         <View style={styles.tabContent}>
@@ -378,6 +395,31 @@ const styles = StyleSheet.create({
     color: '#34495e',
     lineHeight: 20,
   },
+  shopStatusContainer: {
+  flexDirection: "row",
+  alignItems: "flex-start",
+  gap: 6, // Small spacing between icon and text
+  marginTop: 4, 
+  paddingVertical: 4,
+  
+  borderRadius: 6,
+  backgroundColor: "rgba(0,0,0,0.05)", // Light background for contrast
+  alignSelf: "flex-start", // Prevents it from taking full width
+},
+
+shopStatusText: {
+  fontSize: 14,
+  fontWeight: "bold",
+},
+
+shopOpen: {
+  color: "#4CAF50",
+},
+
+shopClosed: {
+  color: "#FF9800",
+},
+
 });
 
 export default AdminShopPage;

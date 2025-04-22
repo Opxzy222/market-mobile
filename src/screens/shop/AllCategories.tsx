@@ -35,7 +35,7 @@ const AllCategories = () => {
 
   useEffect(() => {
     axios
-      .get('https://127.0.0.1:8000/all-shop-categories/')
+      .get('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/all-shop-categories/')
       .then((response) => {
         const categoryArray = Object.values(response.data);
         setCategories(categoryArray);

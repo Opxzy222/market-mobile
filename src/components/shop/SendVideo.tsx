@@ -1,101 +1,191 @@
-import React, { useState, useEffect } from 'react';
-import { View, TouchableOpacity, Text, Platform, FlatList, Alert, StyleSheet } from 'react-native';
-import * as MediaLibrary from 'expo-media-library';
-import { Video } from 'expo-av';
-import { Ionicons } from '@expo/vector-icons';
+import React, { useState, useEffect } from "react";
+import {
+  View,
+  TouchableOpacity,
+  Text,
+  Alert,
+  StyleSheet,
+  Image,
+  ActivityIndicator,
+} from "react-native";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
+import * as VideoThumbnails from "expo-video-thumbnails";
+import { Ionicons } from "@expo/vector-icons";
 
 const SendVideo = ({ onSend }) => {
+  console.log("SendVideo render start");
+
   const [selectedVideo, setSelectedVideo] = useState(null);
-  const [permissionGranted, setPermissionGranted] = useState(false);
-  const [allMedia, setAllMedia] = useState([]);
+  const [thumbnailUri, setThumbnailUri] = useState(null);
+  const [isThumbnailLoading, setIsThumbnailLoading] = useState(false);
+  const [thumbnailError, setThumbnailError] = useState(false);
+  const [videoValid, setVideoValid] = useState(false);
 
   useEffect(() => {
-    if (Platform.OS === 'web') {
-      setPermissionGranted(true);
-    } else {
-      requestPermissions();
-    }
-  }, []);
-
-  const requestPermissions = async () => {
-    const { status } = await MediaLibrary.requestPermissionsAsync();
-    if (status === 'granted') {
-      setPermissionGranted(true);
-      fetchMedia();
-    } else {
-      Alert.alert('Permission Denied', 'We need access to your media library.');
-    }
-  };
-
-  const fetchMedia = async () => {
-    if (Platform.OS !== 'web') {
-      const { assets } = await MediaLibrary.getAssetsAsync({
-        mediaType: ['video'],
-        first: 50,
-      });
-      setAllMedia(assets);
-    }
-  };
-
-  const handleSelectVideo = (video) => {
-    if (video.duration > 120) {
-      Alert.alert('Warning', 'Videos longer than 2 minutes are not allowed.');
+    console.log("useEffect: selectedVideo changed:", selectedVideo);
+    if (!selectedVideo) {
+      setVideoValid(false);
+      setThumbnailUri(null);
+      setThumbnailError(false);
       return;
     }
-    setSelectedVideo(video);
-  };
 
-  const handleSelectVideoWeb = (event) => {
-    const file = event.target.files[0];
-    if (file) {
-      const selectedMedia = {
-        id: file.name,
-        uri: URL.createObjectURL(file),
-        mediaType: 'video',
-        name: file.name,
-      };
-      setSelectedVideo(selectedMedia);
+    const validateVideo = async () => {
+      try {
+        console.log("Validating URI:", selectedVideo.uri);
+        const info = await FileSystem.getInfoAsync(selectedVideo.uri);
+        if (!info.exists || info.isDirectory) {
+          throw new Error("Video file not found");
+        }
+        console.log("URI valid, size:", info.size);
+        setVideoValid(true);
+
+        // Generate thumbnail
+        setIsThumbnailLoading(true);
+        try {
+          const { uri: thumbUri } = await VideoThumbnails.getThumbnailAsync(
+            selectedVideo.uri,
+            { time: 0, quality: 0.5 } // Lower quality for old devices
+          );
+          console.log("Thumbnail generated:", thumbUri);
+          setThumbnailUri(thumbUri);
+          setThumbnailError(false);
+        } catch (thumbError) {
+          console.error("Thumbnail error:", thumbError);
+          setThumbnailError(true);
+          // Fallback to placeholder
+          setThumbnailUri(null);
+        } finally {
+          setIsThumbnailLoading(false);
+        }
+      } catch (error) {
+        console.error("Video validation failed:", error);
+        setVideoValid(false);
+        setThumbnailError(true);
+        Alert.alert("Error", "Invalid video file. Please try another.");
+      }
+    };
+
+    validateVideo();
+  }, [selectedVideo]);
+
+  const pickVideo = async () => {
+    try {
+      console.log("Launching document picker...");
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "video/*",
+        copyToCacheDirectory: true,
+      });
+
+      console.log("Picker result:", JSON.stringify(result, null, 2));
+
+      if (!result.canceled && result.assets?.length > 0) {
+        const { uri, name, mimeType } = result.assets[0];
+
+        if (!mimeType?.startsWith("video/")) {
+          Alert.alert("Error", "Please select a valid video file.");
+          return;
+        }
+
+        console.log("Skipping duration check for:", uri);
+        setSelectedVideo({
+          uri,
+          name: name || `video_${Date.now()}.mp4`,
+        });
+      } else {
+        console.log("Picker canceled or no assets selected.");
+      }
+    } catch (error) {
+      console.error("Error picking video:", error);
+      Alert.alert("Error", "Failed to select video. Please try again.");
     }
   };
 
   const handleRemoveVideo = () => {
+    console.log("Removing video");
     setSelectedVideo(null);
+    setThumbnailUri(null);
+    setThumbnailError(false);
+    setVideoValid(false);
   };
+
+  const handleSend = () => {
+    if (selectedVideo && videoValid) {
+      console.log("Sending video:", selectedVideo);
+      onSend(selectedVideo);
+      setSelectedVideo(null);
+      setThumbnailUri(null);
+      setThumbnailError(false);
+      setVideoValid(false);
+    }
+  };
+
+  console.log(
+    "SendVideo render end, selectedVideo:",
+    selectedVideo,
+    "videoValid:",
+    videoValid,
+    "thumbnailError:",
+    thumbnailError
+  );
 
   return (
     <View style={styles.container}>
-      {Platform.OS === 'web' ? (
-        <label style={styles.fileInputLabel}>
-          <input type="file" accept="video/*" onChange={handleSelectVideoWeb} style={styles.fileInput} />
-          Select Video
-        </label>
-      ) : (
-        <>
-          <TouchableOpacity onPress={fetchMedia} style={styles.selectButton}>
-            <Text style={styles.selectButtonText}>Select Video</Text>
-          </TouchableOpacity>
-
-          <FlatList
-            data={allMedia}
-            keyExtractor={(item) => item.id}
-            numColumns={2}
-            renderItem={({ item }) => (
-              <TouchableOpacity onPress={() => handleSelectVideo(item)} style={styles.videoWrapper}>
-                <Video source={{ uri: item.uri }} style={styles.video} resizeMode="cover" />
-              </TouchableOpacity>
-            )}
-          />
-        </>
-      )}
+      <TouchableOpacity onPress={pickVideo} style={styles.optionCard}>
+        <Ionicons
+          name="videocam-outline"
+          size={24}
+          color="#9b59b6"
+          style={styles.optionIcon}
+        />
+        <Text style={styles.optionText}>Select Video</Text>
+      </TouchableOpacity>
 
       {selectedVideo && (
         <View style={styles.previewContainer}>
-          <Video source={{ uri: selectedVideo.uri }} style={styles.previewVideo} resizeMode="cover" shouldPlay={false} />
+          {isThumbnailLoading ? (
+            <View style={styles.placeholder}>
+              <ActivityIndicator size="small" color="#999" />
+            </View>
+          ) : thumbnailError || !videoValid ? (
+            <View style={styles.placeholder}>
+              <Ionicons
+                name="play-circle"
+                size={40}
+                color="#999"
+                style={styles.playIcon}
+              />
+              <Text style={styles.errorText}>No preview available</Text>
+            </View>
+          ) : (
+            <View style={styles.thumbnailContainer}>
+              <Image
+                source={{ uri: thumbnailUri }}
+                style={styles.previewVideo}
+                resizeMode="cover"
+              />
+              <View style={styles.playIconContainer}>
+                <Ionicons
+                  name="play-circle"
+                  size={40}
+                  color="rgba(255, 255, 255, 0.8)"
+                />
+              </View>
+            </View>
+          )}
           <View style={styles.actionButtons}>
-            <TouchableOpacity onPress={handleRemoveVideo} style={styles.removeButton}>
+            <TouchableOpacity
+              onPress={handleRemoveVideo}
+              style={styles.removeButton}
+            >
               <Ionicons name="trash" size={24} color="#ff4d4d" />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => onSend(selectedVideo)} style={styles.sendButton}>
+            <TouchableOpacity
+              onPress={handleSend}
+              style={[styles.sendButton, !videoValid && styles.sendButtonDisabled]}
+              disabled={!videoValid}
+            >
               <Text style={styles.sendButtonText}>Send</Text>
             </TouchableOpacity>
           </View>
@@ -107,74 +197,100 @@ const SendVideo = ({ onSend }) => {
 
 const styles = StyleSheet.create({
   container: {
-    padding: 20,
-    backgroundColor: '#f8f9fa',
-    flex: 1,
+    padding: 10,
   },
-  selectButton: {
-    backgroundColor: '#007bff',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
+  optionCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
     marginBottom: 15,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
   },
-  selectButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
+  optionIcon: {
+    marginRight: 10,
   },
-  videoWrapper: {
-    margin: 5,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  video: {
-    width: 100,
-    height: 100,
-    borderRadius: 8,
+  optionText: {
+    fontSize: 16,
+    color: "#333",
+    fontWeight: "600",
   },
   previewContainer: {
     marginTop: 20,
-    alignItems: 'center',
+    alignItems: "center",
+  },
+  thumbnailContainer: {
+    position: "relative",
+    width: 150,
+    height: 150,
+    borderRadius: 10,
+    overflow: "hidden",
   },
   previewVideo: {
-    width: 200,
-    height: 200,
-    borderRadius: 12,
+    width: 150,
+    height: 150,
+    borderRadius: 10,
+  },
+  playIconContainer: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    transform: [{ translateX: -20 }, { translateY: -20 }],
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    borderRadius: 20,
+    padding: 5,
+  },
+  playIcon: {
+    marginBottom: 5,
+  },
+  placeholder: {
+    width: 150,
+    height: 150,
+    borderRadius: 10,
+    backgroundColor: "#f0f0f0",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  errorText: {
+    color: "#ff4d4d",
+    fontSize: 12,
+    textAlign: "center",
   },
   actionButtons: {
-    flexDirection: 'row',
+    flexDirection: "row",
     marginTop: 10,
-    alignItems: 'center',
+    alignItems: "center",
     gap: 20,
   },
   removeButton: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     padding: 10,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#ff4d4d',
+    borderColor: "#ff4d4d",
   },
   sendButton: {
-    backgroundColor: '#28a745',
+    backgroundColor: "#28a745",
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: 8,
   },
+  sendButtonDisabled: {
+    backgroundColor: "#cccccc",
+    opacity: 0.5,
+  },
   sendButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  fileInputLabel: {
-    backgroundColor: '#007bff',
-    padding: 12,
-    borderRadius: 8,
-    color: '#fff',
-    textAlign: 'center',
-    display: 'inline-block',
-    cursor: 'pointer',
-  },
-  fileInput: {
-    display: 'none',
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 16,
   },
 });
 

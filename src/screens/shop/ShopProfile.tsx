@@ -4,7 +4,7 @@ import {
   StyleSheet, ScrollView, ActivityIndicator 
 } from "react-native";
 import { SelectList } from "react-native-dropdown-select-list";
-import { MultiSelect } from "react-multi-select-component";
+import MultiSelect from 'react-native-multiple-select';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -51,7 +51,7 @@ export default function ShopProfileScreen() {
   useEffect(() => {
     const fetchShopDetails = async () => {
       try {
-        const response = await axios.get(`https://127.0.0.1:8000/shop/profile/${shopId}/`, {
+        const response = await axios.get(`https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop/profile/${shopId}/`, {
           headers: {
             Authorization: sessionId, // Send sessionId in headers
           },
@@ -83,7 +83,7 @@ export default function ShopProfileScreen() {
   useEffect(() => {
     const fetchParentCategories = async () => {
       try {
-        const response = await axios.post("https://127.0.0.1:8000/category/dropdown-options/");
+        const response = await axios.post("https://retail-alvinia-goza-f6a0e4f7.koyeb.app/category/dropdown-options/");
         setParentCategories(response.data.categories.map(cat => ({ key: cat.id, value: cat.name })));
       } catch (error) {
         console.error("Error fetching parent categories:", error);
@@ -101,7 +101,7 @@ export default function ShopProfileScreen() {
         const formData = new FormData();
         formData.append("parent_id", selectedParentCategory);
 
-        const response = await axios.post("https://127.0.0.1:8000/category/subcategories/", formData, {
+        const response = await axios.post("https://retail-alvinia-goza-f6a0e4f7.koyeb.app/category/subcategories/", formData, {
           headers: { "Content-Type": "multipart/form-data" },
         });
 
@@ -142,81 +142,81 @@ export default function ShopProfileScreen() {
 
   // Handle shop update
   const handleUpdate = async () => {
-    if (isSubmitting) return;
-    setIsSubmitting(true);
+  if (isSubmitting) return;
+  setIsSubmitting(true);
 
-    try {
-        const formData = new FormData();
+  try {
+    const formData = new FormData();
 
-        if (name !== originalName) {
-            formData.append("shop_name", name);
-        }
-        if (description !== originalDescription) {
-            formData.append("description", description);
-        }
-        if (address !== originalAddress) {
-            formData.append("address", address);
-        }
-        if (selectedParentCategory !== originalParentCategory) {
-            formData.append("category_id", selectedParentCategory);
-        }
-      if (image && image !== originalImage) {
-    try {
-      const response = await fetch(image);
-      const blob = await response.blob();
-      const file = new File([blob], "profile.jpg", { type: "image/jpeg" });
+    if (name !== originalName) {
+      formData.append("shop_name", name);
+    }
+    if (description !== originalDescription) {
+      formData.append("description", description);
+    }
+    if (address !== originalAddress) {
+      formData.append("address", address);
+    }
+    if (selectedParentCategory !== originalParentCategory) {
+      formData.append("category_id", selectedParentCategory);
+    }
 
-      formData.append("image", file);
-    } catch (error) {
-      console.error("Error converting image to file:", error);
-      alert("Failed to process image. Please try again.");
+    if (image && image !== originalImage) {
+      formData.append("image", {
+        uri: image,
+        type: "image/jpeg",
+        name: "profile.jpg",
+      });
+    }
+
+    // Append subcategories correctly
+    const currentSubIds = selectedChildCategories.map(sub => sub.value);
+    if (JSON.stringify(currentSubIds) !== JSON.stringify(originalChildCategories)) {
+      currentSubIds.forEach((subId) => {
+        formData.append("subcategory_ids", subId);
+      });
+    }
+
+    // Debug FormData
+    for (let pair of formData.entries()) {
+      console.log(pair[0], pair[1]);
+    }
+
+    if (formData.entries().next().done) {
+      alert("No Changes", "No changes were detected.");
+      setIsSubmitting(false);
       return;
     }
+
+    formData.append("shop_id", shopId);
+
+    await axios.post(
+      `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop/profile/${shopId}/`,
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          Authorization: `Bearer ${sessionId}`,
+        },
+      }
+    );
+
+    alert("Success", "Shop profile updated successfully!");
+    router.back();
+  } catch (error) {
+    console.error("Error updating shop:", error);
+    alert("Error", "Something went wrong.");
+  } finally {
+    setIsSubmitting(false);
   }
-
-        // Append subcategories correctly
-        if (
-            JSON.stringify(selectedChildCategories.map(sub => sub.value)) !==
-            JSON.stringify(originalChildCategories)
-        ) {
-            selectedChildCategories.forEach(sub => {
-                formData.append("subcategory_ids", sub.value); // No square brackets
-            });
-        }
-
-        // Debugging: Log FormData contents
-        for (let pair of formData.entries()) {
-            console.log(pair[0], pair[1]);
-        }
-
-        if (formData.entries().next().done) {
-            alert("No Changes", "No changes were detected. Please update at least one field.");
-            setIsSubmitting(false);
-            return;
-        }
-
-        await axios.post(`https://127.0.0.1:8000/shop/profile/${shopId}/`, formData, {
-            headers: {
-                "Content-Type": "multipart/form-data",
-                Authorization: sessionId,
-            },
-        });
-
-        alert("Success", "Shop profile updated successfully!");
-        router.back();
-    } catch (error) {
-        console.error("Error updating shop:", error);
-        alert("Error", "Something went wrong. Please try again.");
-    } finally {
-        setIsSubmitting(false);
-    }
 };
+
 
   return (
     <LinearGradient colors={["#F5F5F5", "#E0E0E0"]} style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.replace(prevRoute || '((tabs)/myshop)')}>
-          <MaterialIcons name="arrow-back" size={26} color="black" />
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Edit Shop Profile</Text>
       </View>
@@ -254,11 +254,30 @@ export default function ShopProfileScreen() {
             <>
               <Text style={styles.label}>Child Categories</Text>
               <MultiSelect
-                options={subcategories.map((sub) => ({ label: sub.value, value: sub.key }))}
-                value={selectedChildCategories}
-                onChange={setSelectedChildCategories}
-                labelledBy="Select Categories"
-              />
+  items={subcategories.map((sub) => ({ id: sub.key, name: sub.value }))}
+  uniqueKey="id"
+  onSelectedItemsChange={(selectedItems) => {
+    const selectedFormatted = selectedItems.map((id) => {
+      const match = subcategories.find((sub) => sub.key === id);
+      return { label: match?.value, value: id };
+    });
+    setSelectedChildCategories(selectedFormatted);
+  }}
+  selectedItems={selectedChildCategories.map((item) => item.value)}
+  selectText="Select Categories"
+  searchInputPlaceholderText="Search Categories..."
+  onChangeInput={(text) => console.log(text)}
+  tagRemoveIconColor="#CCC"
+  tagBorderColor="#CCC"
+  tagTextColor="#333"
+  selectedItemTextColor="#FF3D00"
+  selectedItemIconColor="#FF3D00"
+  itemTextColor="#000"
+  displayKey="name"
+  searchInputStyle={{ color: '#CCC' }}
+  submitButtonColor="#FF3D00"
+  submitButtonText="Submit"
+/>
             </>
           )}
 
@@ -289,12 +308,18 @@ const styles = StyleSheet.create({
     elevation: 3,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
+    marginBottom: 20
   },
   headerTitle: {
     fontSize: 22,
     fontWeight: "bold",
-    marginLeft: 12,
+    marginLeft: 75,
     color: "black",
+  },
+  backButton: {
+    borderRadius: 50,
+    backgroundColor: "#E0E0E0",
+    marginRight: 12,
   },
   imageContainer: {
     alignItems: "center",

@@ -5,37 +5,10 @@ import { useRouter, usePathname } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from "@expo/vector-icons";
 
-const RecentlyVisitedShops = () => {
-  const [shops, setShops] = useState([]);
+const RecentlyVisitedShops = ({ shops }) => {
   const [showAll, setShowAll] = useState(false);
   const router = useRouter();
-  const [sessionId, setSessionId] = useState(null);
   const pathname = usePathname()
-
-  useEffect(() => {
-  const fetchSessionId = async () => {
-    const sessionIdString = await AsyncStorage.getItem("sessionToken");
-    setSessionId(sessionIdString); // No need to parse as an integer
-  };
-    fetchSessionId();
-  }, []);
-
-  useEffect(() => {
-    const fetchRecentlyVisitedShops = async () => {
-      try {
-        const response = await axios.get("https://127.0.0.1:8000/shops/all-recently-visited/", {
-        headers: {
-          Authorization: sessionId,
-        },
-      });
-        setShops(response.data.recently_visited_shops);
-      } catch (error) {
-        console.error('Error fetching recently visited shops:', error);
-      }
-    };
-
-    fetchRecentlyVisitedShops();
-  }, [sessionId]);
 
   const handleShowMore = () => {
     setShowAll(true);
@@ -46,7 +19,7 @@ const RecentlyVisitedShops = () => {
       style={styles.shopCard}
       onPress={() => router.push({ pathname: '/shop/shop-page', params: { shopId: item.id } })}
     >
-      <Image source={{ uri: `https://127.0.0.1:8000/${item.image}` }} style={styles.shopImage} />
+      <Image source={{ uri: `https://digital-market-place-production-cda0.up.railway.app${item.image}` }} style={styles.shopImage} />
       <View style={styles.shopInfo}>
         <Text style={styles.shopName}>{item.name}</Text>
         <Text style={styles.visitedAt}>Visited: {new Date(item.visited_at).toLocaleDateString()}</Text>
@@ -61,7 +34,10 @@ const RecentlyVisitedShops = () => {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Recently Visited</Text>
-        <TouchableOpacity style={styles.seeAllContainer} onPress={() => router.push('/shop/AllRecentShops')}>
+        <TouchableOpacity 
+                  style={styles.seeAllContainer}
+                  onPress={() => router.push({ pathname: '/shop/AllRecentShops', params: { prevRoute: pathname } })}
+                >
           <Text style={styles.seeAll}>See All</Text>
         </TouchableOpacity>
       </View>
@@ -72,8 +48,8 @@ const RecentlyVisitedShops = () => {
         contentContainerStyle={styles.listContainer}
       />
       {!showAll && shops.length > 3 && (
-        <TouchableOpacity onPress={handleShowMore} style={styles.showMoreButton}>
-          <Text style={styles.showMoreText}>Show More</Text>
+        <TouchableOpacity onPress={handleShowMore} >
+          {/*<Text style={styles.showMoreText}>Show More</Text> */}
         </TouchableOpacity>
       )}
     </View>

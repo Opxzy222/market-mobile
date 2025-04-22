@@ -35,7 +35,7 @@ const CustomerReceipts = () => {
     if (!sessionId) return;
     setLoading(true);
     try {
-      const response = await axios.get(`https://127.0.0.1:8000/receipts/customer/`, {
+      const response = await axios.get(`https://retail-alvinia-goza-f6a0e4f7.koyeb.app/receipts/customer/`, {
         headers: {
           Authorization: sessionId, // Send sessionId in headers
         },
@@ -58,7 +58,7 @@ const CustomerReceipts = () => {
 
   const handleAction = async (receiptId, action) => {
   try {
-    await axios.post(`https://127.0.0.1:8000/receipts/${receiptId}/${action}/`);
+    await axios.post(`https://retail-alvinia-goza-f6a0e4f7.koyeb.app/receipts/${receiptId}/${action}/`);
     Alert.alert("Success", `Receipt ${action} successfully.`);
 
     // Convert action string to correct status format

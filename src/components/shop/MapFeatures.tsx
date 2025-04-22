@@ -44,7 +44,7 @@ const ShopLocation = ({ shopLat, shopLng }) => {
     <>
       <TouchableOpacity
         onPress={handleLocationAndOpenMaps}
-        style={{ flexDirection: "row", alignItems: "center", marginTop: 10 }}
+        style={{ flexDirection: "row", alignItems: "center", marginTop: 5 }}
       >
         <MaterialIcons name="location-on" size={24} color="#007BFF" />
         <Text style={{ color: "#007BFF", marginLeft: 5 }}>View in Maps</Text>

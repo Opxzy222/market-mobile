@@ -28,7 +28,7 @@ const ShopIdSearch = () => {
 
     setLoading(true);
     try {
-      const response = await fetch("https://127.0.0.1:8000/search-shop-id/", {
+      const response = await fetch("https://retail-alvinia-goza-f6a0e4f7.koyeb.app/search-shop-id/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

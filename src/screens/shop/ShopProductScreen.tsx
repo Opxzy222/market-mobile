@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native';
+import {
+  View, Text, StyleSheet, ScrollView, ActivityIndicator,
+  TouchableOpacity, TextInput
+} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 
@@ -8,23 +11,38 @@ const ShopProduct = () => {
   const [products, setProducts] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const params = useLocalSearchParams();
-  const { shopId, prevRoute } = params;
+  const { shopId, prevRoute, category } = params;
   const router = useRouter();
 
   const fetchShopProducts = async () => {
-    try {
-      const formData = new FormData();
-      formData.append('shop_id', shopId);
-      const response = await axios.post('https://127.0.0.1:8000/shop-products/', formData);
-      setProducts(response.data);
-    } catch (err) {
-      console.error('Error fetching shop products:', err);
-      setError('Failed to load products.');
-    } finally {
-      setLoading(false);
+  try {
+    const response = await fetch("https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop-products/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ shop_id: shopId }).toString(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
     }
-  };
+
+    const data = await response.json();
+    console.log("Fetch Success:", data);
+
+    // Ensure data structure matches what is expected
+    setProducts(data.products || []);
+  } catch (err) {
+    console.error("Error fetching shop products:", err);
+    setError("Failed to load products.");
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   useEffect(() => {
     fetchShopProducts();
@@ -38,8 +56,40 @@ const ShopProduct = () => {
     return <ActivityIndicator size="large" color="#3b82f6" style={styles.loader} />;
   }
 
+  const filteredProducts = products
+    .map(categoryData => {
+      const filteredSubcategories = categoryData.subcategories.map(subcategoryData => {
+        const filteredProducts = subcategoryData.products.filter(product => {
+          const productName = product.product_name.toLowerCase();
+          const query = searchQuery.toLowerCase();
+
+          // If search query is empty, return all products
+          if (!query) return true;
+
+          // Show product if it contains the search term anywhere
+          if (productName.includes(query)) return true;
+
+          // Show product only if it starts with the search term
+          if (query.length === 1 && productName.startsWith(query)) return true;
+
+          return false;
+        });
+
+        return {
+          ...subcategoryData,
+          products: filteredProducts,
+        };
+      }).filter(subcategory => subcategory.products.length > 0); // Remove empty subcategories
+
+      return {
+        ...categoryData,
+        subcategories: filteredSubcategories,
+      };
+    })
+    .filter(category => category.subcategories.length > 0); // Remove empty categories
+
   return (
-    <View>
+    <ScrollView>
       <View style={styles.header}>
               <TouchableOpacity onPress={() => router.replace(prevRoute || '((tabs)/shop)')} style={styles.backButton}>
                 <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
@@ -48,8 +98,17 @@ const ShopProduct = () => {
     <ScrollView contentContainerStyle={styles.container}>
       {/* Update Product Button */}
       <TouchableOpacity style={styles.updateButton} onPress={handleUpdateProduct}>
-        <Text style={styles.updateButtonText}>Click here to update shop products</Text>
+        <Text style={styles.updateButtonText}>
+          Click here to update {category === 'Services' ? 'services' : 'products'}
+        </Text>
       </TouchableOpacity>
+      
+      <TextInput
+              style={styles.searchInput}
+              placeholder="Search products..."
+              value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
 
       {/* Error Handling */}
       {error && <Text style={styles.error}>{error}</Text>}
@@ -60,7 +119,7 @@ const ShopProduct = () => {
       )}
 
       {/* Render Products */}
-      {products && products.map((categoryData) => (
+      {Array.isArray(products) && filteredProducts.map((categoryData) => (
         <View key={categoryData.category} style={styles.categoryCard}>
           <Text style={styles.categoryTitle}>{categoryData.category}</Text>
           {categoryData.subcategories.map((subcategoryData) => (
@@ -85,10 +144,11 @@ const ShopProduct = () => {
                       {product.is_available ? '✔️' : '❌'}
                     </Text>
                     <Text style={styles.tableCell}>
-                      {product.price !== null && product.price !== undefined && !isNaN(Number(product.price))
-                        ? `₦${Number(product.price)}`
-                        : 'N/A'}
-                    </Text>
+  {product.price !== null && product.price !== undefined && !isNaN(Number(product.price))
+    ? `₦${Number(product.price).toLocaleString()}`
+    : 'N/A'}
+</Text>
+
                   </View>
                 ))}
               </View>
@@ -97,14 +157,14 @@ const ShopProduct = () => {
         </View>
       ))}
     </ScrollView>
-    </View>
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     padding: 16,
-    backgroundColor: '#f3f8fc',
+    
   },
   header: {
     flexDirection: "row",
@@ -124,6 +184,16 @@ const styles = StyleSheet.create({
     borderRadius: 50,
     backgroundColor: "#E0E0E0",
     marginRight: 12,
+  },
+
+  searchInput: {
+    height: 40,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    marginBottom: 10,
+    backgroundColor: '#ffffff',
   },
   
   loader: {
@@ -197,12 +267,12 @@ const styles = StyleSheet.create({
   },
   tableCell: {
     flex: 1,
-    textAlign: 'center',
+    textAlign: 'left',
     fontSize: 14,
     color: '#1e293b',
   },
   cellWide: {
-    flex: 2,
+    flex: 1,
     textAlign: 'left',
   },
   headerCell: {

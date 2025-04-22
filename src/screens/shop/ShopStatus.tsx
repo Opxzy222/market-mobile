@@ -19,12 +19,12 @@ import { Video } from "expo-av";
 import { format } from "date-fns";
 import { Ionicons } from '@expo/vector-icons';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useLocalSearchParams } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import StatusViewer from "../../components/shop/ShopStatusViewer";
 import SubscriptionProvider, { SubscriptionContext } from '../../components/SubscriptionProvider';
 import SubscriptionRequired from "@/components/RequiredSubscription";
 
-const BACKEND_URL = "https://127.0.0.1:8000";
+const BACKEND_URL = "https://retail-alvinia-goza-f6a0e4f7.koyeb.app";
 
 const StatusScreen = () => {
   const [statuses, setStatuses] = useState([]);
@@ -44,6 +44,7 @@ const StatusScreen = () => {
 
   const params = useLocalSearchParams();
   const { shopId } = params;
+  const router = useRouter();
 
   // Fetch statuses when shopId changes
   useEffect(() => {

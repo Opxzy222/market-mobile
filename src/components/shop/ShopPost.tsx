@@ -1,29 +1,36 @@
-import React, { useState } from "react";
-import {
-  View,
-  Text,
-  Image,
-  Modal,
-  StyleSheet,
-  TouchableOpacity,
-  Dimensions,
-  FlatList,
-} from "react-native";
-import { Video } from "expo-av";
-import Carousel from "react-native-reanimated-carousel";
-import axios from "axios";
+import { useEffect, useState } from "react";
+import { View, Text, FlatList, Image, TouchableOpacity, Modal, StyleSheet, Button } from "react-native";
+import * as VideoThumbnails from "expo-video-thumbnails";
+import { Ionicons } from "@expo/vector-icons";
+import { useVideoPlayer, VideoView } from "expo-video";
+import { useEvent } from "expo";
 
-const { width } = Dimensions.get("window");
+const getFullUrl = (url) => {
+  const BASE_URL = "https://retail-alvinia-goza-f6a0e4f7.koyeb.app"; // Replace with your local IP
+  return `${BASE_URL}${url}`;
+};
 
-const ShopPosts = ({ posts, shopId }) => {
+const ShopPosts = ({ posts }) => {
   const [selectedPost, setSelectedPost] = useState(null);
   const [currentIndex, setCurrentIndex] = useState(0);
-  console.log('err', posts)
+  const [thumbnails, setThumbnails] = useState({});
+  const [thumbnailLoading, setThumbnailLoading] = useState({});
 
+  useEffect(() => {
+    posts.forEach((post) => {
+      post.media.forEach((media) => {
+        if (isVideoFile(media)) {
+          generateVideoThumbnail(media.url);
+        }
+      });
+    });
+  }, [posts]);
 
-  const handleImageClick = (post) => {
-    setSelectedPost(post);
-    setCurrentIndex(0);
+  const handleMediaClick = (post) => {
+    if (post && post.media.length > 0) {
+      setSelectedPost(post);
+      setCurrentIndex(0);
+    }
   };
 
   const handleCloseModal = () => {
@@ -31,34 +38,71 @@ const ShopPosts = ({ posts, shopId }) => {
     setCurrentIndex(0);
   };
 
-  const handleSlide = () => {
+  const handleNextMedia = () => {
     if (selectedPost) {
       const nextIndex = (currentIndex + 1) % selectedPost.media.length;
       setCurrentIndex(nextIndex);
     }
   };
 
-  const renderMediaItem = () => {
-    const media = selectedPost.media[currentIndex];
-    const isVideo = media.url.endsWith(".mp4") || media.url.endsWith(".mov");
+  const isVideoFile = (media) =>
+    media.url &&
+    (media.type?.includes("video") || media.url.match(/\.(mp4|mov|avi|mkv)$/i));
 
-    if (isVideo) {
-      return (
-        <Video
-          source={{ uri: `https://127.0.0.1:8000${media.url}` }}
-          style={styles.media}
-          resizeMode="cover"
-          useNativeControls
-        />
-      );
+  const generateVideoThumbnail = async (url) => {
+    if (!url || thumbnails[url]) return;
+
+    setThumbnailLoading((prev) => ({ ...prev, [url]: true }));
+
+    try {
+      const videoUrl = getFullUrl(url);
+      console.log("Generating thumbnail for:", videoUrl);
+
+      const { uri } = await VideoThumbnails.getThumbnailAsync(videoUrl, {
+        time: 5000, // Try 5 seconds instead of 15
+        quality: 0.8, // Higher quality
+      });
+
+      console.log("Thumbnail generated:", uri);
+      setThumbnails((prev) => ({ ...prev, [url]: uri }));
+    } catch (e) {
+      console.error("Thumbnail generation failed:", e);
+      setThumbnails((prev) => ({ ...prev, [url]: null }));
+    } finally {
+      setThumbnailLoading((prev) => ({ ...prev, [url]: false }));
     }
+  };
+
+  const VideoPlayerComponent = ({ url }) => {
+    const player = useVideoPlayer(url, (player) => {
+      player.loop = true;
+      player.play();
+    });
+
+    const { isPlaying } = useEvent(player, "playingChange", { isPlaying: player.playing });
 
     return (
-      <Image
-        source={{ uri: `https://127.0.0.1:8000${media.url}` }}
-        style={styles.media}
-        resizeMode="cover"
-      />
+      <View style={styles.videoContainer}>
+        <VideoView
+          style={styles.media}
+          player={player}
+          allowsFullscreen
+          allowsPictureInPicture
+        />
+        
+      </View>
+    );
+  };
+
+  const renderMediaItem = () => {
+    const media = selectedPost.media[currentIndex];
+    const fullUrl = getFullUrl(media.url);
+    const isVideo = isVideoFile(media);
+
+    return isVideo ? (
+      <VideoPlayerComponent url={fullUrl} />
+    ) : (
+      <Image source={{ uri: fullUrl }} style={styles.media} resizeMode="cover" />
     );
   };
 
@@ -69,24 +113,48 @@ const ShopPosts = ({ posts, shopId }) => {
           data={posts}
           keyExtractor={(item) => item.id.toString()}
           numColumns={2}
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.postItem}
-              onPress={() => handleImageClick(item)}
-            >
-              {item.media && item.media.length > 0 ? (
-                <Image
-                  source={{
-                    uri: `https://127.0.0.1:8000${item.media[0].url}`,
-                  }}
-                  style={styles.thumbnail}
-                  resizeMode="cover"
-                />
-              ) : (
-                <Text>No image available</Text>
-              )}
-            </TouchableOpacity>
-          )}
+          extraData={selectedPost}
+          renderItem={({ item }) => {
+            const firstMedia = item.media.length > 0 ? item.media[0] : null;
+            const isVideo = firstMedia ? isVideoFile(firstMedia) : false;
+            const thumbnailUri = thumbnails[firstMedia?.url];
+
+            return (
+              <TouchableOpacity
+                style={styles.postItem}
+                onPress={() => handleMediaClick(item)}
+              >
+                {firstMedia ? (
+                  isVideo ? (
+                    <View>
+                      {thumbnailLoading[firstMedia.url] ? (
+                        <Text>Loading...</Text>
+                      ) : thumbnailUri ? (
+                        <Image
+                          source={{ uri: thumbnailUri }}
+                          style={styles.thumbnail}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <Text style={styles.errorText}>Thumbnail not available</Text>
+                      )}
+                      <View style={styles.playIconOverlay}>
+                        <Ionicons name="play-circle" size={40} color="white" />
+                      </View>
+                    </View>
+                  ) : (
+                    <Image
+                      source={{ uri: getFullUrl(firstMedia.url) }}
+                      style={styles.thumbnail}
+                      resizeMode="cover"
+                    />
+                  )
+                ) : (
+                  <Text>No media available</Text>
+                )}
+              </TouchableOpacity>
+            );
+          }}
         />
       ) : (
         <Text style={styles.noPostsText}>No posts available</Text>
@@ -95,10 +163,7 @@ const ShopPosts = ({ posts, shopId }) => {
       {selectedPost && (
         <Modal visible={true} transparent={true} animationType="fade">
           <View style={styles.modalContainer}>
-            <TouchableOpacity
-              style={styles.modalClose}
-              onPress={handleCloseModal}
-            >
+            <TouchableOpacity style={styles.modalClose} onPress={handleCloseModal}>
               <Text style={styles.closeText}>&times;</Text>
             </TouchableOpacity>
 
@@ -110,17 +175,12 @@ const ShopPosts = ({ posts, shopId }) => {
                 {`${currentIndex + 1} / ${selectedPost.media.length}`}
               </Text>
 
-              <TouchableOpacity
-                style={styles.slideButton}
-                onPress={handleSlide}
-              >
-                <Text style={styles.slideText}>Slide</Text>
+              <TouchableOpacity style={styles.slideButton} onPress={handleNextMedia}>
+                <Text style={styles.slideText}>Next</Text>
               </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={styles.closeViewButton}
-              onPress={handleCloseModal}
-            >
+
+            <TouchableOpacity style={styles.closeViewButton} onPress={handleCloseModal}>
               <Text style={styles.closeViewText}>Close View</Text>
             </TouchableOpacity>
           </View>
@@ -129,6 +189,7 @@ const ShopPosts = ({ posts, shopId }) => {
     </View>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {
@@ -162,11 +223,7 @@ const styles = StyleSheet.create({
     fontSize: 30,
     color: "#fff",
   },
-  media: {
-    width: width,
-    height: width,
-    borderRadius: 8,
-  },
+  media: { width: 300, height: 400, borderRadius: 10 },
   slideControls: {
     flexDirection: "row",
     justifyContent: "space-between",

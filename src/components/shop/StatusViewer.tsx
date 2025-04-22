@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -9,236 +9,423 @@ import {
   Animated,
 } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
-import { useEvent } from "expo";
 import axios from "axios";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import RNFS from "react-native-fs"; 
 
-const IMAGE_TEXT_DURATION = 6000; // 6 seconds for image and text statuses
-const VIDEO_MAX_DURATION = 30000; // 30 seconds maximum for video statuses
+const IMAGE_TEXT_DURATION = 6000;
+const VIDEO_MAX_DURATION = 30000;
+const CACHE_KEY = "videoCache";
 
-const StatusViewer = ({ visible, statuses, onClose, userId }) => {
-  console.log("statuses", statuses);
-
+const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, userId }) => {
+  // State and refs
   const [currentShopIndex, setCurrentShopIndex] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [sortedStatuses, setSortedStatuses] = useState([]);
+  const [videoCache, setVideoCache] = useState({});
 
   const progress = useRef(new Animated.Value(0)).current;
   const progressAnimation = useRef(null);
   const pausedTime = useRef(0);
   const isPaused = useRef(false);
+  const playerRef = useRef(null);
+  const isVideoFinished = useRef(false);
 
-  // Sort statuses once on first render or when `statuses` change
+  // Get all statuses
+  const getAllStatuses = useCallback(() => {
+    const statuses = sortedStatuses[currentShopIndex]?.statuses || [];
+    console.log("getAllStatuses:", statuses);
+    return statuses;
+  }, [sortedStatuses, currentShopIndex]);
+
+  // Current status
+  const currentStatus = useMemo(() => {
+    return sortedStatuses[currentShopIndex]?.statuses?.[currentIndex] || {};
+  }, [sortedStatuses, currentShopIndex, currentIndex]);
+
+  // Load video cache
   useEffect(() => {
-  if (statuses.length > 0) {
-    let sorted = statuses.map((shop) => ({
+    const loadCache = async () => {
+      try {
+        const cached = await AsyncStorage.getItem(CACHE_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          console.log("Loaded video cache:", parsed);
+          setVideoCache(parsed);
+        }
+      } catch (error) {
+        console.error("Error loading video cache:", error);
+      }
+    };
+    loadCache();
+  }, []);
+
+  // Video players
+  const currentPlayer = useVideoPlayer(currentStatus?.media ?? "", (player) => {
+    console.log("Current player initialized:", player);
+    playerRef.current = player;
+    player.loop = false;
+    player.onError = (error) => {
+      console.error("Current video error:", error);
+      handleNext();
+    };
+    if (currentStatus.media_type === "video" && videoCache[currentStatus.media]) {
+      console.log("Using cached video for current:", currentStatus.media);
+      player.source = { uri: currentStatus.media };
+    }
+  });
+
+  // Next status for preloading
+  const nextStatus = useMemo(() => {
+    const allStatuses = getAllStatuses();
+    const nextIndex = currentIndex + 1;
+    return nextIndex < allStatuses.length
+      ? allStatuses[nextIndex]
+      : sortedStatuses[currentShopIndex + 1]?.statuses?.[0] || {};
+  }, [currentIndex, currentShopIndex, sortedStatuses, getAllStatuses]);
+
+  const nextPlayer = useVideoPlayer(nextStatus?.media ?? "", (player) => {
+    console.log("Next player initialized:", player);
+    player.loop = false;
+    player.onError = (error) => {
+      console.error("Next video error:", error);
+    };
+    if (nextStatus.media_type === "video" && videoCache[nextStatus.media]) {
+      console.log("Using cached video for next:", nextStatus.media);
+      player.source = { uri: nextStatus.media };
+    }
+  });
+
+  // Navigation handlers
+  const handleNext = useCallback(() => {
+    console.log("handleNext called");
+    const allStatuses = getAllStatuses();
+    if (!allStatuses.length) return;
+
+    if (playerRef.current) {
+      try {
+        playerRef.current.pause();
+        console.log("Paused current player before next");
+      } catch (error) {
+        console.error("Pause error before next:", error);
+      }
+      playerRef.current = null; // Clear to prevent invalid access
+    }
+
+    setTimeout(() => {
+      if (currentIndex < allStatuses.length - 1) {
+        setCurrentIndex((prev) => prev + 1);
+      } else if (currentShopIndex < sortedStatuses.length - 1) {
+        setCurrentShopIndex((prev) => prev + 1);
+        setCurrentIndex(0);
+      } else {
+        onClose();
+      }
+    }, 100);
+  }, [currentIndex, currentShopIndex, sortedStatuses, onClose, getAllStatuses]);
+
+  const handlePrev = useCallback(() => {
+    console.log("handlePrev called");
+    if (playerRef.current) {
+      try {
+        playerRef.current.pause();
+        console.log("Paused current player before prev");
+      } catch (error) {
+        console.error("Pause error before prev:", error);
+      }
+      playerRef.current = null;
+    }
+
+    setTimeout(() => {
+      if (currentIndex > 0) {
+        setCurrentIndex((prev) => prev - 1);
+      } else if (currentShopIndex > 0) {
+        const prevShopStatuses = sortedStatuses[currentShopIndex - 1].statuses;
+        setCurrentShopIndex((prev) => prev - 1);
+        setCurrentIndex(prevShopStatuses.length - 1);
+      } else {
+        onClose();
+      }
+    }, 100);
+  }, [currentIndex, currentShopIndex, sortedStatuses, onClose]);
+
+  // Calculate duration
+  const getStatusDuration = useCallback(() => {
+    const mediaType = currentStatus.media_type;
+    if (!mediaType) return IMAGE_TEXT_DURATION;
+    if (mediaType === "video") {
+      const safeDuration = playerRef.current?.duration
+        ? playerRef.current.duration * 1000
+        : VIDEO_MAX_DURATION;
+      console.log("Video duration:", safeDuration);
+      return Math.min(safeDuration, VIDEO_MAX_DURATION);
+    }
+    console.log("Image/text duration:", IMAGE_TEXT_DURATION);
+    return IMAGE_TEXT_DURATION;
+  }, [currentStatus.media_type]);
+
+  // Start progress animation
+  const startProgress = useCallback(
+    (duration) => {
+      console.log("startProgress called, duration:", duration);
+      if (isPaused.current || isVideoFinished.current) return;
+      progress.setValue(progress.__getValue());
+      progressAnimation.current?.stop();
+      progressAnimation.current = Animated.timing(progress, {
+        toValue: 1,
+        duration: duration,
+        useNativeDriver: true,
+      });
+      progressAnimation.current.start(({ finished }) => {
+        console.log("Progress animation finished:", finished);
+        if (finished && !isPaused.current && !isVideoFinished.current) {
+          handleNext();
+        }
+      });
+    },
+    [handleNext]
+  );
+
+  // Mark status as viewed and cache video
+  const markStatusAsViewed = useCallback(
+    async (status) => {
+      if (!status || status.viewed || !userId) return;
+      try {
+        console.log("Marking status as viewed:", status.id);
+        const formData = new FormData();
+        formData.append("user_id", userId.toString());
+        formData.append("status_ids[]", status.id);
+
+        await axios.post(
+          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/mark_status_viewed/",
+          formData,
+          { headers: { "Content-Type": "multipart/form-data" } }
+        );
+        status.viewed = true;
+
+        if (status.media_type === "video" && status.media && !videoCache[status.media]) {
+          const newCache = { ...videoCache, [status.media]: status.media };
+          setVideoCache(newCache);
+          await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(newCache));
+          console.log("Cached video:", status.media);
+        }
+      } catch (error) {
+        console.error("Error marking status as viewed:", error);
+      }
+    },
+    [userId, videoCache]
+  );
+
+  // Pause/resume
+  const togglePause = useCallback(() => {
+    console.log("togglePause called, isPaused:", isPaused.current, "playerRef:", playerRef.current);
+    isPaused.current = !isPaused.current;
+
+    if (isPaused.current) {
+      pausedTime.current = progress.__getValue() * getStatusDuration();
+      console.log("Pausing, pausedTime:", pausedTime.current);
+      progressAnimation.current?.stop();
+      if (
+        currentStatus.media_type === "video" &&
+        playerRef.current &&
+        typeof playerRef.current.pause === "function"
+      ) {
+        try {
+          playerRef.current.pause();
+          console.log("Video paused successfully");
+        } catch (error) {
+          console.error("Pause error:", error);
+        }
+      }
+    } else {
+      const remainingTime = getStatusDuration() - pausedTime.current;
+      console.log("Resuming, remainingTime:", remainingTime);
+      progress.setValue(pausedTime.current / getStatusDuration());
+      startProgress(remainingTime);
+      if (
+        currentStatus.media_type === "video" &&
+        playerRef.current &&
+        typeof playerRef.current.play === "function"
+      ) {
+        try {
+          playerRef.current.play();
+          console.log("Video playing successfully");
+        } catch (error) {
+          console.error("Play error:", error);
+        }
+      }
+    }
+  }, [getStatusDuration, startProgress, currentStatus.media_type]);
+
+  // Initialize statuses
+  useEffect(() => {
+    if (!visible || !statuses?.length) {
+      console.log("Not visible or no statuses:", { visible, statuses });
+      setSortedStatuses([]);
+      return;
+    }
+
+    console.log("Initializing statuses:", statuses);
+    const sorted = statuses.map((shop) => ({
       ...shop,
       statuses: shop.statuses
         .slice()
-        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)), // Sort oldest to newest
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)),
     }));
 
-    let firstUnviewedShopIndex = sorted.findIndex((shop) =>
+    let shopIndex = 0;
+    let statusIndex = 0;
+
+    const firstUnviewedShopIndex = sorted.findIndex((shop) =>
       shop.statuses.some((status) => !status.viewed)
     );
-
     if (firstUnviewedShopIndex !== -1) {
-      let firstUnviewedStatusIndex = sorted[firstUnviewedShopIndex].statuses.findIndex(
+      shopIndex = firstUnviewedShopIndex;
+      const firstUnviewedStatusIndex = sorted[firstUnviewedShopIndex].statuses.findIndex(
         (status) => !status.viewed
       );
-      setCurrentShopIndex(firstUnviewedShopIndex);
-      setCurrentIndex(firstUnviewedStatusIndex !== -1 ? firstUnviewedStatusIndex : 0);
-    } else {
-      setCurrentShopIndex(0);
-      setCurrentIndex(0);
+      statusIndex = firstUnviewedStatusIndex !== -1 ? firstUnviewedStatusIndex : 0;
+    } else if (initialIndex >= 0 && initialIndex < sorted.length) {
+      shopIndex = initialIndex;
+      statusIndex = 0;
     }
 
+    console.log("Setting initial indices:", { shopIndex, statusIndex });
     setSortedStatuses(sorted);
+    setCurrentShopIndex(shopIndex);
+    setCurrentIndex(statusIndex);
+  }, [visible, statuses, initialIndex]);
 
-    setTimeout(() => {
-      progress.setValue(0);
-      startProgress(getStatusDuration());
-    }, 0);
-  }
-}, [statuses]);
-
-  const getAllStatuses = () => {
-    return sortedStatuses[currentShopIndex]?.statuses || [];
-  };
-
-  const getStatusDuration = () => {
-  const currentStatus = getAllStatuses()[currentIndex];
-  if (currentStatus?.media_type === "video") {
-    return Math.min(player?.duration * 1000 || VIDEO_MAX_DURATION, VIDEO_MAX_DURATION);
-  } else if (currentStatus?.media_type === "image" || currentStatus?.text) {
-    return IMAGE_TEXT_DURATION; // Text statuses should follow the 6s rule
-  }
-  return IMAGE_TEXT_DURATION;
-};
-
-  useEffect(() => {
-    if (visible) {
-      progress.setValue(0);
-      startProgress(getStatusDuration());
-    }
-    markStatusAsViewed(getAllStatuses()[currentIndex]);
-  }, [currentIndex, currentShopIndex]);
-
-  const startProgress = (duration) => {
-    if (isPaused.current) return;
-    progress.setValue(0);
-    progressAnimation.current = Animated.timing(progress, {
-      toValue: 1,
-      duration: duration,
-      useNativeDriver: false,
-    }).start(({ finished }) => {
-      if (finished) handleNext();
-    });
-  };
-
-  const handleNext = () => {
-  const allStatuses = getAllStatuses();
-  if (!allStatuses.length) return; // Ensure statuses are available
-
-  if (currentIndex < allStatuses.length - 1) {
-    setCurrentIndex((prev) => prev + 1);
-  } else if (currentShopIndex < sortedStatuses.length - 1) {
-    setCurrentShopIndex((prev) => prev + 1);
-    setCurrentIndex(0);
-  } else {
-    onClose();
-  }
-};
-
-
-  const handlePrev = () => {
-  setCurrentIndex((prevIndex) => {
-    if (prevIndex > 0) {
-      return prevIndex - 1;  // Go to the previous status
-    } 
-    
-    return setCurrentShopIndex((prevShopIndex) => {
-      if (prevShopIndex > 0) {
-        const prevShopStatuses = sortedStatuses[prevShopIndex - 1].statuses;
-        setCurrentIndex(prevShopStatuses.length - 1);  // Last status of previous shop
-        return prevShopIndex - 1;
-      } else {
-        onClose();
-        return prevShopIndex; // Ensures no invalid updates
+  // Handle video playback completion
+  const handleVideoStatusChange = useCallback(
+    (status) => {
+      console.log("Video status change:", status);
+      if (
+        status.isPlaying &&
+        status.positionMillis >= status.durationMillis &&
+        !isVideoFinished.current &&
+        !isPaused.current
+      ) {
+        console.log("Video finished playing, moving to next status");
+        isVideoFinished.current = true;
+        progressAnimation.current?.stop();
+        handleNext();
       }
-    });
-  });
-};
-
-
-  const markStatusAsViewed = async (status) => {
-    if (!status || status.viewed || !userId) return;
-    try {
-      const formData = new FormData();
-      formData.append("user_id", userId.toString());
-      formData.append("status_ids[]", status.id);
-
-      await axios.post(
-        "https://127.0.0.1:8000/mark_status_viewed/",
-        formData,
-        { headers: { "Content-Type": "multipart/form-data" } }
-      );
-
-      status.viewed = true;
-    } catch (error) {
-      console.error("Error marking status as viewed:", error);
-    }
-  };
-
-  const togglePause = () => {
-  if (!player || !player?.play) return;
-
-  if (isPaused.current) {
-    isPaused.current = false;
-    const remainingTime = getStatusDuration() - pausedTime.current;
-    progress.setValue(pausedTime.current / getStatusDuration());
-    startProgress(remainingTime); // Restart progress with remaining time
-
-    if (isVideo && player?.paused) {
-      player.play();
-    }
-  } else {
-    isPaused.current = true;
-    progressAnimation.current?.stop();  // Stop the timer
-    pausedTime.current = progress.__getValue() * getStatusDuration();
-
-    if (isVideo && !player?.paused) {
-      player.pause();
-    }
-  }
-};
-
-  const allStatuses = getAllStatuses();
-  const hasStatuses = allStatuses.length > 0;
-
-  // Move this above the return statement to ensure Hooks are always called
-  const currentStatus = allStatuses[currentIndex] || {};
-  const isImage = currentStatus?.media_type === "image";
-const isVideo = currentStatus?.media_type === "video";
-const hasMedia = isImage || isVideo;
-const statusText = currentStatus?.text || "";
-
-  // Always define hooks before any conditional return
-  const player = useVideoPlayer(
-    currentStatus?.media ?? "", // Provide a fallback that ensures it's never undefined
-    (player) => {
-      if (player) {
-        player.loop = false;
-      }
-    }
+    },
+    [handleNext]
   );
 
+  // Handle status change and video playback
   useEffect(() => {
-  if (isVideo && player) {
-    const checkDuration = setInterval(() => {
-      if (player?.duration) {
-        progress.setValue(0);  // Reset progress
-        progressAnimation.current?.stop();
-        startProgress(getStatusDuration()); // Start timer only after video is ready
-        clearInterval(checkDuration); 
-      }
-    }, 100);
+    if (!visible || !getAllStatuses().length) return;
 
-    return () => clearInterval(checkDuration);
-  }
-}, [player, isVideo]);
-
-
-  useEffect(() => {
-  if (isVideo && player) {
-    player.play();
-    return () => player.pause();
-  }
-}, [currentIndex, currentShopIndex, player]);
-
-
-  useEffect(() => {
-    if (isVideo && !isPaused.current) {
-      player.play();
-    } else {
-      player.pause();
+    const status = getAllStatuses()[currentIndex];
+    if (!status) {
+      console.log("No status available");
+      return;
     }
 
-    if (!isVideo && progressAnimation?.current) {
-      progressAnimation.current.start();
+    console.log("Status changed:", status);
+
+    // Reset state
+    progressAnimation.current?.stop();
+    progress.setValue(0);
+    pausedTime.current = 0;
+    isPaused.current = false;
+    isVideoFinished.current = false;
+
+    if (playerRef.current) {
+      try {
+        playerRef.current.pause();
+        console.log("Paused player before status change");
+      } catch (error) {
+        console.error("Pause error before status change:", error);
+      }
+      playerRef.current = null;
+    }
+
+    markStatusAsViewed(status);
+
+    const duration = getStatusDuration();
+    if (status.media_type === "video") {
+      const checkVideoReady = setInterval(() => {
+        if (playerRef.current?.duration && playerRef.current.duration > 0) {
+          console.log("Video ready, duration:", playerRef.current.duration);
+          clearInterval(checkVideoReady);
+          if (!isPaused.current) {
+            try {
+              playerRef.current.play();
+              console.log("Video started playing");
+            } catch (error) {
+              console.error("Play error on load:", error);
+            }
+            startProgress(duration);
+          }
+        } else {
+          console.log("Video not ready yet");
+        }
+      }, 100);
+      return () => {
+        console.log("Cleaning up video check");
+        clearInterval(checkVideoReady);
+      };
+    } else {
+      if (!isPaused.current) {
+        startProgress(duration);
+      }
     }
 
     return () => {
-      player.pause();
-      progressAnimation?.current?.stop();
+      console.log("Cleaning up effect");
+      progressAnimation.current?.stop();
+      if (playerRef.current && typeof playerRef.current.pause === "function") {
+        try {
+          playerRef.current.pause();
+          console.log("Paused video on cleanup");
+        } catch (error) {
+          console.error("Cleanup pause error:", error);
+        }
+        playerRef.current = null;
+      }
     };
-  }, [currentIndex, currentShopIndex]);
+  }, [visible, currentIndex, currentShopIndex, getAllStatuses, markStatusAsViewed, startProgress, getStatusDuration]);
 
-  if (!visible || !hasStatuses) return null;
+  // Reset when modal closes
+  useEffect(() => {
+    if (!visible) {
+      console.log("Modal closing, resetting state");
+      setCurrentShopIndex(0);
+      setCurrentIndex(0);
+      setSortedStatuses([]);
+      progress.setValue(0);
+      progressAnimation.current?.stop();
+      if (playerRef.current && typeof playerRef.current.pause === "function") {
+        try {
+          playerRef.current.pause();
+          console.log("Paused video on modal close");
+        } catch (error) {
+          console.error("Modal close pause error:", error);
+        }
+        playerRef.current = null;
+      }
+    }
+  }, [visible]);
+
+  if (!visible || !getAllStatuses().length) {
+    console.log("Rendering null, visible:", visible, "statuses length:", getAllStatuses().length);
+    return null;
+  }
+
+  const isImage = currentStatus.media_type === "image";
+  const isVideo = currentStatus.media_type === "video";
+  const hasMedia = (isImage || isVideo) && !!currentStatus.media;
+  const statusText = currentStatus.text || "";
+
+  console.log("Rendering status:", { isImage, isVideo, hasMedia, media: currentStatus.media });
 
   return (
     <Modal visible={visible} animationType="fade" transparent>
       <View style={styles.container}>
-        {/* Progress Bars */}
         <View style={styles.progressContainer}>
           {getAllStatuses().map((_, idx) => (
             <View key={idx} style={styles.progressBackground}>
@@ -246,15 +433,15 @@ const statusText = currentStatus?.text || "";
                 style={[
                   styles.progressBar,
                   {
-                    width:
-                      idx === currentIndex
-                        ? progress.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: ["0%", "100%"],
-                          })
-                        : idx < currentIndex
-                        ? "100%"
-                        : "0%",
+                    transform: [
+                      {
+                        scaleX: idx === currentIndex
+                          ? progress.interpolate({ inputRange: [0, 1], outputRange: [0, 1] })
+                          : idx < currentIndex
+                          ? 1
+                          : 0,
+                      },
+                    ],
                   },
                 ]}
               />
@@ -262,18 +449,11 @@ const statusText = currentStatus?.text || "";
           ))}
         </View>
 
-        {/* Left Side - Previous */}
-        <TouchableOpacity
-          style={styles.leftExpanded}
-          onPress={handlePrev}
-          onPressIn={togglePause}
-          onPressOut={togglePause}
-        />
+        <TouchableOpacity style={[styles.leftExpanded, { zIndex: 10 }]} onPress={handlePrev} />
 
-        {/* Status Content */}
         <TouchableOpacity
-          style={styles.content}
-          activeOpacity={1}
+          style={[styles.content, { zIndex: 5 }]}
+          activeOpacity={0.8}
           onPress={togglePause}
         >
           {hasMedia ? (
@@ -281,39 +461,33 @@ const statusText = currentStatus?.text || "";
               {isVideo ? (
                 <VideoView
                   style={styles.media}
+                  player={currentPlayer}
                   resizeMode="cover"
-                  player={player}
                   allowsFullscreen={false}
-              allowsPictureInPicture={false}
+                  allowsPictureInPicture={false}
+                  onStatusChange={isVideo ? handleVideoStatusChange : undefined}
                 />
-              ) : (
+              ) : isImage ? (
                 <Image
                   source={{ uri: currentStatus.media }}
                   style={styles.media}
                   resizeMode="contain"
                 />
-              )}
-              {currentStatus?.text?.trim().length > 0 && (
-                <Text style={styles.caption}>{currentStatus.text}</Text>
+              ) : null}
+              {statusText.trim().length > 0 && (
+                <Text style={styles.caption}>{statusText}</Text>
               )}
             </>
           ) : (
             <View style={styles.plainTextContainer}>
-              <Text style={styles.plainText}>{currentStatus?.text}</Text>
+              <Text style={styles.plainText}>{statusText || "No media available"}</Text>
             </View>
           )}
         </TouchableOpacity>
 
-        {/* Right Side - Next */}
-        <TouchableOpacity
-          style={styles.rightExpanded}
-          onPress={handleNext}
-          onPressIn={togglePause}
-          onPressOut={togglePause}
-        />
+        <TouchableOpacity style={[styles.rightExpanded, { zIndex: 10 }]} onPress={handleNext} />
 
-        {/* Close Button */}
-        <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+        <TouchableOpacity style={[styles.closeButton, { zIndex: 15 }]} onPress={onClose}>
           <Text style={styles.closeText}>✕</Text>
         </TouchableOpacity>
       </View>
@@ -321,87 +495,92 @@ const statusText = currentStatus?.text || "";
   );
 };
 
-export default StatusViewer;
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#2E2E2E",
-    justifyContent: "center",
-    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.95)",
   },
-  // Progress bars
   progressContainer: {
     flexDirection: "row",
-    position: "absolute",
-    top: 40,
-    width: "90%",
-    zIndex: 999,
+    paddingHorizontal: 10,
+    paddingTop: 40,
+    paddingBottom: 10,
+    gap: 4,
+    zIndex: 20,
   },
   progressBackground: {
     flex: 1,
-    height: 3,
-    backgroundColor: "rgba(255,255,255,0.3)",
-    marginHorizontal: 2,
-    borderRadius: 2,
+    height: 2,
+    backgroundColor: "rgba(255, 255, 255, 0.5)",
+    overflow: "hidden",
   },
   progressBar: {
-    height: 3,
+    height: 2,
     backgroundColor: "#fff",
-    borderRadius: 2,
-  },
-  // Tap zones
-  leftExpanded: {
-    position: "absolute",
-    width: "40%",
-    height: "100%",
-    left: 0,
-  },
-  rightExpanded: {
-    position: "absolute",
-    width: "40%",
-    height: "100%",
-    right: 0,
-  },
-  // Main content
-  content: {
     width: "100%",
-    height: "100%",
+  },
+  content: {
+    flex: 1,
     justifyContent: "center",
+    alignItems: "center",
   },
   media: {
     width: "100%",
-    height: "70%",
+    height: "80%",
   },
   caption: {
-    color: "#f1f1f1",
-    fontSize: 20,
-    marginTop: 10,
+    position: "absolute",
+    bottom: 20,
+    color: "#fff",
+    fontSize: 16,
     textAlign: "center",
-    fontWeight: "600",
     paddingHorizontal: 20,
+    textShadowColor: "rgba(0, 0, 0, 0.5)",
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
+    zIndex: 10,
   },
   plainTextContainer: {
-    width: "100%",
-    height: "100%",
+    flex: 1,
     justifyContent: "center",
-    paddingHorizontal: 20,
+    alignItems: "center",
+    padding: 20,
   },
   plainText: {
-    fontSize: 32,
-    fontWeight: "700",
-    color: "#f1f1f1",
+    color: "#fff",
+    fontSize: 18,
     textAlign: "center",
   },
-  // Close button
+  leftExpanded: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: "40%",
+  },
+  rightExpanded: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: "40%",
+  },
   closeButton: {
     position: "absolute",
     top: 40,
-    right: 20,
-    zIndex: 999,
+    right: 15,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
   },
   closeText: {
-    fontSize: 30,
     color: "#fff",
+    fontSize: 18,
+    fontWeight: "bold",
   },
 });
+
+export default StatusViewer;

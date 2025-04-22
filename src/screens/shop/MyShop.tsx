@@ -25,7 +25,7 @@ const MyShop = () => {
 
     try {
       const response = await axios.post(
-        'https://127.0.0.1:8000/shops-product-count/',
+        'https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops-product-count/',
         {},
         {
           headers: {
@@ -48,22 +48,36 @@ const MyShop = () => {
   );
 
   const handleCloseShop = async (shopId) => {
-    Alert.alert('Confirm', 'Are you sure you want to close this shop?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Close Shop',
-        onPress: async () => {
-          try {
-            await axios.delete(`https://127.0.0.1:8000/close-shop/${shopId}/`);
-            setShops((prev) => prev.filter((shop) => shop.id !== shopId));
-            Alert.alert('Success', 'Shop closed successfully.');
-          } catch (error) {
-            Alert.alert('Error', 'Failed to close shop.');
+  Alert.alert('Confirm', 'Are you sure you want to close this shop?', [
+    { text: 'Cancel', style: 'cancel' },
+    {
+      text: 'Close Shop',
+      onPress: async () => {
+        try {
+          await axios.delete(`https://retail-alvinia-goza-f6a0e4f7.koyeb.app/close-shop/${shopId}/`);
+          setShops((prev) => prev.filter((shop) => shop.id !== shopId));
+          Alert.alert('Success', 'Shop closed successfully.');
+        } catch (error) {
+          console.error('Error closing shop:', error); // log the full error object
+          if (error.response) {
+            // Request made and server responded
+            console.error('Response data:', error.response.data);
+            console.error('Response status:', error.response.status);
+            console.error('Response headers:', error.response.headers);
+          } else if (error.request) {
+            // Request made but no response received
+            console.error('Request data:', error.request);
+          } else {
+            // Something else happened
+            console.error('Error message:', error.message);
           }
-        },
+
+          Alert.alert('Error', 'Failed to close shop.');
+        }
       },
-    ]);
-  };
+    },
+  ]);
+};
 
   const handleCreateShop = async () => {
     if (shops.length > 0) {
@@ -90,46 +104,53 @@ const MyShop = () => {
       <FlatList
         data={shops}
         keyExtractor={(item) => item.id.toString()}
-        renderItem={({ item }) => (
-          <View style={styles.shopCard}>
-            <Text style={styles.shopName}>{item.name}</Text>
-            <Text style={styles.shopDetails}>Products Available: {item.product_count}</Text>
-            <View style={styles.actionsContainer}>
-              <View style={styles.actions}>
-                <TouchableOpacity onPress={() => router.push({ pathname: '/shop/AdminShopPage', params: { shopId: item.id, prevRoute: pathname } })}>
-                  <MaterialIcons name="store" size={28} color="#007bff" />
-                  <Text style={styles.actionText}>Shop Page</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push({ pathname: 'shop/ShopProduct', params: { shopId: item.id, prevRoute: pathname } })}>
-                  <MaterialIcons name="shopping-cart" size={28} color="#ffa500" />
-                  <Text style={styles.actionText}>Products</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push({ pathname: '/shop/ShopStatus', params: { shopId: item.id, prevRoute: pathname } })}>
-                  <MaterialIcons name="update" size={28} color="#9c27b0" />
-                  <Text style={styles.actionText}>Status Updates</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.actions}>
-                <TouchableOpacity onPress={() => router.push({ pathname: '/shop/ReceiptActions', params: { shopId: item.id, prevRoute: pathname } })}>
-                  <MaterialIcons name="receipt" size={28} color="#795548" />
-                  <Text style={styles.actionText}>Receipt</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push({ pathname: '/shop/ShopProfile', params: { shopId: item.id, prevRoute: pathname } })}>
-                  <MaterialIcons name="info" size={28} color="#4caf50" />
-                  <Text style={styles.actionText}>Profile Details</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => handleCloseShop(item.id)}>
-                  <MaterialIcons name="close" size={28} color="#f44336" />
-                  <Text style={styles.actionText}>Quit Shop</Text>
-                </TouchableOpacity>
+        renderItem={({ item }) => {
+          const isService = item.category?.toLowerCase() === 'services';
+
+          return (
+            <View style={styles.shopCard}>
+              <Text style={styles.shopName}>{item.name}</Text>
+              <Text style={styles.shopDetails}>
+                {isService ? 'Services Available' : 'Products Available'}: {item.product_count}
+              </Text>
+              <View style={styles.actionsContainer}>
+                <View style={styles.actions}>
+                  <TouchableOpacity onPress={() => router.push({ pathname: '/shop/AdminShopPage', params: { shopId: item.id, prevRoute: pathname } })}>
+                    <MaterialIcons name="store" size={28} color="#007bff" />
+                    <Text style={styles.actionText}>Shop Page</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => router.push({ pathname: 'shop/ShopProduct', params: { shopId: item.id, category: item.category, prevRoute: pathname } })}>
+                    <MaterialIcons name={isService ? "home-repair-service" : "shopping-cart"} size={28} color="#ffa500" />
+                    <Text style={styles.actionText}>{isService ? 'Services' : 'Products'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => router.push({ pathname: '/shop/ShopStatus', params: { shopId: item.id, prevRoute: pathname } })}>
+                    <MaterialIcons name="update" size={28} color="#9c27b0" />
+                    <Text style={styles.actionText}>Status Updates</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.actions}>
+                  <TouchableOpacity onPress={() => router.push({ pathname: '/shop/ReceiptActions', params: { shopId: item.id, prevRoute: pathname } })}>
+                    <MaterialIcons name="receipt" size={28} color="#795548" />
+                    <Text style={styles.actionText}>Receipt</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => router.push({ pathname: '/shop/Details', params: { shopId: item.id, prevRoute: pathname } })}>
+                    <MaterialIcons name="info" size={28} color="#4caf50" />
+                    <Text style={styles.actionText}>Profile Details</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => handleCloseShop(item.id)}>
+                    <MaterialIcons name="close" size={28} color="#f44336" />
+                    <Text style={styles.actionText}>Quit Shop</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
-          </View>
-        )}
+          );
+        }}
       />
     )}
   </LinearGradient>
 );
+
 }
 
 const styles = StyleSheet.create({
