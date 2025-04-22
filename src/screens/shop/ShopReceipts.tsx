@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, ScrollView, Alert, ActivityIndicator, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, ScrollView, Alert, ActivityIndicator, TouchableOpacity, StyleSheet, Image } from "react-native";
 import { Card, Button, Divider, Chip, Avatar } from "react-native-paper";
 import Animated, { FadeInUp, FadeOut } from "react-native-reanimated";
 import { useLocalSearchParams, useRouter, usePathname } from "expo-router";
@@ -109,7 +109,7 @@ const ShopReceipts = () => {
           <Animated.View key={item.id} entering={FadeInUp} exiting={FadeOut}>
             <Card mode="elevated" style={styles.card}>
               <View style={styles.cardHeader}>
-                <Avatar.Icon size={50} icon="receipt" style={styles.avatar} />
+                <Image source={{ uri: item.customer_image || 'https://via.placeholder.com/40' }} style={styles.image} />
                 <View style={styles.cardDetails}>
                   <Text style={styles.receiptId}>Receipt ID: {item.receipt_id}</Text>
                   <Text style={styles.receiptText}>Total: ₦{item.total_amount}</Text>
@@ -244,4 +244,17 @@ const styles = StyleSheet.create({
   voidButton: {
     backgroundColor: "#F44336",
   },
+    image: {
+      width: 58,
+      height: 58,
+      borderRadius: 29,
+      marginRight: 0,
+      borderWidth: 3,
+      borderColor: "#3A7BD5",
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 6,
+      elevation: 3,
+    },
 });

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { View, Text, FlatList, Alert, ActivityIndicator, TouchableOpacity } from "react-native";
+import { View, Text, FlatList, Alert, ActivityIndicator, TouchableOpacity , Image, StyleSheet} from "react-native";
 import { Card, Button, Divider, Chip, Avatar } from "react-native-paper";
 import Animated, { FadeInUp, FadeOut } from "react-native-reanimated";
 import axios from "axios";
@@ -107,7 +107,7 @@ const CustomerReceipts = () => {
             <Animated.View entering={FadeInUp} exiting={FadeOut}>
               <Card mode="elevated" style={{ marginBottom: 12, borderRadius: 16, padding: 10 }}>
                 <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
-                  <Avatar.Icon size={50} icon="store" style={{ backgroundColor: "#6200EE" }} />
+                  <Image source={{ uri: item.shop_image || 'https://via.placeholder.com/40' }} style={styles.image} />
                   <View style={{ marginLeft: 12 }}>
                     <Text style={{ fontSize: 18, fontWeight: "bold" }}>{item.shop}</Text>
                     <Text style={{ fontSize: 14, color: "#666" }}>Total: ₦{item.total_amount}</Text>
@@ -158,5 +158,21 @@ const CustomerReceipts = () => {
     </View>
   );
 };
+
+const styles = StyleSheet.create({
+  image: {
+    width: 50,
+    height: 50,
+    borderRadius: 29,
+    marginRight: 0,
+    borderWidth: 3,
+    borderColor: "#3A7BD5",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+})
 
 export default CustomerReceipts;
