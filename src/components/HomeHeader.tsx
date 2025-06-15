@@ -1,11 +1,11 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
 
 const screenWidth = Dimensions.get('window').width;
 
 export default function Header() {
-  const navigation = useNavigation();
+  const router = useRouter();
 
   // Placeholder for authentication logic
   const isSignedIn = false; // Replace with real authentication state
@@ -16,7 +16,7 @@ export default function Header() {
         <TouchableOpacity
           style={styles.signInButton}
           onPress={() => {
-            navigation.navigate('login'); // Navigate to the sign-in screen
+            router.push('/login'); // Navigate to the sign-in screen
           }}
         >
           <Text style={styles.signInText}>Sign In</Text>

@@ -9,42 +9,67 @@ import {
   ActivityIndicator,
 } from "react-native";
 import axios from "axios";
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { useRouter, useLocalSearchParams } from "expo-router";
+import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  Easing,
+} from "react-native-reanimated";
+
+const CACHE_KEY = "followedShopsCache";
 
 const AllFollowedShops = () => {
   const [shops, setShops] = useState([]);
   const [loading, setLoading] = useState(true);
-  const router = useRouter();
   const [sessionId, setSessionId] = useState(null);
+  const router = useRouter();
   const params = useLocalSearchParams();
   const { prevRoute } = params;
 
   useEffect(() => {
     const fetchUserId = async () => {
       const sessionIdString = await AsyncStorage.getItem("sessionToken");
-      setSessionId(sessionIdString); // No need to parse as an integer
+      setSessionId(sessionIdString);
     };
 
     fetchUserId();
-    console.log(sessionId, 'heya')
   }, []);
 
   useEffect(() => {
     if (sessionId) {
-      console.log(sessionId, 'heya')
+      const loadCachedData = async () => {
+        try {
+          const cachedData = await AsyncStorage.getItem(CACHE_KEY);
+          if (cachedData) {
+            const parsedData = JSON.parse(cachedData);
+            setShops(parsedData);
+            setLoading(false); // Display cached data immediately
+          }
+        } catch (error) {
+          console.error("Error loading cached shops:", error);
+        }
+      };
+
       const fetchAllFollowedShops = async () => {
         try {
-          const response = await axios.get("https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/followed/", {
-            headers: {
-              Authorization: sessionId,
-            },
-          });
+          const response = await axios.get(
+            "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/followed/",
+            {
+              headers: {
+                Authorization: sessionId,
+              },
+            }
+          );
           const sortedShops = response.data.sort((a, b) =>
             a.name.localeCompare(b.name)
           );
           setShops(sortedShops);
+          await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(sortedShops));
         } catch (error) {
           console.error("Error fetching all followed shops:", error);
         } finally {
@@ -52,56 +77,116 @@ const AllFollowedShops = () => {
         }
       };
 
+      loadCachedData();
       fetchAllFollowedShops();
     }
   }, [sessionId]);
 
-  const renderShopItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.shopCard}
-      onPress={() => {
-        router.push({
-          pathname: '/shop/shop-page',
-          params: { shopId: item.id },
-        });
-      }}
-    >
-      <Image
-        source={{ uri: `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${item.image}` }}
-        style={styles.shopImage}
-      />
-      <View style={styles.shopDetails}>
-        <Text style={styles.shopName}>{item.name}</Text>
-      </View>
-    </TouchableOpacity>
-  );
+  const AnimatedShopItem = ({ item }) => {
+    const opacity = useSharedValue(0);
+    const translateY = useSharedValue(20);
 
-  if (loading) {
+    useEffect(() => {
+      opacity.value = withTiming(1, {
+        duration: 600,
+        easing: Easing.out(Easing.cubic),
+      });
+      translateY.value = withTiming(0, {
+        duration: 600,
+        easing: Easing.out(Easing.cubic),
+      });
+    }, []);
+
+    const animatedStyle = useAnimatedStyle(() => ({
+      opacity: opacity.value,
+      transform: [{ translateY: translateY.value }],
+    }));
+
     return (
-      <View style={styles.loaderContainer}>
-        <ActivityIndicator size="large" color="#2563EB" />
-      </View>
+      <Animated.View style={[styles.shopCardContainer, animatedStyle]}>
+        <TouchableOpacity
+          style={styles.shopCard}
+          onPress={() => {
+            router.push({
+              pathname: "/shops/[id]",
+              params: { id: item.id },
+            });
+          }}
+          activeOpacity={0.85}
+        >
+          <View style={styles.imageContainer}>
+            <Image
+              source={{
+                uri: `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${item.image}`,
+              }}
+              style={styles.shopImage}
+            />
+            {/*<LinearGradient
+              colors={["transparent", "rgba(0,0,0,0.4)"]}
+              style={styles.imageGradient}
+            /> */}
+          </View>
+          <View style={styles.shopDetails}>
+            <Text style={styles.shopName}>{item.name}</Text>
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
+
+  const renderShopItem = ({ item }) => <AnimatedShopItem item={item} />;
+
+  if (loading && shops.length === 0) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <LinearGradient colors={["#F7FAFC", "#E5E7EB"]} style={styles.container}>
+          <View style={styles.header}>
+            <TouchableOpacity
+              onPress={() => router.replace(prevRoute || "/(tabs)/shop")}
+              style={styles.backButton}
+            >
+              <MaterialIcons name="arrow-back" size={26} color="white" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Favorite Shops</Text>
+            <View style={styles.headerSpacer} />
+          </View>
+          <View style={styles.loaderContainer}>
+            <ActivityIndicator size="large" color="#3A7BD5" />
+            <Text style={styles.loaderText}>Loading favorite shops...</Text>
+          </View>
+        </LinearGradient>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.replace(prevRoute || '((tabs)/shop)')} style={styles.backButton}>
-          <MaterialIcons name="arrow-back" size={26} color="#2563EB" />
-        </TouchableOpacity>
-        <Text style={styles.heading}>Followed Shops</Text>
-      </View>
-      <View style={styles.wrapper}>
-      <FlatList
-        data={shops}
-        renderItem={renderShopItem}
-        keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={styles.listContainer}
-        showsVerticalScrollIndicator={false}
-        />
-      </View>
-    </View>
+    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+      <LinearGradient colors={["#F7FAFC", "#E5E7EB"]} style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => router.replace(prevRoute || "/(tabs)/shop")}
+            style={styles.backButton}
+          >
+            <MaterialIcons name="arrow-back" size={26} color="white" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Favorite Space</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+        <View style={styles.wrapper}>
+          {shops.length === 0 ? (
+            <Text style={styles.noDataText}>No favorite shops yet.</Text>
+          ) : (
+            <FlatList
+              data={shops}
+              renderItem={renderShopItem}
+              keyExtractor={(item) => item.id.toString()}
+              contentContainerStyle={styles.listContainer}
+              showsVerticalScrollIndicator={false}
+            />
+          )}
+        </View>
+      </LinearGradient>
+    </SafeAreaView>
   );
 };
 
@@ -112,71 +197,102 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 18,
-    backgroundColor: "rgba(255, 255, 255, 0.8)",
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    backgroundColor: "#3A7BD5",
+    borderBottomLeftRadius: 35,
+    borderBottomRightRadius: 35,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 6,
-    elevation: 5,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    marginBottom: 12,
-    backdropFilter: "blur(10px)", // Glass effect
-  },
-  heading: {
-    fontSize: 22,
-    fontWeight: "bold",
-    marginLeft: 75,
-    color: "black",
+    elevation: 6,
   },
   backButton: {
-    borderRadius: 50,
-    backgroundColor: "#E0E0E0",
-    marginRight: 12,
+    padding: 5,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#FFFFFF",
+    textAlign: "center",
+    flex: 1,
+  },
+  headerSpacer: {
+    width: 42,
   },
   wrapper: {
     flex: 1,
-    paddingHorizontal: 15,
-    paddingTop: 15,
+    paddingHorizontal: 20,
+    paddingTop: 24,
   },
   listContainer: {
-    paddingTop: 0,
+    paddingBottom: 24,
+  },
+  shopCardContainer: {
+    marginBottom: 20,
   },
   shopCard: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FFFFFF",
-    padding: 18,
-    marginBottom: 12,
-    borderRadius: 16,
+    padding: 20,
+    borderRadius: 24,
     shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 8,
+    borderLeftWidth: 4,
+    borderColor: "#3A7BD5",
+  },
+  imageContainer: {
+    position: "relative",
   },
   shopImage: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    marginRight: 16,
-    backgroundColor: "#F3F4F6",
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    marginRight: 20,
+    backgroundColor: "#E5E7EB",
+  },
+  imageGradient: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 50,
   },
   shopDetails: {
     flex: 1,
   },
   shopName: {
     fontSize: 20,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#1F2937",
+    lineHeight: 28,
   },
   loaderContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#F7FAFC",
+  },
+  loaderText: {
+    marginTop: 12,
+    fontSize: 18,
+    color: "#3A7BD5",
+    fontWeight: "600",
+  },
+  noDataText: {
+    fontSize: 20,
+    color: "#1F2937",
+    textAlign: "center",
+    marginTop: 48,
+    fontWeight: "600",
+    lineHeight: 28,
   },
 });
 

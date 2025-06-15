@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useMemo } from "react";
+import React, { useState, useEffect, useContext, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -10,14 +10,16 @@ import {
   StyleSheet,
   Platform,
   KeyboardAvoidingView,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from "react-native";
 import axios from "axios";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import SubscriptionProvider, { SubscriptionContext } from "../../components/SubscriptionProvider";
-import SubscriptionRequired from "@/components/RequiredSubscription";
 import { MaterialIcons } from "@expo/vector-icons";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const GenerateReceipt = () => {
   const [customerName, setCustomerName] = useState("");
@@ -40,6 +42,12 @@ const GenerateReceipt = () => {
   const isSubscribed = useMemo(() => {
     return subscriptionStatus === "standard" || subscriptionStatus === "premium";
   }, [subscriptionStatus]);
+
+  // Refs for TextInputs
+  const customerIdRef = useRef(null);
+  const itemNameRef = useRef(null);
+  const qtyRef = useRef(null);
+  const priceRef = useRef(null);
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -81,12 +89,14 @@ const GenerateReceipt = () => {
   };
 
   const removeItem = (index) => {
+    console.log("Removing item at index:", index);
     const updatedItems = items.filter((_, i) => i !== index);
     setItems(updatedItems);
     calculateTotal(updatedItems);
   };
 
   const editItem = (index) => {
+    console.log("Editing item at index:", index);
     const itemToEdit = items[index];
     setNewItem({
       name: itemToEdit.name || "",
@@ -94,9 +104,11 @@ const GenerateReceipt = () => {
       price: itemToEdit.price.toString() || "",
     });
     setEditIndex(index);
+    itemNameRef.current?.focus();
   };
 
   const addItem = () => {
+    console.log("Adding/Editing item:", newItem);
     if (!newItem.name || !newItem.qty || !newItem.price) {
       Alert.alert("Error", "Please fill all item fields.");
       return;
@@ -122,10 +134,10 @@ const GenerateReceipt = () => {
     setItems(updatedItems);
     calculateTotal(updatedItems);
     setNewItem({ name: "", qty: "", price: "" });
+    Keyboard.dismiss();
   };
 
   const handleSearch = (text) => {
-    // Removed setNewItem since it's handled in onChangeText
     if (text.length > 0) {
       const filtered = shopProducts.filter((product) =>
         product.toLowerCase().startsWith(text.toLowerCase())
@@ -137,11 +149,14 @@ const GenerateReceipt = () => {
   };
 
   const selectProduct = (product) => {
+    console.log("Selecting product:", product);
     setNewItem({ ...newItem, name: product });
     setFilteredProducts([]);
+    qtyRef.current?.focus();
   };
 
   const generateReceipt = async () => {
+    console.log("Generating receipt with data:", { customerName, items, totalAmount });
     if (!customerName || items.length === 0 || !totalAmount) {
       Alert.alert("Error", "All fields are required!");
       return;
@@ -174,6 +189,7 @@ const GenerateReceipt = () => {
   };
 
   const downloadReceipt = async (receiptData) => {
+    console.log("Downloading receipt");
     if (!receiptData || !receiptData.pdf_content) {
       Alert.alert("Error", "Receipt file is missing or corrupted.");
       return;
@@ -218,11 +234,7 @@ const GenerateReceipt = () => {
     }
   };
 
-  // Log for debugging
-  console.log("Items:", items);
-  console.log("Filtered Products:", filteredProducts);
-
-  // Memoize filteredProducts to prevent unnecessary re-computations
+  // Memoize filteredProducts
   const filteredProductsMemo = useMemo(() => {
     if (newItem.name.length > 0) {
       return shopProducts.filter((product) =>
@@ -232,24 +244,23 @@ const GenerateReceipt = () => {
     return [];
   }, [newItem.name, shopProducts]);
 
-  // Memoize renderHeader to prevent unnecessary re-renders
+  // Memoize renderHeader
   const renderHeader = useMemo(() => (
     <View style={styles.card}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Generate Receipt</Text>
-      </View>
       <View>
         <View style={styles.inputContainer}>
           <TextInput
+            ref={customerIdRef}
             style={styles.input}
             placeholder="Customer Profile ID"
             value={customerId}
             keyboardType="numeric"
             maxLength={8}
             onChangeText={setCustomerId}
+            onFocus={() => console.log("Customer ID input focused")}
+            onBlur={() => console.log("Customer ID input blurred")}
+            returnKeyType="next"
+            onSubmitEditing={() => itemNameRef.current?.focus()}
           />
           {NameLoading && <ActivityIndicator size="small" color="#007BFF" />}
         </View>
@@ -264,6 +275,7 @@ const GenerateReceipt = () => {
         {/* Item Input Fields */}
         <View style={styles.itemInputRow}>
           <TextInput
+            ref={itemNameRef}
             style={[styles.itemInput, styles.itemsInput]}
             placeholder="Item Name"
             value={newItem.name}
@@ -271,20 +283,34 @@ const GenerateReceipt = () => {
               setNewItem({ ...newItem, name: text });
               handleSearch(text);
             }}
+            onFocus={() => console.log("Item Name input focused")}
+            onBlur={() => console.log("Item Name input blurred")}
+            returnKeyType="next"
+            onSubmitEditing={() => qtyRef.current?.focus()}
           />
           <TextInput
+            ref={qtyRef}
             style={[styles.itemInput, styles.qtyInput]}
             placeholder="Qty"
             keyboardType="numeric"
             value={newItem.qty}
             onChangeText={(text) => setNewItem({ ...newItem, qty: text })}
+            onFocus={() => console.log("Qty input focused")}
+            onBlur={() => console.log("Qty input blurred")}
+            returnKeyType="next"
+            onSubmitEditing={() => priceRef.current?.focus()}
           />
           <TextInput
+            ref={priceRef}
             style={[styles.itemInput, styles.priceInput]}
             placeholder="Price"
             keyboardType="numeric"
             value={newItem.price}
             onChangeText={(text) => setNewItem({ ...newItem, price: text })}
+            onFocus={() => console.log("Price input focused")}
+            onBlur={() => console.log("Price input blurred")}
+            returnKeyType="done"
+            onSubmitEditing={addItem}
           />
         </View>
 
@@ -299,24 +325,29 @@ const GenerateReceipt = () => {
                 <TouchableOpacity
                   style={styles.suggestion}
                   onPress={() => selectProduct(item)}
+                  activeOpacity={0.7}
                 >
                   <Text style={styles.suggestionText}>{item || "N/A"}</Text>
                 </TouchableOpacity>
               )}
-              keyboardShouldPersistTaps="handled"
+              keyboardShouldPersistTaps="always"
               nestedScrollEnabled
             />
           </View>
         )}
 
-        <TouchableOpacity style={styles.button} onPress={addItem}>
+        <TouchableOpacity
+          style={styles.button}
+          onPress={addItem}
+          activeOpacity={0.7}
+        >
           <Text style={styles.buttonText}>Add Item</Text>
         </TouchableOpacity>
       </View>
     </View>
-  ), [customerId, customerName, newItem, filteredProductsMemo, NameLoading, shopProducts]);
+  ), [customerId, customerName, newItem, filteredProductsMemo, NameLoading]);
 
-  // Memoize renderContent to prevent unnecessary re-renders
+  // Memoize renderContent
   const renderContent = useMemo(() => (
     <View style={styles.card}>
       <FlatList
@@ -348,12 +379,17 @@ const GenerateReceipt = () => {
                 maximumFractionDigits: 2,
               })}
             </Text>
-            <TouchableOpacity onPress={() => removeItem(index)} style={styles.removeButton}>
+            <TouchableOpacity
+              onPress={() => removeItem(index)}
+              style={styles.removeButton}
+              activeOpacity={0.7}
+            >
               <MaterialIcons name="delete" size={18} color="red" />
             </TouchableOpacity>
           </View>
         )}
         nestedScrollEnabled
+        keyboardShouldPersistTaps="always"
       />
       <View style={styles.totalContainer}>
         <Text style={styles.totalText}>
@@ -361,7 +397,11 @@ const GenerateReceipt = () => {
         </Text>
       </View>
 
-      <TouchableOpacity onPress={generateReceipt} style={styles.primaryButton}>
+      <TouchableOpacity
+        onPress={generateReceipt}
+        style={styles.primaryButton}
+        activeOpacity={0.7}
+      >
         <Text style={styles.primaryButtonText}>Generate Receipt</Text>
       </TouchableOpacity>
 
@@ -369,6 +409,7 @@ const GenerateReceipt = () => {
         <TouchableOpacity
           onPress={() => Alert.alert("Download", "Opening Receipt...")}
           style={styles.button}
+          activeOpacity={0.7}
         >
           <Text style={{ color: "white" }}>Download Receipt</Text>
         </TouchableOpacity>
@@ -377,19 +418,40 @@ const GenerateReceipt = () => {
   ), [items, totalAmount, receiptUrl]);
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
-    >
-      <FlatList
-        data={[{ id: "content" }]}
-        keyExtractor={(item) => item.id}
-        renderItem={() => renderContent}
-        ListHeaderComponent={renderHeader}
-        contentContainerStyle={{ flexGrow: 1 }}
-      />
-    </KeyboardAvoidingView>
+    <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <View style={{ flex: 1 }}>
+          <View style={styles.header}>
+            <TouchableOpacity
+              onPress={() => {
+                console.log("Back button pressed");
+                router.back();
+              }}
+              style={styles.backButton}
+              activeOpacity={0.7}
+            >
+              <MaterialIcons name="arrow-back" size={24} color="white" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Generate Receipt</Text>
+          </View>
+          <KeyboardAvoidingView
+            style={styles.container}
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
+            enabled
+          >
+            <FlatList
+              data={[{ id: "content" }]}
+              keyExtractor={(item) => item.id}
+              renderItem={() => renderContent}
+              ListHeaderComponent={renderHeader}
+              contentContainerStyle={{ flexGrow: 1 }}
+              keyboardShouldPersistTaps="always"
+            />
+          </KeyboardAvoidingView>
+        </View>
+      </TouchableWithoutFeedback>
+    </SafeAreaView>
   );
 };
 
@@ -397,38 +459,32 @@ const GenerateReceipt = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F5F5F5",
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 16,
     paddingHorizontal: 12,
-    backgroundColor: "#FFFFFF",
-    ...Platform.select({
-      ios: {
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 3,
-      },
-    }),
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: "bold",
-    marginLeft: 60,
-    color: "#000",
+    backgroundColor: "#3A7BD5",
+    borderBottomLeftRadius: 35,
+    borderBottomRightRadius: 35,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 6,
   },
   backButton: {
-    borderRadius: 50,
-    backgroundColor: "#E0E0E0",
-    padding: 6,
+    padding: 5,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#FFFFFF",
+    textAlign: "center",
+    flex: 1,
   },
   card: {
     flex: 1,
@@ -621,7 +677,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#DDD",
     maxHeight: 150,
-    zIndex: 999,
+    zIndex: 1000,
     ...Platform.select({
       ios: {
         shadowColor: "#000",

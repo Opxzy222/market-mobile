@@ -1,586 +1,510 @@
-import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
+// src/AutocompleteInput.js
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
+  TextInput,
+  FlatList,
   Text,
-  Image,
-  Modal,
   TouchableOpacity,
   StyleSheet,
-  Animated,
-} from "react-native";
-import { useVideoPlayer, VideoView } from "expo-video";
-import axios from "axios";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import RNFS from "react-native-fs"; 
+  ActivityIndicator,
+  Keyboard,
+} from 'react-native';
+import { debounce } from 'lodash';
+import { LinearGradient } from 'expo-linear-gradient';
+import axios from 'axios';
+import { initializeDatabase, getSuggestions, cacheSuggestions, getSuggestionsCount } from '../storage';
 
-const IMAGE_TEXT_DURATION = 6000;
-const VIDEO_MAX_DURATION = 30000;
-const CACHE_KEY = "videoCache";
+const AutocompleteInput = ({
+  value,
+  onChangeText,
+  onSubmit,
+  style,
+  onFocusChange,
+}) => {
+  const [suggestions, setSuggestions] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
 
-const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, userId }) => {
-  // State and refs
-  const [currentShopIndex, setCurrentShopIndex] = useState(0);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [sortedStatuses, setSortedStatuses] = useState([]);
-  const [videoCache, setVideoCache] = useState({});
-
-  const progress = useRef(new Animated.Value(0)).current;
-  const progressAnimation = useRef(null);
-  const pausedTime = useRef(0);
-  const isPaused = useRef(false);
-  const playerRef = useRef(null);
-  const isVideoFinished = useRef(false);
-
-  // Get all statuses
-  const getAllStatuses = useCallback(() => {
-    const statuses = sortedStatuses[currentShopIndex]?.statuses || [];
-    console.log("getAllStatuses:", statuses);
-    return statuses;
-  }, [sortedStatuses, currentShopIndex]);
-
-  // Current status
-  const currentStatus = useMemo(() => {
-    return sortedStatuses[currentShopIndex]?.statuses?.[currentIndex] || {};
-  }, [sortedStatuses, currentShopIndex, currentIndex]);
-
-  // Load video cache
   useEffect(() => {
-    const loadCache = async () => {
-      try {
-        const cached = await AsyncStorage.getItem(CACHE_KEY);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          console.log("Loaded video cache:", parsed);
-          setVideoCache(parsed);
-        }
-      } catch (error) {
-        console.error("Error loading video cache:", error);
-      }
-    };
-    loadCache();
+    initializeDatabase().then(() => {
+      populateInitialSuggestions();
+    });
   }, []);
 
-  // Video players
-  const currentPlayer = useVideoPlayer(currentStatus?.media ?? "", (player) => {
-    console.log("Current player initialized:", player);
-    playerRef.current = player;
-    player.loop = false;
-    player.onError = (error) => {
-      console.error("Current video error:", error);
-      handleNext();
-    };
-    if (currentStatus.media_type === "video" && videoCache[currentStatus.media]) {
-      console.log("Using cached video for current:", currentStatus.media);
-      player.source = { uri: currentStatus.media };
-    }
-  });
+  const populateInitialSuggestions = async (retryCount = 0, maxRetries = 3) => {
+    try {
+      const count = await getSuggestionsCount();
+      console.log('Suggestions count:', count);
+      if (count >= 2000) {
+        console.log('Suggestions table sufficiently populated, skipping fetch');
+        return;
+      }
 
-  // Next status for preloading
-  const nextStatus = useMemo(() => {
-    const allStatuses = getAllStatuses();
-    const nextIndex = currentIndex + 1;
-    return nextIndex < allStatuses.length
-      ? allStatuses[nextIndex]
-      : sortedStatuses[currentShopIndex + 1]?.statuses?.[0] || {};
-  }, [currentIndex, currentShopIndex, sortedStatuses, getAllStatuses]);
-
-  const nextPlayer = useVideoPlayer(nextStatus?.media ?? "", (player) => {
-    console.log("Next player initialized:", player);
-    player.loop = false;
-    player.onError = (error) => {
-      console.error("Next video error:", error);
-    };
-    if (nextStatus.media_type === "video" && videoCache[nextStatus.media]) {
-      console.log("Using cached video for next:", nextStatus.media);
-      player.source = { uri: nextStatus.media };
-    }
-  });
-
-  // Navigation handlers
-  const handleNext = useCallback(() => {
-    console.log("handleNext called");
-    const allStatuses = getAllStatuses();
-    if (!allStatuses.length) return;
-
-    if (playerRef.current) {
+      setIsLoading(true);
+      let response;
       try {
-        playerRef.current.pause();
-        console.log("Paused current player before next");
-      } catch (error) {
-        console.error("Pause error before next:", error);
+        response = await axios.get('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/all-suggestions/', {
+          timeout: 60000, // Increased to 60s
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'market-mobile/1.0.0',
+          },
+          validateStatus: status => status >= 200 && status < 300,
+        });
+      } catch (axiosError) {
+        console.error('Axios fetch failed:', axiosError);
+        console.log('Falling back to fetch');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
+        response = await fetch('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/all-suggestions/', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'market-mobile/1.0.0',
+          },
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        response.data = await response.json();
       }
-      playerRef.current = null; // Clear to prevent invalid access
-    }
 
-    setTimeout(() => {
-      if (currentIndex < allStatuses.length - 1) {
-        setCurrentIndex((prev) => prev + 1);
-      } else if (currentShopIndex < sortedStatuses.length - 1) {
-        setCurrentShopIndex((prev) => prev + 1);
-        setCurrentIndex(0);
-      } else {
-        onClose();
-      }
-    }, 100);
-  }, [currentIndex, currentShopIndex, sortedStatuses, onClose, getAllStatuses]);
+      console.log('Response status:', response.status || response.data);
+      console.log('Response headers:', response.headers);
 
-  const handlePrev = useCallback(() => {
-    console.log("handlePrev called");
-    if (playerRef.current) {
-      try {
-        playerRef.current.pause();
-        console.log("Paused current player before prev");
-      } catch (error) {
-        console.error("Pause error before prev:", error);
-      }
-      playerRef.current = null;
-    }
+      const rawSuggestions = response.data.suggestions
+        .map(item => (typeof item.name === 'string' ? item.name.trim() : null))
+        .filter(name => name);
+      console.log('Raw API suggestions:', rawSuggestions.length);
 
-    setTimeout(() => {
-      if (currentIndex > 0) {
-        setCurrentIndex((prev) => prev - 1);
-      } else if (currentShopIndex > 0) {
-        const prevShopStatuses = sortedStatuses[currentShopIndex - 1].statuses;
-        setCurrentShopIndex((prev) => prev - 1);
-        setCurrentIndex(prevShopStatuses.length - 1);
-      } else {
-        onClose();
-      }
-    }, 100);
-  }, [currentIndex, currentShopIndex, sortedStatuses, onClose]);
+      // Process in chunks and limit to 50,000
+      const maxSuggestions = 50000;
+      const chunkSize = 10000;
+      const uniqueSuggestions = [];
+      const seen = new Set();
 
-  // Calculate duration
-  const getStatusDuration = useCallback(() => {
-    const mediaType = currentStatus.media_type;
-    if (!mediaType) return IMAGE_TEXT_DURATION;
-    if (mediaType === "video") {
-      const safeDuration = playerRef.current?.duration
-        ? playerRef.current.duration * 1000
-        : VIDEO_MAX_DURATION;
-      console.log("Video duration:", safeDuration);
-      return Math.min(safeDuration, VIDEO_MAX_DURATION);
-    }
-    console.log("Image/text duration:", IMAGE_TEXT_DURATION);
-    return IMAGE_TEXT_DURATION;
-  }, [currentStatus.media_type]);
-
-  // Start progress animation
-  const startProgress = useCallback(
-    (duration) => {
-      console.log("startProgress called, duration:", duration);
-      if (isPaused.current || isVideoFinished.current) return;
-      progress.setValue(progress.__getValue());
-      progressAnimation.current?.stop();
-      progressAnimation.current = Animated.timing(progress, {
-        toValue: 1,
-        duration: duration,
-        useNativeDriver: true,
-      });
-      progressAnimation.current.start(({ finished }) => {
-        console.log("Progress animation finished:", finished);
-        if (finished && !isPaused.current && !isVideoFinished.current) {
-          handleNext();
-        }
-      });
-    },
-    [handleNext]
-  );
-
-  // Mark status as viewed and cache video
-  const markStatusAsViewed = useCallback(
-    async (status) => {
-      if (!status || status.viewed || !userId) return;
-      try {
-        console.log("Marking status as viewed:", status.id);
-        const formData = new FormData();
-        formData.append("user_id", userId.toString());
-        formData.append("status_ids[]", status.id);
-
-        await axios.post(
-          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/mark_status_viewed/",
-          formData,
-          { headers: { "Content-Type": "multipart/form-data" } }
-        );
-        status.viewed = true;
-
-        if (status.media_type === "video" && status.media && !videoCache[status.media]) {
-          const newCache = { ...videoCache, [status.media]: status.media };
-          setVideoCache(newCache);
-          await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(newCache));
-          console.log("Cached video:", status.media);
-        }
-      } catch (error) {
-        console.error("Error marking status as viewed:", error);
-      }
-    },
-    [userId, videoCache]
-  );
-
-  // Pause/resume
-  const togglePause = useCallback(() => {
-    console.log("togglePause called, isPaused:", isPaused.current, "playerRef:", playerRef.current);
-    isPaused.current = !isPaused.current;
-
-    if (isPaused.current) {
-      pausedTime.current = progress.__getValue() * getStatusDuration();
-      console.log("Pausing, pausedTime:", pausedTime.current);
-      progressAnimation.current?.stop();
-      if (
-        currentStatus.media_type === "video" &&
-        playerRef.current &&
-        typeof playerRef.current.pause === "function"
-      ) {
-        try {
-          playerRef.current.pause();
-          console.log("Video paused successfully");
-        } catch (error) {
-          console.error("Pause error:", error);
-        }
-      }
-    } else {
-      const remainingTime = getStatusDuration() - pausedTime.current;
-      console.log("Resuming, remainingTime:", remainingTime);
-      progress.setValue(pausedTime.current / getStatusDuration());
-      startProgress(remainingTime);
-      if (
-        currentStatus.media_type === "video" &&
-        playerRef.current &&
-        typeof playerRef.current.play === "function"
-      ) {
-        try {
-          playerRef.current.play();
-          console.log("Video playing successfully");
-        } catch (error) {
-          console.error("Play error:", error);
-        }
-      }
-    }
-  }, [getStatusDuration, startProgress, currentStatus.media_type]);
-
-  // Initialize statuses
-  useEffect(() => {
-    if (!visible || !statuses?.length) {
-      console.log("Not visible or no statuses:", { visible, statuses });
-      setSortedStatuses([]);
-      return;
-    }
-
-    console.log("Initializing statuses:", statuses);
-    const sorted = statuses.map((shop) => ({
-      ...shop,
-      statuses: shop.statuses
-        .slice()
-        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)),
-    }));
-
-    let shopIndex = 0;
-    let statusIndex = 0;
-
-    const firstUnviewedShopIndex = sorted.findIndex((shop) =>
-      shop.statuses.some((status) => !status.viewed)
-    );
-    if (firstUnviewedShopIndex !== -1) {
-      shopIndex = firstUnviewedShopIndex;
-      const firstUnviewedStatusIndex = sorted[firstUnviewedShopIndex].statuses.findIndex(
-        (status) => !status.viewed
-      );
-      statusIndex = firstUnviewedStatusIndex !== -1 ? firstUnviewedStatusIndex : 0;
-    } else if (initialIndex >= 0 && initialIndex < sorted.length) {
-      shopIndex = initialIndex;
-      statusIndex = 0;
-    }
-
-    console.log("Setting initial indices:", { shopIndex, statusIndex });
-    setSortedStatuses(sorted);
-    setCurrentShopIndex(shopIndex);
-    setCurrentIndex(statusIndex);
-  }, [visible, statuses, initialIndex]);
-
-  // Handle video playback completion
-  const handleVideoStatusChange = useCallback(
-    (status) => {
-      console.log("Video status change:", status);
-      if (
-        status.isPlaying &&
-        status.positionMillis >= status.durationMillis &&
-        !isVideoFinished.current &&
-        !isPaused.current
-      ) {
-        console.log("Video finished playing, moving to next status");
-        isVideoFinished.current = true;
-        progressAnimation.current?.stop();
-        handleNext();
-      }
-    },
-    [handleNext]
-  );
-
-  // Handle status change and video playback
-  useEffect(() => {
-    if (!visible || !getAllStatuses().length) return;
-
-    const status = getAllStatuses()[currentIndex];
-    if (!status) {
-      console.log("No status available");
-      return;
-    }
-
-    console.log("Status changed:", status);
-
-    // Reset state
-    progressAnimation.current?.stop();
-    progress.setValue(0);
-    pausedTime.current = 0;
-    isPaused.current = false;
-    isVideoFinished.current = false;
-
-    if (playerRef.current) {
-      try {
-        playerRef.current.pause();
-        console.log("Paused player before status change");
-      } catch (error) {
-        console.error("Pause error before status change:", error);
-      }
-      playerRef.current = null;
-    }
-
-    markStatusAsViewed(status);
-
-    const duration = getStatusDuration();
-    if (status.media_type === "video") {
-      const checkVideoReady = setInterval(() => {
-        if (playerRef.current?.duration && playerRef.current.duration > 0) {
-          console.log("Video ready, duration:", playerRef.current.duration);
-          clearInterval(checkVideoReady);
-          if (!isPaused.current) {
-            try {
-              playerRef.current.play();
-              console.log("Video started playing");
-            } catch (error) {
-              console.error("Play error on load:", error);
-            }
-            startProgress(duration);
+      for (let i = 0; i < rawSuggestions.length && uniqueSuggestions.length < maxSuggestions; i += chunkSize) {
+        const chunk = rawSuggestions.slice(i, i + chunkSize);
+        for (const s of chunk) {
+          const lower = s.toLowerCase();
+          if (!seen.has(lower)) {
+            seen.add(lower);
+            uniqueSuggestions.push(s);
+            if (uniqueSuggestions.length >= maxSuggestions) break;
           }
-        } else {
-          console.log("Video not ready yet");
         }
-      }, 100);
-      return () => {
-        console.log("Cleaning up video check");
-        clearInterval(checkVideoReady);
-      };
-    } else {
-      if (!isPaused.current) {
-        startProgress(duration);
       }
+      console.log('Unique suggestions:', uniqueSuggestions.length);
+
+      await cacheSuggestions(uniqueSuggestions);
+    } catch (error) {
+      console.error('Error populating suggestions:', error);
+      if (axios.isAxiosError(error)) {
+        console.error('Axios error details:', {
+          message: error.message,
+          code: error.code,
+          response: error.response ? {
+            status: error.response.status,
+            data: error.response.data,
+            headers: error.response.headers,
+          } : null,
+          request: error.request ? {
+            method: error.request.method,
+            url: error.request.url,
+            headers: error.request.headers,
+          } : null,
+        });
+      }
+      if (retryCount < maxRetries) {
+        const count = await getSuggestionsCount();
+        if (count < 2000) {
+          console.log(`Retrying fetch, attempt ${retryCount + 1}`);
+          setTimeout(() => populateInitialSuggestions(retryCount + 1, maxRetries), 5000);
+        }
+      }
+    } finally {
+      setIsLoading(false);
     }
+  };
 
-    return () => {
-      console.log("Cleaning up effect");
-      progressAnimation.current?.stop();
-      if (playerRef.current && typeof playerRef.current.pause === "function") {
-        try {
-          playerRef.current.pause();
-          console.log("Paused video on cleanup");
-        } catch (error) {
-          console.error("Cleanup pause error:", error);
-        }
-        playerRef.current = null;
+  const fetchSuggestions = useCallback(
+    debounce(async (input) => {
+      if (!input || input.length < 2) {
+        setSuggestions([]);
+        return;
       }
-    };
-  }, [visible, currentIndex, currentShopIndex, getAllStatuses, markStatusAsViewed, startProgress, getStatusDuration]);
+      setIsLoading(true);
+      try {
+        const results = await getSuggestions(input, 50, 0);
+        console.log('Filtered suggestions:', results);
+        setSuggestions(results);
+      } catch (error) {
+        console.error('Error fetching suggestions:', error);
+        setSuggestions([]);
+      } finally {
+        setIsLoading(false);
+      }
+    }, 300),
+    []
+  );
 
-  // Reset when modal closes
-  useEffect(() => {
-    if (!visible) {
-      console.log("Modal closing, resetting state");
-      setCurrentShopIndex(0);
-      setCurrentIndex(0);
-      setSortedStatuses([]);
-      progress.setValue(0);
-      progressAnimation.current?.stop();
-      if (playerRef.current && typeof playerRef.current.pause === "function") {
-        try {
-          playerRef.current.pause();
-          console.log("Paused video on modal close");
-        } catch (error) {
-          console.error("Modal close pause error:", error);
-        }
-        playerRef.current = null;
-      }
+  const handleInput = (text) => {
+    onChangeText(text);
+    fetchSuggestions(text);
+  };
+
+  const handleSelectSuggestion = (suggestion) => {
+    console.log('Selected suggestion:', suggestion);
+    onChangeText(suggestion);
+    setSuggestions([]);
+    setIsFocused(false);
+    onSubmit(suggestion);
+    onFocusChange?.(false);
+    Keyboard.dismiss();
+  };
+
+  const handleSubmitEditing = () => {
+    if (value) {
+      console.log('Submitted value:', value);
+      setSuggestions([]);
+      setIsFocused(false);
+      onSubmit(value);
+      onFocusChange?.(false);
     }
-  }, [visible]);
+  };
 
-  if (!visible || !getAllStatuses().length) {
-    console.log("Rendering null, visible:", visible, "statuses length:", getAllStatuses().length);
-    return null;
-  }
+  const handleFocus = () => {
+    console.log('Input focused');
+    setIsFocused(true);
+    onFocusChange?.(true);
+  };
 
-  const isImage = currentStatus.media_type === "image";
-  const isVideo = currentStatus.media_type === "video";
-  const hasMedia = (isImage || isVideo) && !!currentStatus.media;
-  const statusText = currentStatus.text || "";
-
-  console.log("Rendering status:", { isImage, isVideo, hasMedia, media: currentStatus.media });
+  const handleBlur = () => {
+    console.log('Input blurred');
+    setIsFocused(false);
+    onFocusChange?.(false);
+  };
 
   return (
-    <Modal visible={visible} animationType="fade" transparent>
-      <View style={styles.container}>
-        <View style={styles.progressContainer}>
-          {getAllStatuses().map((_, idx) => (
-            <View key={idx} style={styles.progressBackground}>
-              <Animated.View
-                style={[
-                  styles.progressBar,
-                  {
-                    transform: [
-                      {
-                        scaleX: idx === currentIndex
-                          ? progress.interpolate({ inputRange: [0, 1], outputRange: [0, 1] })
-                          : idx < currentIndex
-                          ? 1
-                          : 0,
-                      },
-                    ],
-                  },
-                ]}
-              />
-            </View>
-          ))}
-        </View>
+    <View style={[styles.container, style]}>
+      <LinearGradient
+        colors={['#F8FAFC', '#E5E7EB']}
+        style={[styles.inputWrapper, isFocused && styles.inputWrapperFocused]}
+      >
+        <TextInput
+          style={styles.input}
+          value={value}
+          onChangeText={handleInput}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          onSubmitEditing={handleSubmitEditing}
+          placeholder="What are you looking for?"
+          placeholderTextColor="#777"
+          returnKeyType="search"
+        />
+        {isLoading && <ActivityIndicator size="small" color="#007bff" style={styles.loader} />}
+      </LinearGradient>
 
-        <TouchableOpacity style={[styles.leftExpanded, { zIndex: 10 }]} onPress={handlePrev} />
-
-        <TouchableOpacity
-          style={[styles.content, { zIndex: 5 }]}
-          activeOpacity={0.8}
-          onPress={togglePause}
+      {suggestions.length > 0 && isFocused && (
+        <LinearGradient
+          colors={['#FFFFFF', '#F8FAFC']}
+          style={styles.suggestionsContainer}
         >
-          {hasMedia ? (
-            <>
-              {isVideo ? (
-                <VideoView
-                  style={styles.media}
-                  player={currentPlayer}
-                  resizeMode="cover"
-                  allowsFullscreen={false}
-                  allowsPictureInPicture={false}
-                  onStatusChange={isVideo ? handleVideoStatusChange : undefined}
-                />
-              ) : isImage ? (
-                <Image
-                  source={{ uri: currentStatus.media }}
-                  style={styles.media}
-                  resizeMode="contain"
-                />
-              ) : null}
-              {statusText.trim().length > 0 && (
-                <Text style={styles.caption}>{statusText}</Text>
-              )}
-            </>
-          ) : (
-            <View style={styles.plainTextContainer}>
-              <Text style={styles.plainText}>{statusText || "No media available"}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity style={[styles.rightExpanded, { zIndex: 10 }]} onPress={handleNext} />
-
-        <TouchableOpacity style={[styles.closeButton, { zIndex: 15 }]} onPress={onClose}>
-          <Text style={styles.closeText}>✕</Text>
-        </TouchableOpacity>
-      </View>
-    </Modal>
+          <FlatList
+            data={suggestions}
+            keyExtractor={(item, index) => index.toString()}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.suggestionItem}
+                onPress={() => handleSelectSuggestion(item)}
+              >
+                <Text style={styles.suggestionText}>{item}</Text>
+              </TouchableOpacity>
+            )}
+            keyboardShouldPersistTaps="handled"
+            initialNumToRender={10}
+            maxToRenderPerBatch={10}
+            windowSize={5}
+          />
+        </LinearGradient>
+      )}
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
+    width: '100%',
+    position: 'relative',
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 4,
+  },
+  inputWrapperFocused: {
+    borderColor: '#007bff',
+    shadowOpacity: 0.2,
+  },
+  input: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.95)",
-  },
-  progressContainer: {
-    flexDirection: "row",
-    paddingHorizontal: 10,
-    paddingTop: 40,
-    paddingBottom: 10,
-    gap: 4,
-    zIndex: 20,
-  },
-  progressBackground: {
-    flex: 1,
-    height: 2,
-    backgroundColor: "rgba(255, 255, 255, 0.5)",
-    overflow: "hidden",
-  },
-  progressBar: {
-    height: 2,
-    backgroundColor: "#fff",
-    width: "100%",
-  },
-  content: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  media: {
-    width: "100%",
-    height: "80%",
-  },
-  caption: {
-    position: "absolute",
-    bottom: 20,
-    color: "#fff",
+    height: 48,
     fontSize: 16,
-    textAlign: "center",
-    paddingHorizontal: 20,
-    textShadowColor: "rgba(0, 0, 0, 0.5)",
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 2,
-    zIndex: 10,
+    color: '#333',
+    backgroundColor: 'transparent',
   },
-  plainTextContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
+  loader: {
+    marginLeft: 10,
   },
-  plainText: {
-    color: "#fff",
-    fontSize: 18,
-    textAlign: "center",
+  suggestionsContainer: {
+    marginTop: 4,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 4,
   },
-  leftExpanded: {
-    position: "absolute",
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: "40%",
+  suggestionItem: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
-  rightExpanded: {
-    position: "absolute",
-    right: 0,
-    top: 0,
-    bottom: 0,
-    width: "40%",
-  },
-  closeButton: {
-    position: "absolute",
-    top: 40,
-    right: 15,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  closeText: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "bold",
+  suggestionText: {
+    fontSize: 16,
+    color: '#333',
   },
 });
 
-export default StatusViewer;
+export default React.memo(AutocompleteInput);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// src/storage.ts
+import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+let isInitialized = false;
+
+const initializeDatabase = async (): Promise<void> => {
+  if (isInitialized) {
+    console.log('Database already initialized, skipping');
+    return;
+  }
+
+  if (Platform.OS === 'web') {
+    console.log('Platform is web, using AsyncStorage');
+    isInitialized = true;
+    return;
+  }
+
+  const { initializeSQLiteDatabase } = await import('./sqliteStorage.native');
+  await initializeSQLiteDatabase();
+  isInitialized = true;
+};
+
+const storeData = async (key: string, value: string): Promise<number> => {
+  const encodedValue = btoa(encodeURIComponent(value));
+
+  if (Platform.OS === 'web') {
+    try {
+      await AsyncStorage.setItem(key, encodedValue);
+      console.log('Stored in AsyncStorage:', key);
+      return 1;
+    } catch (error) {
+      console.error('Error storing in AsyncStorage:', error);
+      throw error;
+    }
+  }
+
+  const { getSQLiteDatabase } = await import('./sqliteStorage.native');
+  const db = getSQLiteDatabase();
+
+  try {
+    const result = await db.runAsync(
+      'INSERT OR REPLACE INTO secure_data (key, value) VALUES (?, ?);',
+      [key, encodedValue]
+    );
+    console.log('Stored in SQLite (secure_data):', result.lastInsertRowId, result.changes);
+    return result.lastInsertRowId ?? 0;
+  } catch (error) {
+    console.error('SQLite store failed:', error);
+    throw error;
+  }
+};
+
+const getData = async (key: string): Promise<string | null> => {
+  if (Platform.OS === 'web') {
+    try {
+      const value = await AsyncStorage.getItem(key);
+      if (value) {
+        return decodeURIComponent(atob(value));
+      }
+      return null;
+    } catch (error) {
+      console.error('Error retrieving from AsyncStorage:', error);
+      throw error;
+    }
+  }
+
+  const { getSQLiteDatabase } = await import('./sqliteStorage.native');
+  const db = getSQLiteDatabase();
+
+  try {
+    const row = await db.getFirstAsync<{ value: string }>(
+      'SELECT value FROM secure_data WHERE key = ?;',
+      [key]
+    );
+    if (row) {
+      return decodeURIComponent(atob(row.value));
+    }
+    return null;
+  } catch (error) {
+    console.error('SQLite retrieval failed:', error);
+    throw error;
+  }
+};
+
+const clearStaleData = async (prefix: string): Promise<void> => {
+  if (Platform.OS === 'web') {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      for (const key of keys) {
+        if (key.startsWith(prefix)) {
+          await AsyncStorage.removeItem(key);
+          console.log('Removed stale key from AsyncStorage:', key);
+        }
+      }
+    } catch (error) {
+      console.error('Error clearing stale AsyncStorage:', error);
+    }
+    return;
+  }
+
+  const { getSQLiteDatabase } = await import('./sqliteStorage.native');
+  const db = getSQLiteDatabase();
+
+  try {
+    await db.runAsync('DELETE FROM secure_data WHERE key LIKE ?;', [`${prefix}%`]);
+    console.log('Cleared stale secure_data');
+  } catch (error) {
+    console.error('Error clearing stale secure_data:', error);
+    throw error;
+  }
+};
+
+const getSuggestions = async (query: string, limit: number = 50, offset: number = 0): Promise<string[]> => {
+  if (Platform.OS === 'web') {
+    try {
+      const cached = await AsyncStorage.getItem('suggestions');
+      if (!cached) return [];
+      const suggestions = JSON.parse(cached);
+      const filtered = suggestions
+        .filter((name: string) => name.toLowerCase().includes(query.toLowerCase()))
+        .slice(offset, offset + limit);
+      console.log(`Fetched ${filtered.length} suggestions from AsyncStorage`);
+      return filtered;
+    } catch (error) {
+      console.error('Error fetching suggestions from AsyncStorage:', error);
+      throw error;
+    }
+  }
+
+  const { getSQLiteDatabase } = await import('./sqliteStorage.native');
+  const db = getSQLiteDatabase();
+
+  try {
+    const results = await db.getAllAsync(
+      `SELECT name FROM suggestions WHERE name MATCH ? LIMIT ? OFFSET ?`,
+      [`${query}*`, limit, offset]
+    );
+    console.log(`Fetched ${results.length} suggestions from SQLite`);
+    return results.map((row: any) => row.name);
+  } catch (error) {
+    console.error('SQLite suggestions fetch failed:', error);
+    throw error;
+  }
+};
+
+const cacheSuggestions = async (suggestions: string[]): Promise<void> => {
+  if (Platform.OS === 'web') {
+    try {
+      await AsyncStorage.setItem('suggestions', JSON.stringify(suggestions));
+      console.log('Cached suggestions in AsyncStorage');
+    } catch (error) {
+      console.error('Error caching suggestions in AsyncStorage:', error);
+      throw error;
+    }
+    return;
+  }
+
+  const { getSQLiteDatabase } = await import('./sqliteStorage.native');
+  const db = getSQLiteDatabase();
+
+  try {
+    const batchSize = 1000; // Increased to 1000
+    for (let i = 0; i < suggestions.length; i += batchSize) {
+      const batch = suggestions.slice(i, i + batchSize);
+      await db.execAsync(`
+        INSERT INTO suggestions (name)
+        VALUES ${batch.map(() => '(?)').join(', ')};
+      `, batch);
+      console.log(`Cached ${i + batch.length} suggestions in SQLite`);
+    }
+  } catch (error) {
+    console.error('Error caching suggestions in SQLite:', error);
+    throw error;
+  }
+};
+
+const getSuggestionsCount = async (): Promise<number> => {
+  if (Platform.OS === 'web') {
+    try {
+      const cached = await AsyncStorage.getItem('suggestions');
+      if (!cached) return 0;
+      const suggestions = JSON.parse(cached);
+      return suggestions.length;
+    } catch (error) {
+      console.error('Error counting suggestions in AsyncStorage:', error);
+      return 0;
+    }
+  }
+
+  const { getSQLiteDatabase } = await import('./sqliteStorage.native');
+  const db = getSQLiteDatabase();
+
+  try {
+    const row = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM suggestions');
+    return row?.count ?? 0;
+  } catch (error) {
+    console.error('Error counting suggestions in SQLite:', error);
+    return 0;
+  }
+};
+
+export { initializeDatabase, storeData, getData, clearStaleData, getSuggestions, cacheSuggestions, getSuggestionsCount };

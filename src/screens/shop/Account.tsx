@@ -1,95 +1,194 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-} from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useRouter, useLocalSearchParams, usePathname } from "expo-router";
-import MaterialIcons from "react-native-vector-icons/MaterialIcons";
+  Alert,
+  ScrollView,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter, usePathname } from 'expo-router';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import axios from 'axios';
 
 const Account = () => {
   const [userId, setUserId] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [accountBalance, setAccountBalance] = useState(0);
-  const [accountNumber, setAccountNumber] = useState("**** **** **** 1234");
+  const [balance, setBalance] = useState(0);
+  const [virtualAccount, setVirtualAccount] = useState(null);
+  const [subscription, setSubscription] = useState({ plan: null, end_date: null });
   const pathname = usePathname();
-
   const router = useRouter();
-  const params = useLocalSearchParams();
-  const { prevRoute } = params;
+
+  const API_BASE_URL = 'https://retail-alvinia-goza-f6a0e4f7.koyeb.app';
 
   useEffect(() => {
-    const fetchUserData = async () => {
-      const userIdString = await AsyncStorage.getItem("user_id");
-      if (userIdString) {
-        setUserId(parseInt(userIdString, 10));
-      }
-      setTimeout(() => {
-        setAccountBalance(2500.75);
+    const loadCachedData = async () => {
+      try {
+        const cachedBalance = await AsyncStorage.getItem('balance');
+        const cachedAccountNumber = await AsyncStorage.getItem('dva_account_number');
+        const cachedBankName = await AsyncStorage.getItem('dva_bank_name');
+        const cachedAccountName = await AsyncStorage.getItem('dva_account_name');
+        const cachedPlan = await AsyncStorage.getItem('subscription_plan');
+        const cachedEndDate = await AsyncStorage.getItem('subscription_end_date');
+
+        if (cachedBalance) {
+          setBalance(parseFloat(cachedBalance));
+        }
+        if (cachedAccountNumber && cachedBankName && cachedAccountName) {
+          setVirtualAccount({
+            account_number: cachedAccountNumber,
+            bank_name: cachedBankName,
+            account_name: cachedAccountName,
+          });
+        }
+        if (cachedPlan || cachedEndDate) {
+          setSubscription({
+            plan: cachedPlan,
+            end_date: cachedEndDate,
+          });
+        }
+      } catch (error) {
+        console.error('Error loading cached data:', error);
+      } finally {
         setLoading(false);
-      }, 1500);
+      }
     };
 
-    fetchUserData();
+    const fetchUserData = async () => {
+      try {
+        const userIdString = await AsyncStorage.getItem('user_id');
+        const token = await AsyncStorage.getItem('sessionToken');
+        if (userIdString && token) {
+          setUserId(parseInt(userIdString, 10));
+          setLoading(true);
+          const response = await axios.get(`${API_BASE_URL}/payments/balance/`, {
+            headers: { Authorization: token },
+          });
+          const { balance, virtual_account, subscription } = response.data;
+          setBalance(balance);
+          setVirtualAccount(virtual_account);
+          setSubscription(subscription);
+          await AsyncStorage.setItem('balance', balance.toString());
+          if (virtual_account) {
+            await AsyncStorage.setItem('dva_account_number', virtual_account.account_number);
+            await AsyncStorage.setItem('dva_bank_name', virtual_account.bank_name);
+            await AsyncStorage.setItem('dva_account_name', virtual_account.account_name);
+          }
+          if (subscription) {
+            await AsyncStorage.setItem('subscription_plan', subscription.plan || '');
+            await AsyncStorage.setItem('subscription_end_date', subscription.end_date || '');
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching balance:', error);
+        Alert.alert('Error', 'Failed to load account details. Showing cached data.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadCachedData().then(fetchUserData);
   }, []);
 
   return (
-    <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
-      {/* Account Details */}
-      <View style={styles.accountCard}>
-        <Text style={styles.accountLabel}>Account Number</Text>
-        <Text style={styles.accountNumber}>{accountNumber}</Text>
+    <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* Account Details Card */}
+        <View style={styles.accountCard}>
+          {/*<Text style={styles.cardTitle}>Your Virtual Account</Text>*/}
+          {loading && !virtualAccount && !balance ? (
+            <ActivityIndicator size="large" color="#5A8DEE" style={styles.loader} />
+          ) : (
+            <>
+              {virtualAccount ? (
+                <>
+                  <View style={styles.accountInfo}>
+                    <MaterialIcons name="account-balance" size={24} color="#5A8DEE" />
+                    <View>
+                      <Text style={styles.accountLabel}>Account Number</Text>
+                      <Text style={styles.accountValue}>{virtualAccount.account_number}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.accountInfo}>
+                    <MaterialIcons name="person" size={24} color="#5A8DEE" />
+                    <View>
+                      <Text style={styles.accountLabel}>Account Name</Text>
+                      <Text style={styles.accountValue}>{virtualAccount.account_name}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.accountInfo}>
+                    <MaterialIcons name="business" size={24} color="#5A8DEE" />
+                    <View>
+                      <Text style={styles.accountLabel}>Bank Name</Text>
+                      <Text style={styles.accountValue}>{virtualAccount.bank_name}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.balanceContainer}>
+                    <MaterialIcons name="account-balance-wallet" size={24} color="#5A8DEE" />
+                    <View>
+                      <Text style={styles.accountLabel}>Available Balance</Text>
+                      <Text style={styles.balance}>₦{balance.toFixed(2)}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.instruction}>
+                    To top up your balance, transfer funds to your virtual account above using any bank.
+                  </Text>
+                </>
+              ) : (
+                <View style={styles.noAccountContainer}>
+                  <Text style={styles.noAccountText}>
+                    No virtual account assigned. Please verify your ID to get one.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.verifyButton}
+                    onPress={() => router.push({ pathname: 'Verify', params: { prevRoute: pathname } })}
+                  >
+                    <Text style={styles.verifyButtonText}>Verify ID</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              
+            </>
+          )}
+        </View>
 
-        <Text style={styles.balanceLabel}>Available Balance</Text>
-        {loading ? (
-          <ActivityIndicator size="large" color="#5A8DEE" />
-        ) : (
-          <Text style={styles.balance}>${accountBalance.toFixed(2)}</Text>
-        )}
-      </View>
-
-      {/* Options */}
-      <View style={styles.optionsContainer}>
-        <TouchableOpacity
-          style={styles.optionCard}
-          onPress={() =>
-            router.push({ pathname: "shop/CustomerReceipts", params: { prevRoute: pathname } })
-          }
-        >
-          <MaterialIcons name="receipt-long" size={26} color="#333" />
-          <Text style={styles.optionText}>Receipts</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.optionCard}>
-          <MaterialIcons name="sync-alt" size={26} color="#333" />
-          <Text style={styles.optionText}>Transactions</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Subscription Plans */}
-      <Text style={styles.subscriptionTitle}>Subscription Plans</Text>
-
-      <View style={styles.subscriptionContainer}>
-        <TouchableOpacity style={styles.subscriptionCard}>
-          <MaterialIcons name="star-border" size={28} color="#5A8DEE" />
-          <View style={styles.planDetails}>
-            <Text style={styles.planTitle}>Standard Plan</Text>
-            <Text style={styles.planPrice}>$9.99/month</Text>
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={[styles.subscriptionCard, styles.premiumCard]}>
-          <MaterialIcons name="star" size={28} color="#FFD700" />
-          <View style={styles.planDetails}>
-            <Text style={[styles.planTitle, styles.premiumText]}>Premium Plan</Text>
-            <Text style={[styles.planPrice, styles.premiumText]}>$19.99/month</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
+        {/* Navigation Options */}
+        <View style={styles.optionsContainer}>
+          <TouchableOpacity
+            style={styles.optionCard}
+            onPress={() =>
+              router.push({ pathname: 'shop/CustomerReceipts', params: { prevRoute: pathname } })
+            }
+          >
+            <MaterialIcons name="receipt-long" size={24} color="#5A8DEE" />
+            <Text style={styles.optionText}>View Receipts</Text>
+          </TouchableOpacity>
+          {/*<TouchableOpacity style={styles.optionCard}>
+            <MaterialIcons name="sync-alt" size={24} color="#5A8DEE" />
+            <Text style={styles.optionText}>View Transactions</Text>
+          </TouchableOpacity> */}
+          <TouchableOpacity
+            style={styles.optionCard}
+            onPress={() =>
+              router.push({
+                pathname: 'shop/Subscription',
+                params: {
+                  prevRoute: pathname,
+                  currentPlan: subscription.plan || 'none',
+                  endDate: subscription.end_date || 'N/A',
+                },
+              })
+            }
+          >
+            <MaterialIcons name="card-membership" size={24} color="#5A8DEE" />
+            <Text style={styles.optionText}>Subscription</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
     </LinearGradient>
   );
 };
@@ -97,104 +196,120 @@ const Account = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingTop: 40,
+    paddingBottom: 20,
   },
   accountCard: {
-    backgroundColor: "#fff",
+    backgroundColor: '#fff',
+    borderRadius: 16,
     padding: 20,
-    borderRadius: 15,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 5,
     marginTop: 20,
-    alignItems: "center",
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 5,
+  },
+  cardTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#2A3A4E',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  accountInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  subscriptionInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+    paddingTop: 15,
+    borderTopWidth: 1,
+    borderTopColor: '#E8ECEF',
   },
   accountLabel: {
     fontSize: 14,
-    color: "#333",
-    fontWeight: "500",
+    color: '#7A869A',
+    fontWeight: '500',
   },
-  accountNumber: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#2A3A4E",
-    marginVertical: 5,
+  accountValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#2A3A4E',
+    marginTop: 2,
   },
-  balanceLabel: {
-    fontSize: 14,
-    color: "#333",
-    fontWeight: "500",
+  balanceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: 10,
+    paddingTop: 15,
+    borderTopWidth: 1,
+    borderTopColor: '#E8ECEF',
   },
   balance: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: "#5A8DEE",
-    marginTop: 5,
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#5A8DEE',
+    marginTop: 2,
+  },
+  instruction: {
+    fontSize: 14,
+    color: '#7A869A',
+    textAlign: 'center',
+    marginTop: 15,
+    lineHeight: 20,
+  },
+  noAccountContainer: {
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  noAccountText: {
+    fontSize: 16,
+    color: '#2A3A4E',
+    textAlign: 'center',
+    marginBottom: 15,
+  },
+  verifyButton: {
+    backgroundColor: '#5A8DEE',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  verifyButtonText: {
+    fontSize: 16,
+    color: '#fff',
+    fontWeight: '600',
   },
   optionsContainer: {
     marginTop: 30,
+    marginBottom: 20,
   },
   optionCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
     padding: 15,
     borderRadius: 12,
     marginBottom: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
     shadowRadius: 5,
     elevation: 3,
   },
   optionText: {
     fontSize: 16,
-    fontWeight: "bold",
-    marginLeft: 10,
-    color: "#333",
-  },
-  subscriptionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#2A3A4E",
-    marginTop: 30,
-    marginBottom: 10,
-  },
-  subscriptionContainer: {
-    flexDirection: "column",
-  },
-  subscriptionCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fff",
-    padding: 15,
-    borderRadius: 12,
-    marginBottom: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    elevation: 4,
-  },
-  premiumCard: {
-    backgroundColor: "#5A8DEE",
-  },
-  planDetails: {
+    fontWeight: '600',
+    color: '#2A3A4E',
     marginLeft: 10,
   },
-  planTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#2A3A4E",
-  },
-  planPrice: {
-    fontSize: 14,
-    color: "#7A869A",
-    fontWeight: "500",
-  },
-  premiumText: {
-    color: "#fff",
+  loader: {
+    marginVertical: 20,
   },
 });
 

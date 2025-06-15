@@ -245,7 +245,7 @@ const updateUnreadCount = (notifications) => {
   return (
     <View style={styles.parentContainer}>
       <TouchableOpacity onPress={handleMenuOpen} style={styles.notificationIconContainer}>
-        <Ionicons name="notifications-outline" size={28} color="#333" />
+        <Ionicons name="notifications-outline" size={28} color="#FFFFFF" />
         {unreadCount > 0 && (
           <View style={styles.badge}>
             <Text style={styles.badgeText}>{unreadCount}</Text>

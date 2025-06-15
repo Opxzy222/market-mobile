@@ -12,7 +12,6 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import axios from "axios";
-import { useNavigation } from "@react-navigation/native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 
 export default function SignUp() {
@@ -24,7 +23,6 @@ export default function SignUp() {
   const [secureConfirmText, setSecureConfirmText] = useState(true);
   const [loading, setLoading] = useState(false); // 👈 loading state
 
-  const navigation = useNavigation();
   const router = useRouter();
   const params = useLocalSearchParams();
   const { email } = params;
@@ -120,7 +118,7 @@ export default function SignUp() {
         )}
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => navigation.navigate("login")} style={styles.link}>
+      <TouchableOpacity onPress={() => router.push("/login")} style={styles.link}>
         <Text style={styles.linkText}>Already have an account? Sign In</Text>
       </TouchableOpacity>
     </ScrollView>

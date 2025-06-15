@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import NotificationDropdown from './NotificationModal';
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { SafeAreaView } from "react-native-safe-area-context"; // Added for safe area
 
 const Header = () => {
   const [name, setName] = useState(null);
@@ -30,33 +31,48 @@ const Header = () => {
   }, []);
 
   return (
-    <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.header}>
-      <View>
-        <Text style={styles.greeting}>Hello, {name}</Text>
-        <Text style={styles.subGreeting}>{timeGreeting}</Text>
-      </View>
-      <NotificationDropdown />
-    </LinearGradient>
+    <SafeAreaView edges={["top"]} style={styles.safeArea}>
+      
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.greeting}>Hello, {name}</Text>
+          <Text style={styles.subGreeting}>{timeGreeting}</Text>
+        </View>
+        
+        <NotificationDropdown />
+        </View>
+      
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    backgroundColor: "#E3F2FD", // Match gradient start color for seamless look
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 15,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
+    alignItems: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    backgroundColor: "#3A7BD5",
+    borderBottomLeftRadius: 35,
+    borderBottomRightRadius: 35,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 6,
   },
   greeting: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#333',
+    color: "#FFFFFF",
   },
   subGreeting: {
     fontSize: 14,
-    color: '#666',
+    color: "whitesmoke",
   },
 });
 

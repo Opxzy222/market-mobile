@@ -1,4 +1,4 @@
-import React, { useState, useEffect, memo } from "react";
+import React, { useState, useEffect, useRef, memo } from "react";
 import {
   View,
   TouchableOpacity,
@@ -6,248 +6,341 @@ import {
   StyleSheet,
   ActivityIndicator,
   Text,
-  Modal,
   Dimensions,
 } from "react-native";
 import { VideoView, useVideoPlayer } from "expo-video";
-import * as FileSystem from "expo-file-system";
-import * as VideoThumbnails from "expo-video-thumbnails";
 import { Ionicons } from "@expo/vector-icons";
+import PropTypes from "prop-types";
 
-function ChatVideo({ uri, name }) {
-  console.log("ChatVideo render, uri:", uri, "name:", name);
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [thumbnailUri, setThumbnailUri] = useState(null);
-  const [isThumbnailLoading, setIsThumbnailLoading] = useState(true);
-  const [thumbnailError, setThumbnailError] = useState(false);
-  const [isVideoValid, setIsVideoValid] = useState(false);
-  const [isVisible, setIsVisible] = useState(false);
-  const [isFullScreen, setIsFullScreen] = useState(false);
-
-  const player = useVideoPlayer(uri, (player) => {
-    player.loop = false;
+function ChatVideo({ uri, name, thumbnailUrl, pending, messageId }) {
+  console.log("ChatVideo render", {
+    uri,
+    name,
+    thumbnailUrl,
+    pending,
+    pendingType: typeof pending,
+    messageId,
   });
 
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isVideoLoading, setIsVideoLoading] = useState(false);
+  const [videoError, setVideoError] = useState(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const playerRef = useRef(null);
+  const videoViewRef = useRef(null);
+  const isMountedRef = useRef(true);
+  const player = useVideoPlayer(null, (p) => {
+    console.log("Player initialized", { messageId });
+    playerRef.current = p;
+    p.loop = false;
+  });
+
+  // Construct full URL
+  const getFullUrl = (url) => {
+    const BASE_URL = "https://retail-alvinia-goza-f6a0e4f7.koyeb.app";
+    const fullUrl = url && url.startsWith("http") ? url : `${BASE_URL}${url || ""}`;
+    console.log("Constructed full URL:", { url, fullUrl, messageId });
+    return fullUrl;
+  };
+
+  // Load video
   useEffect(() => {
-    let isMounted = true;
+    let loadTimeout = null;
 
-    const validateVideo = async () => {
+    const loadVideo = async () => {
+      if (!uri || pending) {
+        console.log("No URI or pending, skipping load", { uri, pending, messageId });
+        if (isMountedRef.current && !uri) setVideoError("No video available");
+        return;
+      }
+
       try {
-        console.log("Validating URI:", uri);
-
+        console.log("Loading URI:", uri, "messageId:", messageId);
         const fileName = name || uri.split("/").pop() || "";
         if (!fileName.toLowerCase().endsWith(".mp4")) {
           throw new Error("Unsupported video format (only MP4 supported)");
         }
 
-        if (uri.startsWith("file://") || uri.startsWith("content://")) {
-          const info = await FileSystem.getInfoAsync(uri);
-          if (!info.exists || info.isDirectory) {
-            throw new Error("Video file not found");
-          }
-          console.log("Local URI valid, size:", info.size);
-        } else {
-          console.log("Remote URI, skipping FileSystem validation");
+        const fullUri = getFullUrl(uri);
+        setIsVideoLoading(true);
+        setVideoError(null);
+
+        if (!playerRef.current) {
+          console.error("Player not initialized, aborting load", { messageId });
+          throw new Error("Video player not initialized");
         }
 
-        if (isMounted) {
-          setIsVideoValid(true);
-        }
-      } catch (error) {
-        console.error("Video validation failed:", error);
-        if (isMounted) {
-          setIsVideoValid(false);
-          setThumbnailError(true);
-          setIsThumbnailLoading(false);
-        }
-      }
-    };
+        console.log("Loading video with URI:", fullUri, "messageId:", messageId);
+        const loadPromise = playerRef.current.replaceAsync({ uri: fullUri });
+        loadTimeout = setTimeout(() => {
+          throw new Error("Video load timed out");
+        }, 8000);
 
-    validateVideo();
+        await loadPromise;
+        clearTimeout(loadTimeout);
+        loadTimeout = null;
 
-    return () => {
-      isMounted = false;
-    };
-  }, [uri, name]);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const generateThumbnail = async () => {
-      if (!isVideoValid || !isVisible) {
-        return;
-      }
-
-      try {
-        setIsThumbnailLoading(true);
-        const { uri: thumbUri } = await VideoThumbnails.getThumbnailAsync(uri, {
-          time: 0,
-          quality: 0.3,
-        });
-        if (isMounted) {
-          console.log("Thumbnail generated:", thumbUri);
-          setThumbnailUri(thumbUri);
-          setThumbnailError(false);
+        if (isMountedRef.current) {
+          setIsVideoLoading(false);
+          console.log("Video loaded:", fullUri, "messageId:", messageId);
         }
       } catch (error) {
-        console.error("Thumbnail error:", error);
-        if (isMounted) {
-          setThumbnailError(true);
-        }
-      } finally {
-        if (isMounted) {
-          setIsThumbnailLoading(false);
+        console.error("Video load failed:", error.message, error.stack, "messageId:", messageId);
+        if (isMountedRef.current) {
+          setVideoError(error.message || "Failed to load video");
+          setIsVideoLoading(false);
         }
       }
     };
 
-    generateThumbnail();
+    loadVideo();
 
     return () => {
-      isMounted = false;
+      isMountedRef.current = false;
+      if (loadTimeout) clearTimeout(loadTimeout);
+      console.log("Cleaning up useEffect", { messageId });
+      // Avoid pausing during cleanup to prevent shared object error
+      // Player will be released automatically by expo-video
     };
-  }, [uri, isVideoValid, isVisible]);
+  }, [uri, name, pending, messageId]);
 
+  // Monitor player state
   useEffect(() => {
-    const subscription = player.addListener("playingChange", ({ playing }) => {
-      console.log("Playing state changed:", playing);
-      setIsPlaying(playing);
+    if (!player) return;
+
+    const playingSubscription = player.addListener("playingChange", ({ isPlaying: playing }) => {
+      console.log("Playing state changed:", playing, "messageId:", messageId);
+      if (isMountedRef.current) setIsPlaying(playing);
+    });
+
+    const errorSubscription = player.addListener("error", (error) => {
+      console.error("Player error:", error, "messageId:", messageId);
+      if (isMountedRef.current) {
+        setVideoError("Video playback failed");
+        setIsPlaying(false);
+        setIsVideoLoading(false);
+      }
     });
 
     return () => {
-      console.log("Removing player listener");
-      subscription.remove();
+      console.log("Removing player listeners", { messageId });
+      playingSubscription?.remove();
+      errorSubscription?.remove();
     };
-  }, [player]);
+  }, [player, messageId]);
 
-  useEffect(() => {
-    if (!isVisible && isPlaying) {
-      console.log("Pausing video (not visible)");
-      player.pause();
-      setIsPlaying(false);
-    }
-  }, [isVisible, isPlaying, player]);
-
-  const handlePlay = () => {
-    if (isVideoValid && !thumbnailError && !isThumbnailLoading) {
-      console.log("Entering full screen");
-      setIsFullScreen(true);
-      setIsPlaying(true);
-      player.play();
+  // Handle fullscreen updates
+  const handleFullscreenUpdate = ({ fullscreenUpdate }) => {
+    console.log("Fullscreen update:", fullscreenUpdate, "messageId:", messageId);
+    if (isMountedRef.current) {
+      if (fullscreenUpdate === "entered") {
+        setIsFullscreen(true);
+      } else if (fullscreenUpdate === "exited") {
+        setIsFullscreen(false);
+        if (playerRef.current && isPlaying) {
+          try {
+            playerRef.current.pause();
+            setIsPlaying(false);
+            console.log("Video paused on fullscreen exit", { messageId });
+          } catch (error) {
+            console.error("Pause error on fullscreen exit:", error.message, "messageId:", messageId);
+          }
+        }
+      }
     }
   };
 
-  const handleFullScreenClose = () => {
-    console.log("Exiting full screen");
-    setIsFullScreen(false);
-    player.pause();
-    setIsPlaying(false);
+  const handlePlayPause = async () => {
+    console.log("handlePlayPause called", {
+      videoError,
+      isVideoLoading,
+      pending,
+      isPlayerReady: !!playerRef.current,
+      isPlaying,
+      isFullscreen,
+      messageId,
+    });
+
+    if (!videoError && !isVideoLoading && !pending && playerRef.current) {
+      try {
+        if (isPlaying) {
+          console.log("Pausing video", "messageId:", messageId);
+          playerRef.current.pause();
+          setIsPlaying(false);
+          if (isFullscreen && videoViewRef.current && typeof videoViewRef.current.exitFullscreen === "function") {
+            await videoViewRef.current.exitFullscreen();
+            console.log("Exited fullscreen", { messageId });
+          }
+        } else {
+          console.log("Playing video:", uri, "messageId:", messageId);
+          playerRef.current.play();
+          setIsPlaying(true);
+          if (videoViewRef.current && typeof videoViewRef.current.enterFullscreen === "function") {
+            await videoViewRef.current.enterFullscreen();
+            console.log("Entered fullscreen", { messageId });
+          }
+        }
+      } catch (error) {
+        console.error("Play/pause error:", error.message, "messageId:", messageId);
+        setVideoError("Video playback failed");
+      }
+    } else {
+      console.log("Play blocked:", { videoError, isVideoLoading, pending, messageId });
+    }
   };
 
-  if (!isVideoValid) {
-    console.log("Unsupported video, rendering placeholder");
-    return (
-      <View style={styles.container}>
+  const renderContent = () => {
+    if (pending) {
+      return (
         <View style={styles.placeholder}>
-          <Text style={styles.errorText}>Unsupported video format</Text>
+          <Text style={styles.loadingText}>Uploading...</Text>
         </View>
-      </View>
+      );
+    }
+
+    if (videoError) {
+      return (
+        <View style={styles.placeholder}>
+          {thumbnailUrl ? (
+            <Image
+              source={{ uri: thumbnailUrl }}
+              style={styles.thumbnail}
+              resizeMode="cover"
+              onError={(e) =>
+                console.error("Thumbnail load error:", thumbnailUrl, e.nativeEvent.error, "messageId:", messageId)
+              }
+            />
+          ) : (
+            <View style={styles.fallbackThumbnail}>
+              <Text style={styles.fallbackText}>No thumbnail</Text>
+            </View>
+          )}
+          <Text style={styles.errorText}>{videoError}</Text>
+        </View>
+      );
+    }
+
+    if (isVideoLoading) {
+      return (
+        <View style={styles.placeholder}>
+          {thumbnailUrl ? (
+            <Image
+              source={{ uri: thumbnailUrl }}
+              style={styles.thumbnail}
+              resizeMode="cover"
+              onError={(e) =>
+                console.error("Thumbnail load error:", thumbnailUrl, e.nativeEvent.error, "messageId:", messageId)
+              }
+            />
+          ) : (
+            <View style={styles.fallbackThumbnail}>
+              <Text style={styles.fallbackText}>No thumbnail</Text>
+            </View>
+          )}
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator size="small" color="#fff" />
+            <Text style={styles.loadingText}>Loading video...</Text>
+          </View>
+        </View>
+      );
+    }
+
+    return (
+      <VideoView
+        ref={videoViewRef}
+        style={styles.video}
+        player={player}
+        contentFit="cover"
+        nativeControls={true}
+        allowsFullscreen={true}
+        allowsPictureInPicture={false}
+        onFullscreenUpdate={handleFullscreenUpdate}
+        onError={(error) => {
+          console.error("VideoView playback error:", error, "messageId:", messageId);
+          if (isMountedRef.current) {
+            setVideoError("Video playback failed");
+            setIsPlaying(false);
+          }
+        }}
+      />
     );
-  }
+  };
 
   return (
-    <>
-      <View
-        style={styles.container}
-        onLayout={() => {
-          console.log("ChatVideo visible, triggering thumbnail");
-          setIsVisible(true);
-        }}
+    <View style={styles.container}>
+      <TouchableOpacity
+        onPress={handlePlayPause}
+        style={styles.videoContainer}
+        disabled={!!(videoError || isVideoLoading || pending)}
+        activeOpacity={0.7}
+        hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
       >
-        <TouchableOpacity
-          onPress={handlePlay}
-          style={styles.thumbnailContainer}
-          disabled={thumbnailError || isThumbnailLoading}
-        >
-          {isThumbnailLoading && !thumbnailError ? (
-            <View style={styles.placeholder}>
-              <ActivityIndicator size="small" color="#999" />
-            </View>
-          ) : thumbnailError ? (
-            <View style={styles.placeholder}>
-              <Text style={styles.errorText}>Failed to load video</Text>
-            </View>
-          ) : (
-            <>
-              <Image
-                source={{ uri: thumbnailUri }}
-                style={styles.thumbnail}
-                resizeMode="cover"
-                onError={() => {
-                  console.log("Thumbnail load error");
-                  setThumbnailError(true);
-                }}
-              />
-              <View style={styles.playIconContainer}>
-                <Ionicons
-                  name="play-circle"
-                  size={40}
-                  color="rgba(255, 255, 255, 0.8)"
-                />
-              </View>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      <Modal
-        visible={isFullScreen}
-        animationType="fade"
-        onRequestClose={handleFullScreenClose}
-      >
-        <View style={styles.fullScreenContainer}>
-          <VideoView
-            style={styles.fullScreenVideo}
-            player={player}
-            allowsFullscreen
-            allowsPictureInPicture
-            nativeControls
-            onError={(error) => {
-              console.error("Video playback error:", error);
-              setThumbnailError(true);
-              setIsPlaying(false);
-              setIsFullScreen(false);
-            }}
-          />
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={handleFullScreenClose}
-          >
-            <Ionicons name="close" size={30} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      </Modal>
-    </>
+        {renderContent()}
+        {thumbnailUrl && !isPlaying && !videoError && !isVideoLoading && !pending && (
+          <View style={styles.playIconContainer}>
+            <Ionicons name="play-circle" size={40} color="rgba(255, 255, 255, 0.7)" />
+          </View>
+        )}
+      </TouchableOpacity>
+    </View>
   );
 }
+
+ChatVideo.propTypes = {
+  uri: PropTypes.string,
+  name: PropTypes.string,
+  thumbnailUrl: PropTypes.string,
+  pending: PropTypes.bool,
+  messageId: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
+};
+
+ChatVideo.defaultProps = {
+  uri: null,
+  name: null,
+  thumbnailUrl: null,
+  pending: false,
+};
 
 const styles = StyleSheet.create({
   container: {
     alignItems: "center",
     justifyContent: "center",
+    marginVertical: 5,
+    maxWidth: SCREEN_WIDTH * 0.6,
   },
-  thumbnailContainer: {
+  videoContainer: {
     position: "relative",
-    width: 120,
-    height: 120,
-    borderRadius: 10,
+    width: 150,
+    height: 100,
+    borderRadius: 8,
     overflow: "hidden",
+    backgroundColor: "#000",
+    zIndex: 100,
   },
   thumbnail: {
-    width: 120,
-    height: 120,
-    borderRadius: 10,
+    width: "100%",
+    height: "100%",
+    borderRadius: 8,
+  },
+  fallbackThumbnail: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 8,
+    backgroundColor: "#ccc",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fallbackText: {
+    color: "#666",
+    fontSize: 12,
+  },
+  video: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 8,
   },
   playIconContainer: {
     position: "absolute",
@@ -257,12 +350,23 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.6)",
     borderRadius: 20,
     padding: 5,
+    zIndex: 101,
   },
   placeholder: {
-    width: 120,
-    height: 120,
-    borderRadius: 10,
+    width: "100%",
+    height: "100%",
+    borderRadius: 8,
     backgroundColor: "#f0f0f0",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -270,24 +374,12 @@ const styles = StyleSheet.create({
     color: "#ff4d4d",
     fontSize: 12,
     textAlign: "center",
+    marginTop: 5,
   },
-  fullScreenContainer: {
-    flex: 1,
-    backgroundColor: "#000",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  fullScreenVideo: {
-    width: Dimensions.get("window").width,
-    height: Dimensions.get("window").height,
-  },
-  closeButton: {
-    position: "absolute",
-    top: 40,
-    right: 20,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    borderRadius: 20,
-    padding: 5,
+  loadingText: {
+    color: "#fff",
+    fontSize: 12,
+    marginTop: 5,
   },
 });
 

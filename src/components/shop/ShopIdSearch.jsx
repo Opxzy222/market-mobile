@@ -57,10 +57,10 @@ const ShopIdSearch = () => {
   return (
     <View style={styles.container}>
       <View style={styles.card}>
-        <Text style={styles.label}>Enter Shop ID</Text>
+        <Text style={styles.label}>Enter Space ID</Text>
         <TextInput
           style={styles.input}
-          placeholder="Enter Shop ID"
+          placeholder="Enter Space ID"
           value={shopId}
           onChangeText={setShopId}
         />

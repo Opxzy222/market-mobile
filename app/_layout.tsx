@@ -1,22 +1,32 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo, memo, useRef } from "react";
 import { Tabs } from "expo-router";
 import { Ionicons, MaterialIcons, FontAwesome5 } from "@expo/vector-icons";
 import SubscriptionProvider from "@/components/SubscriptionProvider";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Linking from "expo-linking";
-import { SelectProvider } from '@mobile-reality/react-native-select-pro';
-import { initializeDatabase } from '../src/storage/storage';
+import { SelectProvider } from "@mobile-reality/react-native-select-pro";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import { Platform } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+console.log("Skipping database initialization in layout");
 
 const linking = {
   prefixes: [Linking.createURL("/")],
   config: {
     screens: {
-      "(tabs)/shop": "home",
-      "(tabs)/placeholder": "messages",
-      "(tabs)/status": "status",
-      "(tabs)/myshop": "myshop",
-      "(tabs)/account": "account",
-      "(tabs)/profile": "profile",
+      "(tabs)": {
+        path: "",
+        screens: {
+          shop: "home",
+          placeholder: "messages",
+          status: "status",
+          myshop: "myshop",
+          account: "account",
+          profile: "profile",
+        },
+      },
+      "shop/Conversation": "shop/conversation",
       login: "login",
       signup: "signup",
       ChangePassword: "change-password",
@@ -25,23 +35,20 @@ const linking = {
   },
 };
 
-export default function RootLayout() {
+const MemoizedTabs = memo(Tabs);
+
+const RootLayout = () => {
   const [userId, setUserId] = useState<number | null>(null);
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [socket, setSocket] = useState<WebSocket | null>(null);
+  const insets = useSafeAreaInsets();
+  const reconnectAttemptsRef = useRef(0);
+  const maxReconnectAttempts = 5;
+  const lastUnreadCountRef = useRef(0);
 
-  useEffect(() => {
-    const setupDatabase = async () => {
-      try {
-        await initializeDatabase();
-        console.log('Database initialized in layout');
-      } catch (error) {
-        console.error('Failed to initialize database in layout:', error);
-      }
-    };
-    setupDatabase();
-  }, []);
+  console.log("RootLayout rendered");
 
+  // Fetch user ID
   useEffect(() => {
     const fetchUserId = async () => {
       try {
@@ -56,12 +63,15 @@ export default function RootLayout() {
         console.error("Error fetching user ID:", error);
       }
     };
-
     fetchUserId();
   }, []);
 
-  useEffect(() => {
-    if (!userId) return;
+  // WebSocket setup with debouncing
+  const setupWebSocket = useCallback(() => {
+    if (!userId || reconnectAttemptsRef.current >= maxReconnectAttempts) {
+      console.log("Skipping WebSocket: no userId or max reconnects reached");
+      return;
+    }
 
     const ws = new WebSocket(
       `wss://retail-alvinia-goza-f6a0e4f7.koyeb.app/ws/unread-messages/?userId=${userId}`
@@ -69,12 +79,15 @@ export default function RootLayout() {
 
     ws.onopen = () => {
       console.log("WebSocket connected");
+      reconnectAttemptsRef.current = 0;
       ws.send(JSON.stringify({ action: "get_unread_count" }));
     };
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      if (data.unread_count !== undefined) {
+      if (data.unread_count !== undefined && data.unread_count !== lastUnreadCountRef.current) {
+        lastUnreadCountRef.current = data.unread_count;
+        console.log("Updating unread count:", data.unread_count);
         setUnreadCount(data.unread_count);
       }
     };
@@ -84,14 +97,14 @@ export default function RootLayout() {
     };
 
     ws.onclose = () => {
-      console.log("WebSocket closed. Reconnecting...");
-      setTimeout(() => {
-        setSocket(
-          new WebSocket(
-            `wss://retail-alvinia-goza-f6a0e4f7.koyeb.app/ws/unread-messages/?userId=${userId}`
-          )
-        );
-      }, 5000);
+      console.log("WebSocket closed");
+      if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+        reconnectAttemptsRef.current += 1;
+        console.log(`Reconnecting WebSocket (attempt ${reconnectAttemptsRef.current})`);
+        setTimeout(setupWebSocket, 10000); // Increased to 10s
+      } else {
+        console.log("Max WebSocket reconnect attempts reached");
+      }
     };
 
     setSocket(ws);
@@ -101,108 +114,119 @@ export default function RootLayout() {
     };
   }, [userId]);
 
-  return (
-    <SelectProvider>
-      <SubscriptionProvider userId={userId}>
-        <Tabs
-          linking={linking}
-          screenOptions={{
-            headerShown: false,
-            tabBarShowLabel: true,
-            tabBarStyle: {
-              backgroundColor: "#ffffff",
-              borderTopWidth: 0,
-              elevation: 10,
-              height: 60,
-            },
-            tabBarLabelStyle: {
-              fontSize: 12,
-              fontWeight: "600",
-              marginBottom: 5,
-              width: 70,
-            },
-            tabBarItemStyle: {
-              justifyContent: "center",
-              alignItems: "center",
-            },
-            tabBarActiveTintColor: "#007AFF",
-            tabBarInactiveTintColor: "#000000",
-            tabBarLabelPosition: "below-icon",
-          }}
-        >
-          <Tabs.Screen
-            name="(tabs)/shop"
-            options={{
-              title: "Home",
-              tabBarIcon: ({ color }) => (
-                <Ionicons name="home" color={color} size={22} />
-              ),
-            }}
-          />
-          <Tabs.Screen
-            name="(tabs)/placeholder"
-            options={{
-              title: "Messages",
-              tabBarIcon: ({ color }) => (
-                <MaterialIcons name="message" color={color} size={22} />
-              ),
-              tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
-            }}
-          />
-          <Tabs.Screen
-            name="(tabs)/status"
-            options={{
-              title: "Status",
-              tabBarIcon: ({ color }) => (
-                <Ionicons name="time-outline" color={color} size={22} />
-              ),
-            }}
-          />
-          <Tabs.Screen
-            name="(tabs)/myshop"
-            options={{
-              title: "My Shop",
-              tabBarIcon: ({ color }) => (
-                <FontAwesome5 name="store" color={color} size={22} />
-              ),
-            }}
-          />
-          <Tabs.Screen
-            name="(tabs)/account"
-            options={{
-              title: "Account",
-              tabBarIcon: ({ color }) => (
-                <Ionicons name="card-outline" color={color} size={22} />
-              ),
-            }}
-          />
-          <Tabs.Screen
-            name="(tabs)/profile"
-            options={{
-              title: "Profile",
-              tabBarIcon: ({ color }) => (
-                <Ionicons name="person-circle" color={color} size={22} />
-              ),
-            }}
-          />
+  useEffect(() => {
+    if (userId) {
+      return setupWebSocket();
+    }
+  }, [userId, setupWebSocket]);
 
-          {/* Non-tabbed routes */}
-          <Tabs.Screen name="homepage" options={{ href: null }} />
-          <Tabs.Screen name="+not-found" options={{ href: null }} />
-          <Tabs.Screen name="index" options={{ href: null }} />
-          <Tabs.Screen name="login" options={{ href: null }} />
-          <Tabs.Screen name="signup" options={{ href: null }} />
-          <Tabs.Screen name="shop/_layout" options={{ href: null }} />
-          <Tabs.Screen name="(tabs)" options={{ href: null }} />
-          <Tabs.Screen name="shop" options={{ href: null }} />
-          <Tabs.Screen name="ChangePassword" options={{ href: null }} />
-          <Tabs.Screen name="RequestToken" options={{ href: null }} />
-          <Tabs.Screen name="ResetPassword" options={{ href: null }} />
-          <Tabs.Screen name="VerifyEmail" options={{ href: null }} />
-          <Tabs.Screen name="ForgotPassword" options={{ href: null }} />
-          <Tabs.Screen name="EnterOtp" options={{ href: null }} />
-        </Tabs>
-      </SubscriptionProvider>
-    </SelectProvider>
+  // Memoized tab options to prevent re-renders
+  const tabOptions = useMemo(
+    () => ({
+      headerShown: false,
+      tabBarShowLabel: true,
+      tabBarStyle: {
+        backgroundColor: "#E3F2FD",
+        borderTopWidth: 0,
+        elevation: 10,
+        height: 60 + (Platform.OS === "android" ? insets.bottom : 0),
+        paddingBottom: Platform.OS === "android" ? insets.bottom : 0,
+      },
+      tabBarLabelStyle: {
+        fontSize: 12,
+        fontWeight: "600",
+        marginBottom: 5,
+        width: 70,
+      },
+      tabBarItemStyle: {
+        justifyContent: "center",
+        alignItems: "center",
+      },
+      tabBarActiveTintColor: "#007AFF",
+      tabBarInactiveTintColor: "#000000",
+      tabBarLabelPosition: "below-icon",
+    }),
+    [insets.bottom]
   );
-}
+
+  return (
+    <SafeAreaProvider>
+      <SelectProvider>
+        <SubscriptionProvider userId={userId}>
+          <MemoizedTabs linking={linking} screenOptions={tabOptions}>
+            <Tabs.Screen
+              name="(tabs)/shop"
+              options={{
+                title: "Home",
+                tabBarIcon: ({ color }) => (
+                  <Ionicons name="home" color={color} size={22} />
+                ),
+              }}
+            />
+            <Tabs.Screen
+              name="(tabs)/placeholder"
+              options={{
+                title: "Messages",
+                tabBarIcon: ({ color }) => (
+                  <MaterialIcons name="message" color={color} size={22} />
+                ),
+                tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
+              }}
+            />
+            <Tabs.Screen
+              name="(tabs)/status"
+              options={{
+                title: "Status",
+                tabBarIcon: ({ color }) => (
+                  <Ionicons name="time-outline" color={color} size={22} />
+                ),
+              }}
+            />
+            <Tabs.Screen
+              name="(tabs)/myshop"
+              options={{
+                title: "My Space",
+                tabBarIcon: ({ color }) => (
+                  <FontAwesome5 name="store" color={color} size={22} />
+                ),
+              }}
+            />
+            <Tabs.Screen
+              name="(tabs)/account"
+              options={{
+                title: "Account",
+                tabBarIcon: ({ color }) => (
+                  <Ionicons name="card-outline" color={color} size={22} />
+                ),
+              }}
+            />
+            <Tabs.Screen
+              name="(tabs)/profile"
+              options={{
+                title: "Profile",
+                tabBarIcon: ({ color }) => (
+                  <Ionicons name="person-circle" color={color} size={22} />
+                ),
+              }}
+            />
+            <Tabs.Screen name="shop/Conversation" options={{ href: null }} />
+            <Tabs.Screen name="homepage" options={{ href: null }} />
+            <Tabs.Screen name="+not-found" options={{ href: null }} />
+            <Tabs.Screen name="index" options={{ href: null }} />
+            <Tabs.Screen name="login" options={{ href: null }} />
+            <Tabs.Screen name="signup" options={{ href: null }} />
+            <Tabs.Screen name="ChangePassword" options={{ href: null }} />
+            <Tabs.Screen name="RequestToken" options={{ href: null }} />
+            <Tabs.Screen name="ResetPassword" options={{ href: null }} />
+            <Tabs.Screen name="VerifyEmail" options={{ href: null }} />
+            <Tabs.Screen name="ForgotPassword" options={{ href: null }} />
+            <Tabs.Screen name="EnterOtp" options={{ href: null }} />
+            <Tabs.Screen name="shop" options={{ href: null }} />
+          </MemoizedTabs>
+        </SubscriptionProvider>
+      </SelectProvider>
+    </SafeAreaProvider>
+  );
+};
+
+export default memo(RootLayout);

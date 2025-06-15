@@ -1,3 +1,4 @@
+// src/components/shop/Followers.tsx
 import React from 'react';
 import { View, Text, StyleSheet, FlatList, Image } from 'react-native';
 
@@ -15,34 +16,38 @@ const Followers = ({ followers = [] }) => {
   };
 
   const renderFollower = ({ item }) => (
-  <View style={styles.followerItem}>
-    {item.image ? (
-      <Image source={{ uri: item.image }} style={styles.followerAvatar} />
-    ) : (
-      <View
-        style={[
-          styles.followerAvatar,
-          { backgroundColor: getColorForAlphabet(item.username.charAt(0)) },
-        ]}
-      >
-        <Text style={styles.avatarText}>
-          {item.username.charAt(0).toUpperCase()}
-        </Text>
-      </View>
-    )}
-    <Text style={styles.followerUsername}>{item.username}</Text>
-  </View>
-);
+    <View style={styles.followerItem}>
+      {item.image ? (
+        <Image source={{ uri: item.image }} style={styles.followerAvatar} />
+      ) : (
+        <View
+          style={[
+            styles.followerAvatar,
+            { backgroundColor: getColorForAlphabet(item.username.charAt(0)) },
+          ]}
+        >
+          <Text style={styles.avatarText}>
+            {item.username.charAt(0).toUpperCase()}
+          </Text>
+        </View>
+      )}
+      <Text style={styles.followerUsername}>{item.username}</Text>
+    </View>
+  );
 
   return (
     <View style={styles.container}>
       {followers.length > 0 ? (
-        <FlatList
-          data={followers}
-          keyExtractor={(item) => item.username}
-          renderItem={renderFollower}
-          contentContainerStyle={styles.followerList}
-        />
+        <View style={styles.followersContainer}>
+          <FlatList
+            data={followers}
+            keyExtractor={(item) => item.username}
+            renderItem={renderFollower}
+            contentContainerStyle={styles.followerList}
+            scrollEnabled={false}
+            initialNumToRender={10}
+          />
+        </View>
       ) : (
         <Text style={styles.noFollowersText}>No followers yet.</Text>
       )}
@@ -55,8 +60,12 @@ export default Followers;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    backgroundColor: '#f9f9f9',
+    padding: 0, // Adjusted to fit tabContent padding
+    backgroundColor: '#FFFFFF', // Match tabContent
+  },
+  followersContainer: {
+    minHeight: 200, // Ensure visibility
+    maxHeight: 400, // Limit height to prevent overflow
   },
   followerList: {
     paddingVertical: 10,
@@ -65,7 +74,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 15,
-    backgroundColor: '#fff',
+    backgroundColor: '#FFF',
     padding: 10,
     borderRadius: 10,
     shadowColor: '#000',
@@ -84,7 +93,7 @@ const styles = StyleSheet.create({
   avatarText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#fff',
+    color: '#FFF',
   },
   followerUsername: {
     fontSize: 16,

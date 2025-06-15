@@ -1,20 +1,37 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { View, Text, FlatList, Alert, ActivityIndicator, TouchableOpacity , Image, StyleSheet} from "react-native";
-import { Card, Button, Divider, Chip, Avatar } from "react-native-paper";
-import Animated, { FadeInUp, FadeOut } from "react-native-reanimated";
+import {
+  View,
+  Text,
+  FlatList,
+  Alert,
+  ActivityIndicator,
+  TouchableOpacity,
+  Image,
+  StyleSheet,
+  Modal,
+  Dimensions,
+  Platform,
+} from "react-native";
+import { Card, Divider, Chip } from "react-native-paper";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import MaterialIcons from "react-native-vector-icons/MaterialIcons";
+import { useRouter } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import ViewReceiptPDF from "../../components/shop/ViewReceipt";
 
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const TABS = ["All", "Accepted", "Pending", "Rejected", "Voided"];
 
 const statusStyles = {
-  pending: { color: "#FFA500", label: "Pending", icon: "time-outline" },
-  accepted: { color: "#4CAF50", label: "Accepted", icon: "checkmark-circle-outline" },
-  rejected: { color: "#F44336", label: "Rejected", icon: "close-circle-outline" },
-  voided: { color: "#9E9E9E", label: "Voided", icon: "remove-circle-outline" },
+  pending: { color: "#F59E0B", label: "Pending", icon: "time-outline" },
+  accepted: { color: "#10B981", label: "Accepted", icon: "checkmark-circle-outline" },
+  rejected: { color: "#EF4444", label: "Rejected", icon: "close-circle-outline" },
+  voided: { color: "#6B7280", label: "Voided", icon: "remove-circle-outline" },
 };
 
 const CustomerReceipts = () => {
@@ -22,157 +39,797 @@ const CustomerReceipts = () => {
   const [loading, setLoading] = useState(true);
   const [sessionId, setSessionId] = useState(null);
   const [activeTab, setActiveTab] = useState("All");
+  const [filterModalVisible, setFilterModalVisible] = useState(false);
+  const [startDate, setStartDate] = useState(null);
+  const [endDate, setEndDate] = useState(null);
+  const [pickerVisible, setPickerVisible] = useState(false);
+  const [pickerType, setPickerType] = useState(null); // "start" or "end"
+  const [tempDate, setTempDate] = useState(new Date());
+  const router = useRouter();
 
   useEffect(() => {
     const fetchSessionId = async () => {
-      const sessionIdString = await AsyncStorage.getItem("sessionToken");
-      setSessionId(sessionIdString); // No need to parse as an integer
+      try {
+        const sessionIdString = await AsyncStorage.getItem("sessionToken");
+        console.log("Fetched session ID:", sessionIdString);
+        setSessionId(sessionIdString);
+      } catch (error) {
+        console.error("Error fetching session ID:", error);
+      }
     };
 
     fetchSessionId();
   }, []);
-  const fetchReceipts = async () => {
-    if (!sessionId) return;
+
+  const fetchReceipts = useCallback(async () => {
+    if (!sessionId) {
+      console.warn("No session ID, skipping fetch");
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      const response = await axios.get(`https://retail-alvinia-goza-f6a0e4f7.koyeb.app/receipts/customer/`, {
-        headers: {
-          Authorization: sessionId, // Send sessionId in headers
-        },
-      });
+      console.log("Fetching receipts from API...");
+      const response = await axios.get(
+        `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/receipts/customer/`,
+        {
+          headers: {
+            Authorization: sessionId,
+          },
+        }
+      );
 
-      setReceipts(response.data.receipts);
+      const fetchedReceipts = Array.isArray(response.data.receipts) ? response.data.receipts : [];
+      console.log("Receipts fetched:", fetchedReceipts.length);
+      setReceipts(fetchedReceipts);
     } catch (error) {
+      console.error("Error fetching receipts:", error);
       Alert.alert("Error", "Failed to fetch receipts.");
+      setReceipts([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [sessionId]);
 
-  // Reload data when the screen is focused
   useFocusEffect(
     useCallback(() => {
       fetchReceipts();
-    }, [sessionId])
+    }, [fetchReceipts])
   );
+
+  // Reset filter states when tab changes
+  useEffect(() => {
+    console.log("Active tab changed to:", activeTab);
+    setStartDate(null);
+    setEndDate(null);
+    setFilterModalVisible(false);
+    setPickerVisible(false);
+    setPickerType(null);
+  }, [activeTab]);
 
   const handleAction = async (receiptId, action) => {
-  try {
-    await axios.post(`https://retail-alvinia-goza-f6a0e4f7.koyeb.app/receipts/${receiptId}/${action}/`);
-    Alert.alert("Success", `Receipt ${action} successfully.`);
+    const actionTitle = action === "accept" ? "Accept" : "Reject";
+    return new Promise((resolve) => {
+      Alert.alert(
+        `${actionTitle} Receipt`,
+        `Are you sure you want to ${action} this receipt?`,
+        [
+          { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+          {
+            text: "Confirm",
+            onPress: async () => {
+              try {
+                await axios.post(
+                  `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/receipts/${receiptId}/${action}/`,
+                  {},
+                  {
+                    headers: { Authorization: sessionId },
+                  }
+                );
+                Alert.alert("Success", `Receipt ${action}ed successfully.`);
+                const newStatus = action === "accept" ? "accepted" : "rejected";
+                setReceipts((prev) =>
+                  prev.map((receipt) =>
+                    receipt.id === receiptId ? { ...receipt, status: newStatus } : receipt
+                  )
+                );
+                resolve(true);
+              } catch (error) {
+                console.error(`Error ${action}ing receipt:`, error);
+                Alert.alert("Error", `Failed to ${action} receipt.`);
+                resolve(false);
+              }
+            },
+          },
+        ]
+      );
+    });
+  };
 
-    // Convert action string to correct status format
-    const newStatus = action === "accept" ? "accepted" : action === "reject" ? "rejected" : action;
+  const formatDate = (dateStr) => {
+    const date = new Date(dateStr);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
 
-    // Update receipt status immediately in the UI
-    setReceipts((prev) =>
-      prev.map((receipt) =>
-        receipt.id === receiptId ? { ...receipt, status: newStatus } : receipt
-      )
-    );
-  } catch (error) {
-    Alert.alert("Error", `Failed to ${action} receipt.`);
-  }
-};
+    const isToday = date.toDateString() === today.toDateString();
+    const isYesterday = date.toDateString() === yesterday.toDateString();
 
-  const filteredReceipts = receipts.filter((receipt) =>
-    activeTab === "All" ? true : receipt.status === activeTab.toLowerCase()
+    if (isToday) return "Today";
+    if (isYesterday) return "Yesterday";
+    return date.toLocaleDateString("en-US", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  const handleDateChange = (event, selectedDate) => {
+    console.log("DateTimePicker event:", event.type, "Date:", selectedDate);
+    setPickerVisible(Platform.OS === "ios"); // Keep open on iOS until confirmed
+    if (event.type === "dismissed" || !selectedDate) {
+      setPickerVisible(false);
+      setPickerType(null);
+      return;
+    }
+
+    const date = new Date(selectedDate);
+    if (pickerType === "start") {
+      if (endDate && date > endDate) {
+        Alert.alert("Invalid Date", "Start date cannot be after end date.");
+        return;
+      }
+      setStartDate(date);
+    } else {
+      if (startDate && date < startDate) {
+        Alert.alert("Invalid Date", "End date cannot be before start date.");
+        return;
+      }
+      setEndDate(date);
+    }
+    setPickerVisible(false);
+    setPickerType(null);
+  };
+
+  const showDatePicker = (type) => {
+    console.log("Showing DateTimePicker for:", type, "Tab:", activeTab);
+    setPickerType(type);
+    setTempDate(type === "start" && startDate ? startDate : type === "end" && endDate ? endDate : new Date());
+    setPickerVisible(true);
+  };
+
+  const filteredReceipts = useCallback(() => {
+    console.log("Filtering receipts for tab:", activeTab);
+    console.log("Start Date:", startDate?.toISOString());
+    console.log("End Date:", endDate?.toISOString());
+    console.log("Total receipts:", receipts.length);
+
+    const filtered = receipts.filter((receipt) => {
+      const receiptDate = new Date(receipt.created_at);
+      const receiptStatus = receipt.status?.toLowerCase() || "";
+      const tabStatus = activeTab.toLowerCase();
+
+      // Status filter
+      const matchesStatus = tabStatus === "all" || receiptStatus === tabStatus;
+
+      // Date filter
+      let matchesDate = true;
+      if (startDate) {
+        matchesDate = matchesDate && receiptDate >= new Date(startDate.setHours(0, 0, 0, 0));
+      }
+      if (endDate) {
+        matchesDate = matchesDate && receiptDate <= new Date(endDate.setHours(23, 59, 59, 999));
+      }
+
+      const matches = matchesStatus && matchesDate;
+      if (matches) {
+        console.log(`Receipt ${receipt.id} matches:`, {
+          status: receiptStatus,
+          date: receiptDate.toISOString(),
+        });
+      }
+      return matches;
+    });
+
+    console.log("Filtered receipts:", filtered.length);
+    return filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  }, [receipts, activeTab, startDate, endDate]);
+
+  const flatData = [];
+  let lastDate = null;
+  filteredReceipts().forEach((receipt) => {
+    const dateKey = formatDate(receipt.created_at);
+    if (dateKey !== lastDate) {
+      flatData.push({ type: "separator", date: dateKey });
+      lastDate = dateKey;
+    }
+    flatData.push({ type: "receipt", data: receipt });
+  });
+
+  const handleTabPress = (tab) => {
+    console.log("Switching to tab:", tab);
+    setActiveTab(tab);
+  };
+
+  const renderNavBar = () => (
+    <View style={styles.navBar}>
+      <View style={styles.navBarInner}>
+        {TABS.map((tab) => (
+          <TouchableOpacity
+            key={tab}
+            style={[styles.navButton, activeTab === tab && styles.activeNavButton]}
+            onPress={() => handleTabPress(tab)}
+            accessibilityLabel={`${tab} Receipts Tab`}
+          >
+            <Text
+              style={[
+                styles.navButtonText,
+                activeTab === tab && styles.activeNavButtonText,
+              ]}
+              numberOfLines={1}
+            >
+              {tab}
+            </Text>
+            {activeTab === tab && (
+              <LinearGradient
+                colors={["#2563EB", "#10B981"]}
+                style={styles.underline}
+              />
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
   );
+
+  const renderFilterModal = () => (
+    <Modal
+      visible={filterModalVisible}
+      transparent
+      animationType="slide"
+      onRequestClose={() => {
+        console.log("Closing filter modal via backdrop");
+        setFilterModalVisible(false);
+        setPickerVisible(false);
+      }}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.bottomSheetHandle} />
+          <Text style={styles.modalTitle}>Filter by Date</Text>
+          <TouchableOpacity
+            style={styles.dateInput}
+            onPress={() => showDatePicker("start")}
+            accessibilityLabel="Select Start Date"
+          >
+            <Text style={styles.dateInputText}>
+              {startDate ? startDate.toLocaleDateString("en-US") : "Select Start Date"}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.dateInput}
+            onPress={() => showDatePicker("end")}
+            accessibilityLabel="Select End Date"
+          >
+            <Text style={styles.dateInputText}>
+              {endDate ? endDate.toLocaleDateString("en-US") : "Select End Date"}
+            </Text>
+          </TouchableOpacity>
+          <View style={styles.modalButtons}>
+            <TouchableOpacity
+              style={styles.applyFilterButton}
+              onPress={() => {
+                console.log("Applying filter");
+                setFilterModalVisible(false);
+                setPickerVisible(false);
+              }}
+            >
+              <LinearGradient
+                colors={["#2563EB", "#10B981"]}
+                style={styles.buttonGradient}
+              >
+                <Text style={styles.buttonText}>Apply</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.clearFilterButton}
+              onPress={() => {
+                console.log("Clearing filter");
+                setStartDate(null);
+                setEndDate(null);
+                setFilterModalVisible(false);
+                setPickerVisible(false);
+              }}
+            >
+              <Text style={styles.clearFilterButtonText}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        {pickerVisible && (
+          <DateTimePicker
+            value={tempDate}
+            mode="date"
+            display={Platform.OS === "ios" ? "inline" : "default"}
+            onChange={handleDateChange}
+            maximumDate={new Date()}
+            style={styles.dateTimePicker}
+            textColor="#111827"
+          />
+        )}
+      </View>
+    </Modal>
+  );
+
+  const renderItem = ({ item }) => {
+    if (item.type === "separator") {
+      return (
+        <View style={styles.dateHeader}>
+          <Text style={styles.dateHeaderText}>{item.date}</Text>
+          <LinearGradient
+            colors={["#2563EB", "#10B981"]}
+            style={styles.dateHeaderUnderline}
+          />
+        </View>
+      );
+    }
+
+    const receipt = item.data;
+    const status = statusStyles[receipt.status] || {};
+    return (
+      <Card style={styles.card}>
+        <View style={styles.cardContent}>
+          <View style={styles.cardHeader}>
+            <Image
+              source={{
+                uri: receipt.shop_image || "https://via.placeholder.com/40",
+              }}
+              style={styles.image}
+            />
+            <View style={styles.cardHeaderText}>
+              <Text style={styles.cardTitle}>{receipt.shop}</Text>
+              <Text style={styles.cardAmount}>Total: ₦{receipt.total_amount}</Text>
+            </View>
+          </View>
+          <Divider style={styles.divider} />
+          <View style={styles.statusContainer}>
+            <Chip style={[styles.chip, { backgroundColor: status.color }]}>
+              <Ionicons name={status.icon} size={16} color="white" />
+              <Text style={styles.chipText}>{status.label}</Text>
+            </Chip>
+          </View>
+          <View style={styles.actionsContainer}>
+            <ViewReceiptPDF pdf_url={receipt.pdf_url} />
+            {receipt.status === "pending" && (
+              <>
+                <TouchableOpacity
+                  style={styles.acceptButton}
+                  onPress={() => handleAction(receipt.id, "accept")}
+                >
+                  <Ionicons name="checkmark-outline" size={16} color="#FFFFFF" />
+                  <Text style={styles.actionButtonText}>Accept</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.rejectButton}
+                  onPress={() => handleAction(receipt.id, "reject")}
+                >
+                  <Ionicons name="close-outline" size={16} color="#FFFFFF" />
+                  <Text style={styles.actionButtonText}>Reject</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Card>
+    );
+  };
 
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" color="#6200EE" />
-      </View>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#2563EB" />
+          <Text style={styles.loadingText}>Loading Receipts...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={{ flex: 1, padding: 16 }}>
-      <View style={{ flexDirection: "row", justifyContent: "space-around", marginBottom: 16 }}>
-        {TABS.map((tab) => (
-          <TouchableOpacity key={tab} onPress={() => setActiveTab(tab)}>
-            <Text style={{ fontSize: 16, fontWeight: activeTab === tab ? "bold" : "normal", color: activeTab === tab ? "#6200EE" : "black" }}>{tab}</Text>
-          </TouchableOpacity>
-        ))}
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <MaterialIcons name="arrow-back" size={26} color="#FFFFFF" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Customer Receipts</Text>
+        <View style={styles.headerSpacer} />
       </View>
-
-      <FlatList
-        data={filteredReceipts}
-        keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={{ paddingBottom: 16 }}
-        renderItem={({ item }) => {
-          const status = statusStyles[item.status] || {};
-          return (
-            <Animated.View entering={FadeInUp} exiting={FadeOut}>
-              <Card mode="elevated" style={{ marginBottom: 12, borderRadius: 16, padding: 10 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
-                  <Image source={{ uri: item.shop_image || 'https://via.placeholder.com/40' }} style={styles.image} />
-                  <View style={{ marginLeft: 12 }}>
-                    <Text style={{ fontSize: 18, fontWeight: "bold" }}>{item.shop}</Text>
-                    <Text style={{ fontSize: 14, color: "#666" }}>Total: ₦{item.total_amount}</Text>
-                  </View>
-                </View>
-                
-                <Divider style={{ marginVertical: 8 }} />
-
-                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                  <Chip style={{ backgroundColor: status.color, padding: 6 }}>
-                    <Ionicons name={status.icon} size={16} color="white" />
-                    <Text style={{ color: "white", fontWeight: "bold", marginLeft: 5 }}>
-                      {status.label}
-                    </Text>
-                  </Chip>
-                </View>
-
-                <Divider style={{ marginVertical: 12 }} />
-
-                <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                  <ViewReceiptPDF pdf_url={item.pdf_url} />
-                  {item.status === "pending" && (
-                    <>
-                      <Button
-                        mode="contained"
-                        icon="check"
-                        onPress={() => handleAction(item.id, "accept")}
-                        style={{ backgroundColor: "#4CAF50" }}
-                      >
-                        Accept
-                      </Button>
-                      <Button
-                        mode="contained"
-                        icon="close"
-                        onPress={() => handleAction(item.id, "reject")}
-                        style={{ backgroundColor: "#F44336" }}
-                      >
-                        Reject
-                      </Button>
-                    </>
-                  )}
-                </View>
-              </Card>
-            </Animated.View>
-          );
-        }}
-      />
-    </View>
+      <View style={styles.content}>
+        {renderNavBar()}
+        <View style={styles.filterContainer}>
+          <TouchableOpacity
+            style={styles.filterButton}
+            onPress={() => {
+              console.log("Opening filter modal for tab:", activeTab);
+              setFilterModalVisible(true);
+            }}
+            accessibilityLabel="Filter by Date"
+          >
+            <Ionicons name="filter-outline" size={20} color="#2563EB" />
+            <Text style={styles.filterButtonText}>Filter by Date</Text>
+          </TouchableOpacity>
+          {(startDate || endDate) && (
+            <Text style={styles.filterInfoText}>
+              Filtered: {startDate ? startDate.toLocaleDateString("en-US") : "Start"} -{" "}
+              {endDate ? endDate.toLocaleDateString("en-US") : "End"}
+            </Text>
+          )}
+        </View>
+        {flatData.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="receipt-outline" size={60} color="#6B7280" />
+            <Text style={styles.emptyText}>No Receipts Yet</Text>
+            <Text style={styles.emptySubText}>Start shopping to see your receipts here!</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={flatData}
+            keyExtractor={(item, index) =>
+              item.type === "separator" ? `sep-${item.date}` : `rec-${item.data.id}`
+            }
+            contentContainerStyle={styles.flatListContent}
+            renderItem={renderItem}
+          />
+        )}
+        {renderFilterModal()}
+      </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  image: {
-    width: 50,
-    height: 50,
-    borderRadius: 29,
-    marginRight: 0,
-    borderWidth: 3,
-    borderColor: "#3A7BD5",
+  container: {
+    flex: 1,
+    backgroundColor: "#F7FAFC",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    backgroundColor: "#3A7BD5",
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 3,
   },
-})
+  backButton: {
+    padding: 5,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#FFFFFF",
+    textAlign: "center",
+    flex: 1,
+  },
+  headerSpacer: {
+    width: 42,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  navBar: {
+    marginBottom: 16,
+    padding: 4,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    alignSelf: "center",
+    width: SCREEN_WIDTH - 32,
+  },
+  navBarInner: {
+    flexDirection: "row",
+  },
+  navButton: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    alignItems: "center",
+  },
+  activeNavButton: {
+    backgroundColor: "rgba(37, 99, 235, 0.1)",
+  },
+  navButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#6B7280",
+    textAlign: "center",
+  },
+  activeNavButtonText: {
+    color: "#2563EB",
+  },
+  underline: {
+    height: 3,
+    width: "100%",
+    marginTop: 4,
+    borderRadius: 2,
+  },
+  filterContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  filterButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  filterButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#2563EB",
+    marginLeft: 6,
+  },
+  filterInfoText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#1F2A44",
+  },
+  flatListContent: {
+    paddingBottom: 200,
+  },
+  dateHeader: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    marginTop: 12,
+  },
+  dateHeaderText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  dateHeaderUnderline: {
+    height: 2,
+    borderRadius: 1,
+    marginTop: 4,
+  },
+  card: {
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+    marginBottom: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  cardContent: {
+    padding: 12,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  image: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#2563EB",
+  },
+  cardHeaderText: {
+    marginLeft: 10,
+    flex: 1,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#111827",
+  },
+  cardAmount: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#6B7280",
+  },
+  divider: {
+    marginVertical: 8,
+    backgroundColor: "#E5E7EB",
+  },
+  statusContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  chip: {
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+  },
+  chipText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "600",
+    marginLeft: 4,
+  },
+  actionsContainer: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  viewButton: {
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  viewButtonGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  viewButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FFFFFF",
+    marginLeft: 6,
+  },
+  acceptButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: "#10B981",
+  },
+  rejectButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: "#EF4444",
+  },
+  actionButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FFFFFF",
+    marginLeft: 6,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
+    zIndex: 1000,
+  },
+  modalContent: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 16,
+    paddingBottom: 32,
+    maxHeight: Platform.OS === "ios" ? 400 : 300,
+    zIndex: 1001,
+  },
+  bottomSheetHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: "#D1D5DB",
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111827",
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  dateInput: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    marginBottom: 12,
+    backgroundColor: "#F9FAFB",
+  },
+  dateInputText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#1F2A44",
+  },
+  modalButtons: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  applyFilterButton: {
+    flex: 1,
+    borderRadius: 12,
+  },
+  clearFilterButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    alignItems: "center",
+  },
+  buttonGradient: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  buttonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
+  clearFilterButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#2563EB",
+  },
+  dateTimePicker: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 10,
+    zIndex: 1002,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#1F2A44",
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 20,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#6B7280",
+    textAlign: "center",
+    marginTop: 12,
+  },
+  emptySubText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#6B7280",
+    textAlign: "center",
+    marginTop: 4,
+  },
+});
 
 export default CustomerReceipts;

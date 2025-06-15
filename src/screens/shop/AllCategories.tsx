@@ -6,12 +6,12 @@ import {
   TouchableOpacity,
   Image,
   StyleSheet,
-  SafeAreaView,
 } from 'react-native';
 import axios from 'axios';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ScrollView } from 'react-native-gesture-handler';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient'; // Added import
 
 const categoryIconMap = {
   vehicles: require('../../../assets/Image/car-icon.svg'),
@@ -46,7 +46,10 @@ const AllCategories = () => {
   }, []);
 
   const handleCategoryClick = (categoryId, categoryName) => {
-    router.push({pathname: '/shop/SubcategoryList', params: { categoryId: categoryId, categoryName: categoryName }, });
+    router.push({
+      pathname: '/shop/ChildCategoryList',
+      params: { categoryId: categoryId, categoryName: categoryName },
+    });
   };
 
   const renderCategoryItem = ({ item }) => (
@@ -54,102 +57,119 @@ const AllCategories = () => {
       style={styles.categoryItem}
       onPress={() => handleCategoryClick(item.id, item.name)}
     >
-      <Image
-        source={categoryIconMap[item.name.trim().toLowerCase()]}
-        style={styles.icon}
-        resizeMode="contain"
-      />
+      <LinearGradient
+        colors={['#E3F2FD', '#BBDEFB']}
+        style={styles.iconContainer}
+      >
+        <Image
+          source={categoryIconMap[item.name.trim().toLowerCase()]}
+          style={styles.icon}
+          resizeMode="contain"
+        />
+      </LinearGradient>
       <Text style={styles.categoryName}>{item.name}</Text>
     </TouchableOpacity>
   );
 
   return (
-  <View style={{ flex: 1 }}>
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.replace(prevRoute || '((tabs)/shop)')} style={styles.backButton}>
-          <MaterialIcons name="arrow-back" size={26} color="#007BFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>All Categories</Text>
-      </View>
-      
-      <FlatList
-        data={categories}
-        renderItem={renderCategoryItem}
-        keyExtractor={(item) => item.id.toString()}
-        numColumns={2}
-        contentContainerStyle={styles.listContainer}
-        columnWrapperStyle={styles.row}
-      />
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      <LinearGradient
+        colors={['#E3F2FD', '#BBDEFB']}
+        style={styles.container}
+      >
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => router.replace(prevRoute || '/(tabs)/shop')}
+            style={styles.backButton}
+          >
+            <MaterialIcons name="arrow-back" size={26} color="white" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>All Categories</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+        <FlatList
+          data={categories}
+          renderItem={renderCategoryItem}
+          keyExtractor={(item) => item.id.toString()}
+          numColumns={2}
+          contentContainerStyle={styles.listContainer}
+          columnWrapperStyle={styles.row}
+        />
+      </LinearGradient>
     </SafeAreaView>
-  </View>
-);
+  );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f3f4f6",
-    padding: 16,
   },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    backgroundColor: "#3A7BD5",
+    borderBottomLeftRadius: 35,
+    borderBottomRightRadius: 35,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 6,
   },
   backButton: {
-    marginRight: 10,
-    marginTop: 12,
+    padding: 5,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
   headerTitle: {
-    fontSize: 22,
-    fontWeight: "bold",
-    marginLeft: 65,
-    color: "black",
-    marginTop: 12,
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    flex: 1,
+  },
+  headerSpacer: {
+    width: 42,
   },
   listContainer: {
+    paddingHorizontal: 16,
     paddingBottom: 16,
+    paddingTop: 16,
   },
   row: {
     justifyContent: 'space-between',
   },
   categoryItem: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 12,
     marginBottom: 16,
     alignItems: 'center',
     flex: 1,
     marginHorizontal: 8,
     shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  iconContainer: {
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
   },
   icon: {
-    width: 60,
-    height: 60,
-    marginBottom: 12,
+    width: 48,
+    height: 48,
   },
   categoryName: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#555',
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1F2937',
     textAlign: 'center',
+    lineHeight: 20,
   },
 });
 

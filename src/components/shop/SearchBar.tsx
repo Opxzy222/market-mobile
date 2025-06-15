@@ -4,9 +4,9 @@ import { useRouter, usePathname } from 'expo-router';
 import GeolocationSearch from './GeolocationSearch';
 import LocationSearch from './LocationSearch';
 import ShopIdSearch from './ShopIdSearch';
-import { LinearGradient } from "expo-linear-gradient";
+import { LinearGradient } from 'expo-linear-gradient';
 
-export default function ShopSearchComponent() {
+export default function SearchBar({ onSuggestionsStateChange, onFocusChange }) {
   const [activeFilter, setActiveFilter] = useState('geolocation');
   const [fadeAnim] = useState(new Animated.Value(1));
   const router = useRouter();
@@ -32,9 +32,9 @@ export default function ShopSearchComponent() {
   };
 
   return (
-    <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
+    <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={[styles.container, { overflow: 'visible' }]}>
       <View style={styles.filterContainer}>
-        {['geolocation', 'location', 'Space ID'].map((filter) => (
+        {['geolocation', 'location', 'space ID'].map((filter) => (
           <TouchableOpacity
             key={filter}
             style={[styles.filterButton, activeFilter === filter && styles.activeFilter]}
@@ -47,10 +47,16 @@ export default function ShopSearchComponent() {
         ))}
       </View>
 
-      <Animated.View style={[styles.searchContainer, { opacity: fadeAnim }]}>
-        {activeFilter === 'geolocation' && <GeolocationSearch onSearch={handleSearch} />}
+      <Animated.View style={[styles.searchContainer, { opacity: fadeAnim, overflow: 'visible' }]}>
+        {activeFilter === 'geolocation' && (
+          <GeolocationSearch
+            onSearch={handleSearch}
+            onFocusChange={onFocusChange}
+            onSuggestionsStateChange={onSuggestionsStateChange}
+          />
+        )}
         {activeFilter === 'location' && <LocationSearch onSearch={handleSearch} />}
-        {activeFilter === 'shop ID' && <ShopIdSearch onSearch={handleSearch} />}
+        {activeFilter === 'space ID' && <ShopIdSearch onSearch={handleSearch} />}
       </Animated.View>
     </LinearGradient>
   );
@@ -60,6 +66,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 20,
+    overflow: 'visible',
   },
   filterContainer: {
     flexDirection: 'row',
@@ -85,7 +92,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 3,
-    transition: 'all 0.3s ease',
   },
   activeFilter: {
     backgroundColor: '#4785CC',
@@ -113,5 +119,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 5,
     elevation: 3,
+    overflow: 'visible',
   },
 });

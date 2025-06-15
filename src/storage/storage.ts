@@ -1,118 +1,283 @@
-// src/storage.ts
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Constants from 'expo-constants';
+import { initializeSQLiteDatabase, getSQLiteDatabase } from './sqliteStorage.native';
 
-const isWeb = Constants.platform?.web;
+let isInitialized = false;
 
-let db: any;
 const initializeDatabase = async (): Promise<void> => {
-  if (isWeb) {
-    console.log('SQLite not supported on web, using AsyncStorage fallback');
+  if (isInitialized) {
+    console.log('Database already initialized, skipping');
+    return;
+  }
+
+  if (Platform.OS === 'web') {
+    console.log('Platform is web, using AsyncStorage');
+    isInitialized = true;
     return;
   }
 
   try {
-    const SQLite = await import('expo-sqlite');
-    db = await SQLite.openDatabaseAsync('secureStorage.db');
-    console.log('Database opened');
-    await db.execAsync(`
-      PRAGMA journal_mode = WAL;
-      CREATE TABLE IF NOT EXISTS secure_data (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);
-    `);
-    console.log('Table created');
+    await initializeSQLiteDatabase();
+    isInitialized = true;
   } catch (error) {
-    console.error('Failed to initialize database:', error);
+    console.error('Database initialization failed:', error);
+    isInitialized = false;
     throw error;
   }
 };
 
 const storeData = async (key: string, value: string): Promise<number> => {
-  const encodedValue = btoa(value); // Base64 encode for compatibility
-  console.log('Encoding data for storage:', key);
+  const encodedValue = btoa(encodeURIComponent(value));
 
-  if (isWeb) {
+  if (Platform.OS === 'web') {
     try {
-      console.log('Storing in AsyncStorage:', key);
       await AsyncStorage.setItem(key, encodedValue);
-      console.log('Successfully stored in AsyncStorage:', key);
-      return 1; // Mimic SQLite row ID
+      console.log('Stored in AsyncStorage:', key);
+      return 1;
     } catch (error) {
       console.error('Error storing in AsyncStorage:', error);
       throw error;
     }
   }
 
+  const db = await getSQLiteDatabase();
+
   try {
-    console.log('Storing in SQLite:', key);
     const result = await db.runAsync(
       'INSERT OR REPLACE INTO secure_data (key, value) VALUES (?, ?);',
-      key,
-      encodedValue
+      [key, encodedValue]
     );
-    console.log('Stored data in SQLite:', result.lastInsertRowId, result.changes);
+    console.log('Stored in SQLite (secure_data):', result.lastInsertRowId, result.changes);
     return result.lastInsertRowId ?? 0;
   } catch (error) {
-    console.error('Error storing in SQLite:', error);
-    console.log('Falling back to AsyncStorage:', key);
-    try {
-      await AsyncStorage.setItem(key, encodedValue);
-      console.log('Successfully stored in AsyncStorage fallback:', key);
-      return 1;
-    } catch (asyncError) {
-      console.error('Failed to store in AsyncStorage:', asyncError);
-      throw asyncError;
-    }
+    console.error('SQLite store failed:', error);
+    throw error;
   }
 };
 
 const getData = async (key: string): Promise<string | null> => {
-  if (isWeb) {
+  if (Platform.OS === 'web') {
     try {
-      console.log('Retrieving from AsyncStorage:', key);
-      const encodedValue = await AsyncStorage.getItem(key);
-      if (encodedValue) {
-        const decodedValue = atob(encodedValue);
-        console.log('Retrieved data from AsyncStorage:', key);
-        return decodedValue;
+      const value = await AsyncStorage.getItem(key);
+      if (value) {
+        return decodeURIComponent(atob(value));
       }
-      console.log('No data found for key in AsyncStorage:', key);
       return null;
     } catch (error) {
       console.error('Error retrieving from AsyncStorage:', error);
-      return null;
+      throw error;
     }
   }
 
+  const db = await getSQLiteDatabase();
+
   try {
-    console.log('Retrieving from SQLite:', key);
     const row = await db.getFirstAsync<{ value: string }>(
       'SELECT value FROM secure_data WHERE key = ?;',
-      key
+      [key]
     );
     if (row) {
-      const decodedValue = atob(row.value);
-      console.log('Retrieved data from SQLite:', key);
-      return decodedValue;
+      return decodeURIComponent(atob(row.value));
     }
-    console.log('No data found for key in SQLite:', key);
     return null;
   } catch (error) {
-    console.error('Error retrieving from SQLite:', error);
-    console.log('Falling back to AsyncStorage:', key);
-    try {
-      const encodedValue = await AsyncStorage.getItem(key);
-      if (encodedValue) {
-        const decodedValue = atob(encodedValue);
-        console.log('Retrieved data from AsyncStorage fallback:', key);
-        return decodedValue;
-      }
-      console.log('No data found for key in AsyncStorage fallback:', key);
-      return null;
-    } catch (asyncError) {
-      console.error('Failed to retrieve from AsyncStorage:', asyncError);
-      return null;
-    }
+    console.error('SQLite retrieval failed:', error);
+    throw error;
   }
 };
 
-export { initializeDatabase, storeData, getData };
+const clearStaleData = async (prefix: string): Promise<void> => {
+  if (Platform.OS === 'web') {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      for (const key of keys) {
+        if (key.startsWith(prefix)) {
+          await AsyncStorage.removeItem(key);
+          console.log('Removed stale key from AsyncStorage:', key);
+        }
+      }
+    } catch (error) {
+      console.error('Error clearing stale AsyncStorage:', error);
+    }
+    return;
+  }
+
+  let db;
+  try {
+    db = await getSQLiteDatabase();
+  } catch (error) {
+    console.error('Failed to get database for clearStaleData:', error);
+    return;
+  }
+
+  try {
+    await db.runAsync('DELETE FROM secure_data WHERE key LIKE ?;', [`${prefix}%`]);
+    console.log('Cleared stale secure_data');
+  } catch (error) {
+    console.error('Error clearing stale secure_data:', error);
+    throw error;
+  }
+};
+
+const getSuggestions = async (query: string, limit: number = 20, offset: number = 0): Promise<string[]> => {
+  if (Platform.OS === 'web') {
+    try {
+      const cached = await AsyncStorage.getItem('suggestions');
+      if (!cached) return [];
+      const suggestions = JSON.parse(cached);
+      const filtered = suggestions
+        .filter((name: string) => name.toLowerCase().startsWith(query.toLowerCase()))
+        .slice(offset, offset + limit);
+      console.log(`Fetched ${filtered.length} suggestions from AsyncStorage`);
+      return filtered;
+    } catch (error) {
+      console.error('Error fetching suggestions from AsyncStorage:', error);
+      return [];
+    }
+  }
+
+  let db;
+  try {
+    db = await getSQLiteDatabase();
+  } catch (error) {
+    console.error('Failed to get database for suggestions:', error);
+    return [];
+  }
+
+  try {
+    const sanitizedQuery = query.trim().toLowerCase().replace(/[^a-zA-Z0-9 ]/g, '');
+    if (!sanitizedQuery) return [];
+
+    const results = await db.getAllAsync<{ name: string }>(
+      `SELECT name FROM suggestions WHERE lower(name) LIKE ? ORDER BY name ASC LIMIT ? OFFSET ?`,
+      [`${sanitizedQuery}%`, limit, offset]
+    );
+    console.log(`Fetched ${results.length} suggestions from SQLite for query "${query}"`);
+    return results.map(row => row.name);
+  } catch (error) {
+    console.error('Suggestions fetch failed:', error);
+    return [];
+  }
+};
+
+const cacheSuggestions = async (suggestions: string[]): Promise<void> => {
+  if (Platform.OS === 'web') {
+    try {
+      await AsyncStorage.setItem('suggestions', JSON.stringify(suggestions));
+      console.log('Cached suggestions in AsyncStorage');
+    } catch (error) {
+      console.error('Error caching suggestions in AsyncStorage:', error);
+      throw error;
+    }
+    return;
+  }
+
+  let db;
+  try {
+    db = await getSQLiteDatabase();
+  } catch (error) {
+    console.error('Failed to get database for cacheSuggestions:', error);
+    return;
+  }
+
+  try {
+    // Validate and sanitize suggestions
+    const validSuggestions = suggestions
+      .map(s => (typeof s === 'string' && s.trim().length > 0 ? s.trim() : null))
+      .filter((s): s is string => s !== null);
+    console.log('Valid suggestions to cache:', validSuggestions.length);
+
+    // Log invalid suggestions for debugging
+    const invalidSuggestions = suggestions.filter(s => !(typeof s === 'string' && s.trim().length > 0));
+    if (invalidSuggestions.length > 0) {
+      console.log('Invalid suggestions detected:', invalidSuggestions.slice(0, 10));
+    }
+
+    if (validSuggestions.length === 0) {
+      console.log('No valid suggestions to cache');
+      return;
+    }
+
+    const batchSize = 100;
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+    // Cache in suggestions table with retry logic
+    let attempt = 0;
+    const maxAttempts = 3;
+    while (attempt < maxAttempts) {
+      try {
+        await db.execAsync('BEGIN EXCLUSIVE TRANSACTION;');
+        for (let i = 0; i < validSuggestions.length; i += batchSize) {
+          const batch = validSuggestions.slice(i, i + batchSize);
+          const safeBatch = batch.map(s => String(s));
+          const placeholders = safeBatch.map(() => '(?)').join(', ');
+          await db.runAsync(
+            `INSERT OR IGNORE INTO suggestions (name) VALUES ${placeholders};`,
+            safeBatch
+          );
+          console.log(`Cached ${i + safeBatch.length} of ${validSuggestions.length} suggestions in SQLite table`);
+          await delay(10);
+        }
+        await db.execAsync('COMMIT;');
+        console.log('Successfully cached suggestions in SQLite:', validSuggestions.length);
+        return;
+      } catch (error) {
+        console.error(`Cache attempt ${attempt + 1} failed:`, error);
+        await db.execAsync('ROLLBACK;').catch(err => console.error('Rollback failed:', err));
+        attempt++;
+        if (attempt < maxAttempts) {
+          console.log(`Retrying cacheSuggestions in ${RETRY_DELAY}ms`);
+          await delay(RETRY_DELAY);
+          // Reinitialize database
+          await initializeSQLiteDatabase();
+          db = await getSQLiteDatabase();
+        } else {
+          throw error;
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Error caching suggestions in SQLite:', error);
+    throw error;
+  }
+};
+
+const getSuggestionsCount = async (): Promise<number> => {
+  if (Platform.OS === 'web') {
+    try {
+      const cached = await AsyncStorage.getItem('suggestions');
+      if (!cached) return 0;
+      const suggestions = JSON.parse(cached);
+      return suggestions.length;
+    } catch (error) {
+      console.error('Error counting suggestions in AsyncStorage:', error);
+      return 0;
+    }
+  }
+
+  let db;
+  try {
+    db = await getSQLiteDatabase();
+  } catch (error) {
+    console.error('Failed to get database for suggestions count:', error);
+    return 0;
+  }
+
+  try {
+    const row = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM suggestions');
+    return row?.count ?? 0;
+  } catch (error) {
+    console.error('Error counting suggestions in SQLite:', error);
+    return 0;
+  }
+};
+
+export {
+  initializeDatabase,
+  storeData,
+  getData,
+  clearStaleData,
+  getSuggestions,
+  cacheSuggestions,
+  getSuggestionsCount,
+};

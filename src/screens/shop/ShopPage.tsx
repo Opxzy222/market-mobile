@@ -1,3 +1,4 @@
+// src/app/shop/ShopPage.tsx
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -6,11 +7,15 @@ import {
   Image,
   TouchableOpacity,
   ScrollView,
-  ActivityIndicator, Alert, Clipboard, ToastAndroid, Platform
+  ActivityIndicator,
+  Alert,
+  Clipboard,
+  ToastAndroid,
+  Platform,
 } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useLocalSearchParams, useRouter } from 'expo-router'; 
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import ReviewForm from '../../components/shop/ReviewForm';
 import ShopReview from '../../components/shop/ShopReview';
 import FollowButton from '../../components/shop/FollowButton';
@@ -19,13 +24,13 @@ import ShopProduct from '../../components/shop/ShopProduct';
 import ShopPosts from '../../components/shop/ShopPost';
 import ShopLocation from '../../components/shop/MapFeatures';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { LinearGradient } from "expo-linear-gradient";
-
+import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const ShopPage = () => {
   const params = useLocalSearchParams();
   const { shopId } = params;
-  const router = useRouter(); // Router for navigation
+  const router = useRouter();
 
   const [shop, setShop] = useState(null);
   const [reviews, setReviews] = useState([]);
@@ -38,76 +43,71 @@ const ShopPage = () => {
   const [plan, setPlan] = useState('');
   const [copied, setCopied] = useState(false);
 
-
   useEffect(() => {
-    const fetchUserId = async () => {
-      const sessionIdString = await AsyncStorage.getItem("sessionToken");
-      setSessionId(sessionIdString); // No need to parse as an integer
+    const fetchSessionId = async () => {
+      try {
+        const sessionIdString = await AsyncStorage.getItem('sessionToken');
+        setSessionId(sessionIdString);
+        console.log('Session ID:', sessionIdString || 'null');
+      } catch (error) {
+        console.error('Error fetching session token:', error);
+      }
     };
 
-    fetchUserId();
-    console.log(sessionId, 'heya')
+    fetchSessionId();
   }, []);
-  
+
   useEffect(() => {
-  const fetchSessionId = async () => {
-    try {
-      const sessionIdString = await AsyncStorage.getItem("sessionToken");
-      setSessionId(sessionIdString);
-    } catch (error) {
-      console.error("Error fetching session token:", error);
-    }
+    const fetchShopData = async () => {
+      if (!sessionId || !shopId) return;
+
+      try {
+        const response = await axios.get(
+          `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/${shopId}/combined/`,
+          {
+            headers: {
+              Authorization: sessionId,
+            },
+          }
+        );
+        const data = response.data;
+
+        setShop({
+          name: data.shop.name,
+          description: data.shop.description,
+          image: data.shop.image,
+          categories: data.shop.categories,
+          category: data.shop.category,
+          products: data.shop.products,
+          address: data.shop.address,
+          shop_id: data.shop.shop_id,
+          latitude: data.shop.geo_location?.latitude,
+          longitude: data.shop.geo_location?.longitude,
+          is_open: data.shop.is_open,
+        });
+        setReviews(data.reviews);
+        setFollowerCount(data.follower_count);
+        setFollowers(data.followers || []);
+        setPosts(data.posts);
+        setPlan(data.plan);
+        console.log('Posts:', JSON.stringify(data.posts, null, 2));
+        console.log('Plan:', data.plan);
+
+        setError('');
+      } catch (error) {
+        console.error('Error fetching shop data:', error);
+        setError('Failed to fetch shop data. Please try again later.');
+      }
+    };
+
+    fetchShopData();
+  }, [sessionId, shopId]);
+
+  const handleTabChange = (tab) => {
+    console.log('Tab tapped:', tab);
+    setActiveTab(tab);
   };
 
-  fetchSessionId();
-}, []);
-
-useEffect(() => {
-  const fetchShopData = async () => {
-    if (!sessionId || !shopId) return; // Ensure sessionId & shopId exist before fetching
-
-    try {
-      const response = await axios.get(
-        `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/${shopId}/combined/`,
-        {
-          headers: {
-            Authorization: sessionId, // Sending sessionId in headers
-          },
-        }
-      );
-      const data = response.data;
-
-      setShop({
-        name: data.shop.name,
-        description: data.shop.description,
-        image: data.shop.image,
-        categories: data.shop.categories,
-        category: data.shop.category,
-        products: data.shop.products,
-        address: data.shop.address,
-        shop_id: data.shop.shop_id,
-        latitude: data.shop.geo_location?.latitude,
-        longitude: data.shop.geo_location?.longitude,
-        is_open: data.shop.is_open
-      });
-      setReviews(data.reviews);
-      setFollowerCount(data.follower_count);
-      setFollowers(data.followers || []);
-      setPosts(data.posts);
-      setPlan(data.plan);
-      console.log("yola", data.plan);
-
-      setError(""); // Clear error on success
-    } catch (error) {
-      console.error("Error fetching shop data:", error);
-      setError("Failed to fetch shop data. Please try again later.");
-    }
-  };
-
-  fetchShopData();
-}, [sessionId, shopId]); // ✅ Runs when sessionId or shopId changes
-
-  const handleTabChange = (tab) => setActiveTab(tab);
   const handleReviewSubmitted = (newReview) => {
     setReviews((prevReviews) => [newReview, ...prevReviews]);
   };
@@ -125,148 +125,173 @@ useEffect(() => {
       Clipboard.setString(shop.shop_id);
       setCopied(true);
 
-      if (Platform.OS === "android") {
-        ToastAndroid.show("Profile ID copied!", ToastAndroid.SHORT);
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Profile ID copied!', ToastAndroid.SHORT);
       } else {
-        Alert.alert("Copied", "Profile ID copied to clipboard!");
+        Alert.alert('Copied', 'Profile ID copied to clipboard!');
       }
 
       setTimeout(() => setCopied(false), 2000);
     }
   };
 
-
   return (
-    <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
-      {/* Back Button Header */}
-      <View style={styles.header}>
-        <View style={styles.backContainer}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-        <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
-        </TouchableOpacity>
-        </View>
-        <View style={styles.shopIdContainer}>
-          <Text style={styles.shopIdLabel}>SPACE ID:</Text>
-          <Text style={styles.shopId}>{shop.shop_id}</Text>
-        <TouchableOpacity onPress={copyToClipboard} style={styles.copyButton}>
-          <Ionicons name={copied ? "checkmark-circle" : "copy-outline"} size={22} color={copied ? "#4CAF50" : "#007AFF"} />
-        </TouchableOpacity>
-      </View>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content}>
-        {/* Shop Header */}
-        <View style={styles.shopHeader}>
-          <View>
-          <Image
-            source={{ uri: `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${shop.image}` }}
-            style={styles.shopImage}
-          />
+    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
+      <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.container}>
+        {/* Back Button Header */}
+        <View style={styles.header}>
+          <View style={styles.backContainer}>
+            <TouchableOpacity
+              onPress={() => {
+                console.log('Back button tapped');
+                router.back();
+              }}
+              style={styles.backButton}
+            >
+              <MaterialIcons name="arrow-back" size={24} color="white" />
+            </TouchableOpacity>
           </View>
-          
-          
-          <View style={styles.shopInfo}>
-            <Text style={styles.shopName}>{shop.name}</Text>
-            <View style={styles.shopStatusContainer}>
-              <Ionicons 
-                name={shop.is_open ? "checkmark-circle" : "alert-circle"} 
-                size={18} 
-                color={shop.is_open ? "#4CAF50" : "#FF9800"}  
+          <View style={styles.shopIdContainer}>
+            <Text style={styles.shopIdLabel}>SPACE ID:</Text>
+            <Text style={styles.shopId}>{shop.shop_id}</Text>
+            <TouchableOpacity onPress={copyToClipboard} style={styles.copyButton}>
+              <Ionicons
+                name={copied ? 'checkmark-circle' : 'copy-outline'}
+                size={22}
+                color={copied ? '#4CAF50' : 'white'}
               />
-              <Text style={[styles.shopStatusText, shop.is_open ? styles.shopOpen : styles.shopClosed]}>
-                {shop.is_open ? "Open" : "Closed"}
-              </Text>
-            </View>
-
-            <View style={styles.addressContainer}>
-              <MaterialIcons 
-                name="store" 
-                size={18} 
-                color="#4CAF50" 
-                style={styles.icon} 
-            />
-              <Text style={styles.shopAddress} numberOfLines={2}>
-                {shop.address}
-              </Text>
-            </View>
-
-            <ShopLocation shopLat={shop.latitude} shopLng={shop.longitude} />
-            <Text style={styles.followerCount}>{followerCount} Customers</Text>
-
-            <View style={styles.buttonsContainer}>
-  <FollowButton shopId={shopId} />
-  
-  <TouchableOpacity 
-    style={styles.messageButton} 
-    onPress={() => {
-      router.push({
-        pathname: '/shop/StartConversation',
-        params: { shopId: shopId, name: shop.name },
-      });
-    }}
-  >
-    <Ionicons name="chatbubble-ellipses-outline" size={18} color="#FFF" style={styles.buttonIcon} />
-    <Text style={styles.buttonText}>Message</Text>
-  </TouchableOpacity>
-</View>
-
-    </View>
-    </View>
-
-
-        {/* Shop Details */}
-        <View style={styles.details}>
-          <Text style={styles.category}>
-            {shop.categories && Array.isArray(shop.categories)
-              ? shop.categories.map((cat) => cat.name).join(', ')
-              : 'No categories available'}
-          </Text>
-          <Text style={styles.description}>{shop.description}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* Tab Navigation */}
-        <View style={styles.nav}>
-  {(shop.category?.name === 'Services'
-    ? ['posts', 'services', 'customers', 'reviews']
-    : ['posts', 'products', 'customers', 'reviews']
-  ).map((tab) => (
-    <TouchableOpacity
-      key={tab}
-      style={[styles.navTab, activeTab === tab && styles.activeTab]}
-      onPress={() => handleTabChange(tab)}
-    >
-      <Text
-        style={[
-          styles.navTabText,
-          activeTab === tab && styles.activeTabText,
-        ]}
-      >
-        {tab.charAt(0).toUpperCase() + tab.slice(1)}
-      </Text>
-    </TouchableOpacity>
-  ))}
-</View>
-
-
-        {/* Tab Content */}
-        <View style={styles.tabContent}>
-          {activeTab === 'posts' && (
-            plan === null || plan === "" ? (
-            <Text style={styles.noPostsText}>No posts available</Text>
-            ) : (
-            <ShopPosts posts={posts} />
-          )
-        )}
-          {activeTab === 'products' && <ShopProduct key={shopId} products={shop.products} />}
-          {activeTab === 'customers' && <Followers followers={followers} />}
-          {activeTab === 'reviews' && 
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="always"
+          keyboardDismissMode="interactive"
+        >
+          {/* Shop Header */}
+          <View style={styles.shopHeader}>
             <View>
-              <ReviewForm shopId={shopId} onReviewSubmitted={handleReviewSubmitted} />
-              <ShopReview reviews={reviews} />
-            </View>}
-        </View>
-      </ScrollView>
-    </LinearGradient>
+              <Image
+                source={{ uri: `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${shop.image}` }}
+                style={styles.shopImage}
+              />
+            </View>
+            <View style={styles.shopInfo}>
+              <Text style={styles.shopName}>{shop.name}</Text>
+              <View style={styles.shopStatusContainer}>
+                <Ionicons
+                  name={shop.is_open ? 'checkmark-circle' : 'alert-circle'}
+                  size={18}
+                  color={shop.is_open ? '#4CAF50' : '#FF9800'}
+                />
+                <Text
+                  style={[
+                    styles.shopStatusText,
+                    shop.is_open ? styles.shopOpen : styles.shopClosed,
+                  ]}
+                >
+                  {shop.is_open ? 'Open' : 'Closed'}
+                </Text>
+              </View>
+              <View style={styles.addressContainer}>
+                <MaterialIcons
+                  name="store"
+                  size={18}
+                  color="#4CAF50"
+                  style={styles.icon}
+                />
+                <Text style={styles.shopAddress} numberOfLines={2}>
+                  {shop.address}
+                </Text>
+              </View>
+              <ShopLocation shopLat={shop.latitude} shopLng={shop.longitude} />
+              <Text style={styles.followerCount}>{followerCount} Customers</Text>
+              <View style={styles.buttonsContainer}>
+                <FollowButton
+                  shopId={shopId}
+                  onPress={() => console.log('FollowButton tapped')}
+                />
+                <TouchableOpacity
+                  style={styles.messageButton}
+                  onPress={() => {
+                    console.log('Message button tapped');
+                    router.push({
+                      pathname: '/shop/StartConversation',
+                      params: { shopId: shopId, name: shop.name },
+                    });
+                  }}
+                >
+                  <Ionicons
+                    name="chatbubble-ellipses-outline"
+                    size={18}
+                    color="#FFF"
+                    style={styles.buttonIcon}
+                  />
+                  <Text style={styles.buttonText}>Message</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+
+          {/* Shop Details */}
+          <View style={styles.details}>
+            <Text style={styles.description}>{shop.description}</Text>
+            <Text style={styles.category}>
+              {shop.categories && Array.isArray(shop.categories)
+                ? shop.categories.map((cat) => cat.name).join(', ')
+                : 'No categories available'}
+            </Text>
+          </View>
+
+          {/* Tab Navigation */}
+          <View style={styles.nav}>
+            {(shop.category?.name === 'Services'
+              ? ['posts', 'services', 'customers', 'reviews']
+              : ['posts', 'products', 'customers', 'reviews']
+            ).map((tab) => (
+              <TouchableOpacity
+                key={tab}
+                style={[styles.navTab, activeTab === tab && styles.activeTab]}
+                onPress={() => handleTabChange(tab)}
+              >
+                <Text
+                  style={[styles.navTabText, activeTab === tab && styles.activeTabText]}
+                >
+                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Tab Content */}
+          <View style={styles.tabContent}>
+            {activeTab === 'posts' &&
+              (plan === null || plan === '' ? (
+                <Text style={styles.noPostsText}>No posts available</Text>
+              ) : (
+                <View style={styles.postsContainer}>
+                  <ShopPosts posts={posts} scrollEnabled={false} />
+                </View>
+              ))}
+            {activeTab === 'products' && (
+              <ShopProduct key={shopId} products={shop.products} />
+            )}
+            {activeTab === 'services' && (
+              <ShopProduct key={shopId} products={shop.products} />
+            )}
+            {activeTab === 'customers' && <Followers followers={followers} />}
+            {activeTab === 'reviews' && (
+              <View style={[styles.reviewsContainer, { keyboardShouldPersistTaps: 'always' }]}>
+                <ReviewForm shopId={shopId} onReviewSubmitted={handleReviewSubmitted} />
+                {/* <ShopReview reviews={reviews} /> */}
+                <ShopReview reviews={reviews} />
+              </View>
+            )}
+          </View>
+        </ScrollView>
+      </LinearGradient>
+    </SafeAreaView>
   );
 };
 
@@ -280,8 +305,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
-    shadowColor: "#000",
+    backgroundColor: '#3A7BD5',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -292,20 +317,17 @@ const styles = StyleSheet.create({
   },
   backContainer: {},
   backButton: {
-    marginRight: 5,
-  },
-  headerTitle: {
-    fontSize: 20,
-    color: '#2c3e50',
-    fontWeight: 'bold',
+    padding: 5,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
   content: {
     padding: 15,
     marginTop: -25,
+    paddingBottom: 20,
   },
   shopHeader: {
     flexDirection: 'row',
-    marginVertical: 15,
     alignItems: 'center',
     backgroundColor: '#ffffff',
     padding: 15,
@@ -355,8 +377,6 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     marginTop: 2,
   },
-
-  // 🔧 FIXED BUTTON STYLES 🔧
   buttonsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -366,49 +386,46 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     gap: 10,
   },
-  
   messageButton: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  backgroundColor: '#007BFF',
-  paddingVertical: 8,
-  paddingHorizontal: 12, // reduced from 18
-  borderRadius: 20,
-  shadowColor: '#000',
-  shadowOffset: { width: 0, height: 1 },
-  shadowOpacity: 0.1,
-  shadowRadius: 4,
-  elevation: 2,
-  flex: 1,
-  flexShrink: 1,
-  minWidth: 90,
-  maxWidth: 140,
-  maxHeight: 42,
-},
-
-buttonText: {
-  color: '#fff',
-  fontWeight: '600',
-  textAlign: 'center',
-  fontSize: 13, // slightly smaller
-},
-
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#007BFF',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 90,
+    maxWidth: 140,
+    maxHeight: 42,
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: '600',
+    textAlign: 'center',
+    fontSize: 13,
+  },
   buttonIcon: {
     marginRight: 5,
   },
   details: {
-    marginVertical: 15,
+    marginVertical: 5,
   },
   category: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#34495e',
-    marginBottom: 8,
   },
   description: {
     fontSize: 14,
     color: 'black',
     lineHeight: 22,
+    marginBottom: 16,
   },
   nav: {
     flexDirection: 'row',
@@ -446,51 +463,65 @@ buttonText: {
     elevation: 3,
     marginTop: 8,
   },
-  tabText: {
-    fontSize: 14,
-    color: '#34495e',
-    lineHeight: 20,
-  },
   shopIdContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   shopIdLabel: {
     fontSize: 16,
-    color: 'black',
+    color: '#FFFFFF',
     marginRight: 8,
     fontWeight: '700',
   },
   shopId: {
     fontSize: 16,
-    color: 'black',
+    color: '#FFFFFF',
     marginRight: 1,
   },
   copyButton: {
     padding: 6,
     borderRadius: 8,
-    backgroundColor: "rgba(0, 122, 255, 0.1)",
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
   shopStatusContainer: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 6,
     marginTop: 6,
     paddingVertical: 4,
     paddingHorizontal: 0,
     borderRadius: 6,
     marginBottom: 5,
-    alignSelf: "flex-start",
+    alignSelf: 'flex-start',
   },
   shopStatusText: {
     fontSize: 14,
-    fontWeight: "bold",
+    fontWeight: 'bold',
   },
   shopOpen: {
-    color: "#4CAF50",
+    color: '#4CAF50',
   },
   shopClosed: {
-    color: "#FF9800",
+    color: '#FF9800',
+  },
+  noPostsText: {
+    fontSize: 16,
+    color: '#7f8c8d',
+    textAlign: 'center',
+  },
+  errorText: {
+    fontSize: 16,
+    color: 'red',
+    textAlign: 'center',
+    marginTop: 20,
+  },
+  postsContainer: {
+    minHeight: 300,
+    maxHeight: 600,
+  },
+  reviewsContainer: {
+    minHeight: 300,
+    maxHeight: 600,
   },
 });
 

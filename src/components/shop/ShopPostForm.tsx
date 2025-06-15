@@ -1,14 +1,16 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   Image,
-  ScrollView,
+  FlatList,
   Alert,
   StyleSheet,
   ActivityIndicator,
+  Keyboard,
+  Platform,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
@@ -16,62 +18,61 @@ import { Ionicons } from "@expo/vector-icons";
 import axios from "axios";
 
 const ShopPostForm = ({ shopId }) => {
-  console.log("ShopPostForm render start");
-
   const [description, setDescription] = useState("");
   const [media, setMedia] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+  const textInputRef = useRef(null);
+  const renderCountRef = useRef(0);
 
-  const pickMedia = async () => {
+  useEffect(() => {
+    renderCountRef.current += 1;
+    console.log(`ShopPostForm rendered (count: ${renderCountRef.current})`);
+    return () => {
+      console.log("ShopPostForm unmounted");
+    };
+  }, []);
+
+  const pickMedia = useCallback(async () => {
+    console.log("Picking media");
     try {
-      console.log("Launching document picker...");
       const result = await DocumentPicker.getDocumentAsync({
         type: ["image/*", "video/*"],
         copyToCacheDirectory: true,
         multiple: true,
       });
 
-      console.log("Picker result:", JSON.stringify(result, null, 2));
-
       if (!result.canceled && result.assets?.length > 0) {
+        if (result.assets.length < 2 && Platform.OS !== "web") {
+          Alert.alert(
+            "Info",
+            "Only one file selected. Want to add more?",
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Add More", onPress: pickMedia },
+            ]
+          );
+        }
+
         const newMediaPromises = result.assets.map(async (asset) => {
           const { uri, name, mimeType, size } = asset;
           const isVideo = mimeType?.startsWith("video/");
           const isImage = mimeType?.startsWith("image/");
 
           if (!isImage && !isVideo) {
-            Alert.alert(
-              "Warning",
-              `File "${name || "selected file"}" is not a valid image or video.`
-            );
+            Alert.alert("Warning", `File "${name}" is not a valid image or video.`);
             return null;
           }
 
-          // Validate URI and size
           try {
-            console.log("Validating URI:", uri);
             const info = await FileSystem.getInfoAsync(uri);
             if (!info.exists || info.isDirectory) {
               throw new Error("File not found");
             }
-            console.log("URI valid, size:", info.size);
 
-            // Limit file size (e.g., 10 MB)
             if (info.size > 10 * 1024 * 1024) {
-              Alert.alert(
-                "Warning",
-                `File "${name || "selected file"}" is too large (max 10 MB).`
-              );
+              Alert.alert("Warning", `File "${name}" is too large (max 10 MB).`);
               return null;
-            }
-
-            // Skip duration check
-            if (isVideo) {
-              console.log(
-                "Skipping duration check for:",
-                name,
-                "(videos longer than 2 minutes may be rejected)"
-              );
             }
 
             return {
@@ -79,14 +80,11 @@ const ShopPostForm = ({ shopId }) => {
               uri,
               name: name || `media_${Date.now()}.${isVideo ? "mp4" : "jpg"}`,
               type: isVideo ? "video" : "image",
+              mimeType,
               valid: true,
             };
           } catch (error) {
-            console.error("Validation failed for:", uri, error);
-            Alert.alert(
-              "Warning",
-              `File "${name || "selected file"}" is invalid and will be skipped.`
-            );
+            Alert.alert("Warning", `File "${name}" is invalid and will be skipped.`);
             return null;
           }
         });
@@ -95,23 +93,27 @@ const ShopPostForm = ({ shopId }) => {
           (item) => item !== null
         );
         setMedia((prevMedia) => [...prevMedia, ...newMedia]);
-      } else {
-        console.log("Picker canceled or no assets selected.");
       }
     } catch (error) {
-      console.error("Error picking media:", error);
       Alert.alert("Error", "Failed to select media. Please try again.");
     }
-  };
+  }, []);
 
-  const removeMedia = (id) => {
-    console.log("Removing media:", id);
+  const removeMedia = useCallback((id) => {
+    console.log("Removing media with id:", id);
     setMedia((prevMedia) => prevMedia.filter((m) => m.id !== id));
-  };
+  }, []);
 
-  const handleSubmit = async () => {
-    if (!description.trim() || media.length === 0) {
-      Alert.alert("Error", "Please add a description and at least one media file.");
+  const handleSubmit = useCallback(async () => {
+    console.log("Submitting post");
+    Keyboard.dismiss();
+    if (textInputRef.current) {
+      textInputRef.current.blur();
+      setIsFocused(false);
+    }
+
+    if (!description.trim() && media.length === 0) {
+      Alert.alert("Error", "Please add a description or at least one media file.");
       return;
     }
 
@@ -120,47 +122,36 @@ const ShopPostForm = ({ shopId }) => {
     formData.append("shop_id", shopId);
     formData.append("description", description);
 
-    // Validate media before appending
     const validMedia = [];
+    const failedMedia = [];
     for (const file of media) {
       if (file.valid) {
         try {
           const info = await FileSystem.getInfoAsync(file.uri);
           if (!info.exists) {
-            console.log("File inaccessible:", file.uri);
-            Alert.alert(
-              "Warning",
-              `File "${file.name}" is no longer accessible and will be skipped.`
-            );
+            failedMedia.push(file.name);
             continue;
           }
-          const newFile = {
+          formData.append("files", {
             uri: file.uri.startsWith("file://") ? file.uri : `file://${file.uri}`,
-            type: file.type === "image" ? "image/jpeg" : "video/mp4",
+            type: file.mimeType || (file.type === "image" ? "image/jpeg" : "video/mp4"),
             name: file.name,
-          };
-          console.log("Appending File:", newFile);
-          formData.append("files", newFile);
+          });
           validMedia.push(file);
         } catch (error) {
-          console.error("File validation failed before submit:", file.uri, error);
-          Alert.alert(
-            "Warning",
-            `File "${file.name}" is invalid and will be skipped.`
-          );
+          failedMedia.push(file.name);
         }
       }
     }
 
-    if (validMedia.length === 0) {
+    if (validMedia.length === 0 && !description.trim()) {
       setLoading(false);
-      Alert.alert("Error", "No valid media files to submit.");
+      Alert.alert("Error", "No valid media files or description to submit.");
       setMedia([]);
       return;
     }
 
     try {
-      console.log("Sending FormData with files:", validMedia.length);
       const response = await axios.post(
         `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/${shopId}/posts/create/`,
         formData,
@@ -168,26 +159,23 @@ const ShopPostForm = ({ shopId }) => {
           headers: {
             "Content-Type": "multipart/form-data",
           },
-          timeout: 30000, // 30s timeout
+          timeout: 30000,
         }
       );
 
-      console.log("Server Response:", response.data);
-      Alert.alert("Success", "Post created successfully!");
+      let successMessage = "Post created successfully!";
+      if (failedMedia.length > 0) {
+        successMessage += `\nWarning: ${failedMedia.length} file(s) failed to upload: ${failedMedia.join(", ")}.`;
+      }
+      Alert.alert("Success", successMessage);
       setDescription("");
       setMedia([]);
     } catch (error) {
-      console.error(
-        "Error submitting post:",
-        error.response?.data || error.message
-      );
       let errorMessage = "Failed to submit post.";
       if (error.code === "ECONNABORTED") {
         errorMessage = "Request timed out. Please check your network.";
       } else if (error.response) {
-        errorMessage = `Server error: ${
-          error.response.data?.message || error.response.status
-        }`;
+        errorMessage = `Server error: ${error.response.data?.message || error.response.status}`;
       } else if (error.message.includes("Network Error")) {
         errorMessage = "Network error. Please check your connection.";
       }
@@ -195,16 +183,74 @@ const ShopPostForm = ({ shopId }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [description, media, shopId]);
 
-  console.log("ShopPostForm render end, media count:", media.length);
+  const handleFocus = useCallback(() => {
+    console.log("Description input focused");
+    setIsFocused(true);
+  }, []);
+
+  const handleBlur = useCallback(() => {
+    console.log("Description input blurred");
+    setIsFocused(false);
+  }, []);
+
+  const renderMediaItem = useCallback(
+    ({ item }) => (
+      <View style={styles.mediaPreviewWrapper}>
+        {!item.valid ? (
+          <View style={styles.placeholder}>
+            <Ionicons
+              name={item.type === "image" ? "image-outline" : "videocam-outline"}
+              size={40}
+              color="#999"
+            />
+            <Text style={styles.errorText}>No preview</Text>
+          </View>
+        ) : item.type === "image" ? (
+          <Image
+            source={{ uri: item.uri }}
+            style={styles.mediaPreview}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.mediaPreview}>
+            <Image
+              source={{ uri: item.uri }}
+              style={styles.mediaPreview}
+              resizeMode="cover"
+            />
+            <View style={styles.playIconContainer}>
+              <Ionicons
+                name="play-circle"
+                size={40}
+                color="rgba(255, 255, 255, 0.8)"
+              />
+            </View>
+          </View>
+        )}
+        <TouchableOpacity
+          style={styles.removeMediaButton}
+          onPress={() => removeMedia(item.id)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="close-circle" size={24} color="#ff4d4d" />
+        </TouchableOpacity>
+      </View>
+    ),
+    [removeMedia]
+  );
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <View style={styles.container}>
       <Text style={styles.title}>Create a Post</Text>
 
       <Text style={styles.subtitle}>Select Media (Images or Videos)</Text>
-      <TouchableOpacity onPress={pickMedia} style={styles.optionCard}>
+      <TouchableOpacity
+        onPress={pickMedia}
+        style={styles.optionCard}
+        activeOpacity={0.7}
+      >
         <Ionicons
           name="image-outline"
           size={24}
@@ -214,64 +260,46 @@ const ShopPostForm = ({ shopId }) => {
         <Text style={styles.optionText}>Add Images or Videos</Text>
       </TouchableOpacity>
 
-      <View style={styles.mediaPreviewContainer}>
-        {media.map((item) => (
-          <View key={item.id} style={styles.mediaPreviewWrapper}>
-            {!item.valid ? (
-              <View style={styles.placeholder}>
-                <Ionicons
-                  name={item.type === "image" ? "image-outline" : "videocam-outline"}
-                  size={40}
-                  color="#999"
-                  style={styles.placeholderIcon}
-                />
-                <Text style={styles.errorText}>No preview</Text>
-              </View>
-            ) : item.type === "image" ? (
-              <Image
-                source={{ uri: item.uri }}
-                style={styles.mediaPreview}
-                resizeMode="cover"
-              />
-            ) : (
-              <View style={styles.mediaPreview}>
-                <Image
-                  source={{ uri: item.uri }}
-                  style={styles.mediaPreview}
-                  resizeMode="cover"
-                />
-                <View style={styles.playIconContainer}>
-                  <Ionicons
-                    name="play-circle"
-                    size={40}
-                    color="rgba(255, 255, 255, 0.8)"
-                  />
-                </View>
-              </View>
-            )}
-            <TouchableOpacity
-              style={styles.removeMediaButton}
-              onPress={() => removeMedia(item.id)}
-            >
-              <Ionicons name="close-circle" size={24} color="#ff4d4d" />
-            </TouchableOpacity>
-          </View>
-        ))}
-      </View>
+      <FlatList
+        data={media}
+        renderItem={renderMediaItem}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.mediaPreviewContainer}
+        numColumns={3}
+        scrollEnabled={false}
+        keyboardShouldPersistTaps="always"
+      />
 
       <TextInput
+        ref={textInputRef}
         style={styles.input}
         placeholder="Enter post description"
         value={description}
         onChangeText={setDescription}
-        multiline
-        numberOfLines={4}
+        multiline={false} // Temporarily disable multiline
+        returnKeyType="done"
+        blurOnSubmit={true}
+        onSubmitEditing={() => {
+          console.log("Description input submitted");
+          Keyboard.dismiss();
+          if (textInputRef.current) {
+            textInputRef.current.blur();
+            setIsFocused(false);
+          }
+        }}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        accessible={true}
+        accessibilityLabel="Post description input"
       />
 
       <TouchableOpacity
-        style={[styles.button, loading && styles.buttonDisabled]}
         onPress={handleSubmit}
         disabled={loading}
+        activeOpacity={0.7}
+        style={[styles.button, loading && styles.buttonDisabled]}
+        accessible={true}
+        accessibilityLabel="Submit post"
       >
         {loading ? (
           <ActivityIndicator size="small" color="#fff" />
@@ -279,14 +307,14 @@ const ShopPostForm = ({ shopId }) => {
           <Text style={styles.buttonText}>Post</Text>
         )}
       </TouchableOpacity>
-    </ScrollView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    padding: 20,
     backgroundColor: "#f9f9f9",
+    padding: 20,
   },
   title: {
     fontSize: 24,
@@ -325,18 +353,15 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   mediaPreviewContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginBottom: 20,
-    gap: 10,
+    paddingBottom: 10,
   },
   mediaPreviewWrapper: {
     position: "relative",
-    marginBottom: 10,
+    margin: 5,
   },
   mediaPreview: {
-    width: 80,
-    height: 80,
+    width: 100,
+    height: 100,
     borderRadius: 8,
   },
   playIconContainer: {
@@ -349,15 +374,12 @@ const styles = StyleSheet.create({
     padding: 5,
   },
   placeholder: {
-    width: 80,
-    height: 80,
+    width: 100,
+    height: 100,
     borderRadius: 8,
     backgroundColor: "#f0f0f0",
     justifyContent: "center",
     alignItems: "center",
-  },
-  placeholderIcon: {
-    marginBottom: 5,
   },
   errorText: {
     color: "#ff4d4d",
@@ -377,8 +399,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: "#fff",
     marginBottom: 15,
-    minHeight: 100,
-    textAlignVertical: "top",
+    minHeight: 40,
+    zIndex: 1,
   },
   button: {
     backgroundColor: "#28a745",

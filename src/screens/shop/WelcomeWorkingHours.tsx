@@ -6,6 +6,7 @@ import { Provider, Button, Switch } from "react-native-paper";
 import { TimePickerModal } from "react-native-paper-dates";
 import { Ionicons } from "@expo/vector-icons";
 import CheckmarkModal from "@/components/shop/ModalComponent";
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function WelcomeWorkingHours() {
   const router = useRouter();
@@ -26,7 +27,7 @@ export default function WelcomeWorkingHours() {
 
   const fetchWorkingHours = async () => {
     try {
-      const response = await axios.get(`https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop/${shopId}/working-hours/`);
+      const response = await axios.get(`https://127.0.0.1:8000/shop/${shopId}/working-hours/`);
       const data = response.data;
       setIs24_7(data.is_24_7);
       setOpeningHours({
@@ -55,7 +56,7 @@ export default function WelcomeWorkingHours() {
       ),
     };
 
-    await axios.post(`https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop/${shopId}/working-hours/`, formattedHours);
+    await axios.post(`https://127.0.0.1:8000/shop/${shopId}/working-hours/`, formattedHours);
 
     // Show success modal
     setShowSuccessModal(true);
@@ -86,6 +87,7 @@ export default function WelcomeWorkingHours() {
   };
 
   return (
+    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
     <Provider>
       <View style={styles.container}>
         <View style={styles.header}>
@@ -128,6 +130,7 @@ export default function WelcomeWorkingHours() {
         <CheckmarkModal visible={showSuccessModal} message="Working hours updated!" />
       </View>
     </Provider>
+    </SafeAreaView>
   );
 }
 

@@ -17,25 +17,55 @@ const ReviewForm = ({ shopId, onReviewSubmitted }) => {
   const [error, setError] = useState('');
   const [ratingError, setRatingError] = useState('');
   const [sessionId, setSessionId] = useState(null);
+  const [isVerified, setIsVerified] = useState(null); // State for verification status
 
   useEffect(() => {
-    const fetchSessionId = async () => {
-      const sessionIdString = await AsyncStorage.getItem("sessionToken");
-      setSessionId(sessionIdString);
+    const fetchSessionAndVerification = async () => {
+      try {
+        // Fetch session token
+        const sessionIdString = await AsyncStorage.getItem('sessionToken');
+        setSessionId(sessionIdString);
+
+        // Fetch user verification status
+        const value = await AsyncStorage.getItem("user_verified");
+        const userVerified = JSON.parse(value);
+        if (userVerified !== null) {
+          setIsVerified(userVerified); 
+        }
+      } catch (error) {
+        console.error('Error fetching session or verification status:', error);
+      }
     };
 
-    fetchSessionId();
+    fetchSessionAndVerification();
   }, []);
 
   const handleSubmit = async () => {
     setError('');
     setRatingError('');
 
+    // Check if user is verified
+    if (isVerified === false) {
+      Alert.alert(
+        'Verification Required',
+        'Only verified users can post a review. Please verify your ID to continue.'
+      );
+      return;
+    }
+
+    // Check if verification status is still loading
+    if (isVerified === null) {
+      Alert.alert('Error', 'Unable to verify user status. Please try again.');
+      return;
+    }
+
+    // Validate comment
     if (!comment) {
       setError('Comment cannot be empty.');
       return;
     }
 
+    // Validate rating
     if (rating === null) {
       setRatingError('Please select a rating.');
       return;
@@ -60,6 +90,7 @@ const ReviewForm = ({ shopId, onReviewSubmitted }) => {
       onReviewSubmitted(response.data);
       setRating(null); // Reset to null after submission
       setComment('');
+      Alert.alert('Success', 'Review submitted successfully!');
     } catch (error) {
       Alert.alert('Error', 'Failed to submit review.');
       console.error('Error submitting review:', error);

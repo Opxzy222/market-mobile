@@ -1,437 +1,720 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
+  TextInput,
+  FlatList,
   Text,
-  Image,
-  Modal,
   TouchableOpacity,
   StyleSheet,
-  Animated,
-} from "react-native";
-import { useVideoPlayer, VideoView } from "expo-video";
-import * as FileSystem from "expo-file-system";
-import axios from "axios";
+  ActivityIndicator,
+  Keyboard,
+  Platform,
+} from 'react-native';
+import debounce from 'lodash.debounce';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const IMAGE_TEXT_DURATION = 6000; // 6 seconds for image and text statuses
-const VIDEO_MAX_DURATION = 30000; // 30 seconds maximum for video statuses
-
-const StatusViewer = ({ visible, statuses, onClose, userId }) => {
-  console.log("statuses", statuses);
-
-  const [currentShopIndex, setCurrentShopIndex] = useState(0);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [sortedStatuses, setSortedStatuses] = useState([]);
-
-  const progress = useRef(new Animated.Value(0)).current;
-  const progressAnimation = useRef(null);
-  const pausedTime = useRef(0);
-  const isPaused = useRef(false);
-
-  const cacheMediaFile = async (url) => {
-  if (!url) return url; // Skip if no media URL
-
-  const fileName = url.split("/").pop(); // Extract filename from URL
-  const filePath = `${FileSystem.cacheDirectory}${fileName}`;
-
-  // Check if the file is already cached
-  const fileInfo = await FileSystem.getInfoAsync(filePath);
-  if (fileInfo.exists) {
-    return filePath; // Return cached file path
-  }
-
-  // Download and cache the file
-  try {
-    const { uri } = await FileSystem.downloadAsync(url, filePath);
-    return uri;
-  } catch (error) {
-    console.error("Failed to cache media:", error);
-    return url; // Fallback to original URL if download fails
-  }
+// Initialize with fallbacks
+let initializeDatabase = async () => {
+  console.log('Fallback: Skipping database initialization');
 };
+let getSuggestions = async () => [];
+let cacheSuggestions = async () => {
+  console.error('Fallback failed: Storage module not loaded');
+  throw new Error('Storage module not loaded');
+};
+let getSuggestionsCount = async () => 0;
 
-  // Sort statuses once on first render or when `statuses` change
+try {
+  const storage = require('../storage/storage');
+  if (storage && typeof storage === 'object' && storage.initializeDatabase) {
+    initializeDatabase = storage.initializeDatabase;
+    getSuggestions = storage.getSuggestions || getSuggestions;
+    cacheSuggestions = storage.cacheSuggestions || cacheSuggestions;
+    getSuggestionsCount = storage.getSuggestionsCount || getSuggestionsCount;
+  }
+} catch (error) {
+  console.error('Failed to load storage module:', error);
+}
+
+const AutocompleteInput = ({
+  value,
+  onChangeText,
+  onSubmit,
+  style,
+  onFocusChange,
+  inputRef,
+  suggestionsRef,
+  onSuggestionsStateChange,
+}) => {
+  const [suggestions, setSuggestions] = useState([]);
+  const [loading, setIsLoading] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+  const [error, setError] = useState(null);
+  const flatListRef = useRef(null);
+
   useEffect(() => {
-  const preloadMedia = async () => {
-    if (statuses.length > 0) {
-      let sorted = await Promise.all(
-        statuses.map(async (shop) => ({
-          ...shop,
-          statuses: await Promise.all(
-            shop.statuses.map(async (status) => ({
-              ...status,
-              media: status.media ? await cacheMediaFile(status.media) : null, // Cache media
-            }))
-          ),
-        }))
-      );
-
-      let firstUnviewedShopIndex = sorted.findIndex((shop) =>
-        shop.statuses.some((status) => !status.viewed)
-      );
-
-      if (firstUnviewedShopIndex !== -1) {
-        let firstUnviewedStatusIndex = sorted[firstUnviewedShopIndex].statuses.findIndex(
-          (status) => !status.viewed
-        );
-        setCurrentShopIndex(firstUnviewedShopIndex);
-        setCurrentIndex(firstUnviewedStatusIndex !== -1 ? firstUnviewedStatusIndex : 0);
-      } else {
-        setCurrentShopIndex(0);
-        setCurrentIndex(0);
+    const init = async () => {
+      const initialized = await AsyncStorage.getItem('suggestions_initialized');
+      if (initialized === 'true') return;
+      try {
+        await initializeDatabase();
+        await populateInitialSuggestions();
+        await AsyncStorage.setItem('suggestions_initialized', 'true');
+      } catch (err) {
+        console.error('Initialization failed:', err);
+        setError('Failed to initialize suggestions');
+        await populateInitialSuggestions(true);
       }
-
-      setSortedStatuses(sorted);
-
-      setTimeout(() => {
-        progress.setValue(0);
-        startProgress(getStatusDuration());
-      }, 0);
-    }
-  };
-
-  preloadMedia();
-}, [statuses]);
-
-  const getAllStatuses = () => {
-    return sortedStatuses[currentShopIndex]?.statuses || [];
-  };
-
-  const getStatusDuration = () => {
-  const currentStatus = getAllStatuses()[currentIndex];
-  if (currentStatus?.media_type === "video") {
-    return Math.min(player?.duration * 1000 || VIDEO_MAX_DURATION, VIDEO_MAX_DURATION);
-  } else if (currentStatus?.media_type === "image" || currentStatus?.text) {
-    return IMAGE_TEXT_DURATION; // Text statuses should follow the 6s rule
-  }
-  return IMAGE_TEXT_DURATION;
-};
-
-  useEffect(() => {
-    if (visible) {
-      progress.setValue(0);
-      startProgress(getStatusDuration());
-    }
-    markStatusAsViewed(getAllStatuses()[currentIndex]);
-  }, [currentIndex, currentShopIndex]);
-
-  const startProgress = (duration) => {
-    if (isPaused.current) return;
-    progress.setValue(0);
-    progressAnimation.current = Animated.timing(progress, {
-      toValue: 1,
-      duration: duration,
-      useNativeDriver: false,
-    }).start(({ finished }) => {
-      if (finished) handleNext();
-    });
-  };
-
-  const handleNext = () => {
-  const allStatuses = getAllStatuses();
-  if (!allStatuses.length) return; // Ensure statuses are available
-
-  if (currentIndex < allStatuses.length - 1) {
-    setCurrentIndex((prev) => prev + 1);
-  } else if (currentShopIndex < sortedStatuses.length - 1) {
-    setCurrentShopIndex((prev) => prev + 1);
-    setCurrentIndex(0);
-  } else {
-    onClose();
-  }
-};
-
-
-  const handlePrev = () => {
-  setCurrentIndex((prevIndex) => {
-    if (prevIndex > 0) {
-      return prevIndex - 1;  // Go to the previous status
-    } 
-    
-    return setCurrentShopIndex((prevShopIndex) => {
-      if (prevShopIndex > 0) {
-        const prevShopStatuses = sortedStatuses[prevShopIndex - 1].statuses;
-        setCurrentIndex(prevShopStatuses.length - 1);  // Last status of previous shop
-        return prevShopIndex - 1;
-      } else {
-        onClose();
-        return prevShopIndex; // Ensures no invalid updates
-      }
-    });
-  });
-};
-
-
-  const markStatusAsViewed = async (status) => {
-    if (!status || status.viewed || !userId) return;
-    try {
-      const formData = new FormData();
-      formData.append("user_id", userId.toString());
-      formData.append("status_ids[]", status.id);
-
-      await axios.post(
-        "https://127.0.0.1:8000/mark_status_viewed/",
-        formData,
-        { headers: { "Content-Type": "multipart/form-data" } }
-      );
-
-      status.viewed = true;
-    } catch (error) {
-      console.error("Error marking status as viewed:", error);
-    }
-  };
-
-  const togglePause = () => {
-  if (!player || !player?.play) return;
-
-  if (isPaused.current) {
-    isPaused.current = false;
-    const remainingTime = getStatusDuration() - pausedTime.current;
-    progress.setValue(pausedTime.current / getStatusDuration());
-    startProgress(remainingTime); // Restart progress with remaining time
-
-    if (isVideo && player?.paused) {
-      player.play();
-    }
-  } else {
-    isPaused.current = true;
-    progressAnimation.current?.stop();  // Stop the timer
-    pausedTime.current = progress.__getValue() * getStatusDuration();
-
-    if (isVideo && !player?.paused) {
-      player.pause();
-    }
-  }
-};
-
-  const allStatuses = getAllStatuses();
-  const hasStatuses = allStatuses.length > 0;
-
-  // Move this above the return statement to ensure Hooks are always called
-  const currentStatus = allStatuses[currentIndex] || {};
-  const isImage = currentStatus?.media_type === "image";
-const isVideo = currentStatus?.media_type === "video";
-const hasMedia = isImage || isVideo;
-const statusText = currentStatus?.text || "";
-
-  // Always define hooks before any conditional return
-  const player = useVideoPlayer(
-  sortedStatuses[currentShopIndex]?.statuses[currentIndex]?.media ?? "", // Ensure it uses the cached version
-  (player) => {
-    if (player) {
-      player.loop = false;
-    }
-  }
-);
-
-  useEffect(() => {
-  if (isVideo && player) {
-    const checkDuration = setInterval(() => {
-      if (player?.duration) {
-        progress.setValue(0);  // Reset progress
-        progressAnimation.current?.stop();
-        startProgress(getStatusDuration()); // Start timer only after video is ready
-        clearInterval(checkDuration); 
-      }
-    }, 100);
-
-    return () => clearInterval(checkDuration);
-  }
-}, [player, isVideo]);
-
-  useEffect(() => {
-  if (isVideo && player) {
-    player.play();
-    return () => player.pause();
-  }
-}, [currentIndex, currentShopIndex, player]);
-
-
-  useEffect(() => {
-    if (isVideo && !isPaused.current) {
-      player.play();
-    } else {
-      player.pause();
-    }
-
-    if (!isVideo && progressAnimation?.current) {
-      progressAnimation.current.start();
-    }
-
-    return () => {
-      player.pause();
-      progressAnimation?.current?.stop();
     };
-  }, [currentIndex, currentShopIndex]);
+    init();
+  }, []);
 
-  if (!visible || !hasStatuses) return null;
+  const populateInitialSuggestions = async (useAsyncStorage = false, retryCount = 0, maxRetries = 3) => {
+    try {
+      let count = useAsyncStorage
+        ? (JSON.parse(await AsyncStorage.getItem('suggestions')) || []).length
+        : await getSuggestionsCount();
+      if (count >= 1000) return;
+
+      setIsLoading(true);
+      let response;
+      try {
+        response = await axios.get('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/all-suggestions/', {
+          timeout: 60000,
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'User-Agent': 'market-mobile/1.0.0' },
+          validateStatus: status => status >= 200 && status < 300,
+        });
+      } catch (axiosError) {
+        console.error('Axios fetch failed:', axiosError);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
+        const fetchResponse = await fetch('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/all-suggestions/', {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'User-Agent': 'market-mobile/1.0.0' },
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        if (!fetchResponse.headers.get('content-type')?.includes('application/json')) {
+          throw new Error('Invalid response: Expected JSON');
+        }
+        response = { data: await fetchResponse.json() };
+      }
+
+      const rawSuggestions = response.data.suggestions
+        .map(item => (item && typeof item.name === 'string' && item.name.trim() ? item.name.trim() : null))
+        .filter(Boolean);
+      const uniqueSuggestions = [...new Set(rawSuggestions.map(s => s.toLowerCase()))].map(s => rawSuggestions.find(r => r.toLowerCase() === s)).slice(0, 180000);
+
+      if (useAsyncStorage) {
+        await AsyncStorage.setItem('suggestions', JSON.stringify(uniqueSuggestions));
+      } else {
+        await cacheSuggestions(uniqueSuggestions);
+      }
+    } catch (error) {
+      console.error('Error populating suggestions:', error);
+      setError(`Failed to load suggestions: ${error.response?.status || 'Network error'}`);
+      if (retryCount < maxRetries && !error.message.includes('NOT NULL constraint failed') && !error.message.includes('cannot start a transaction')) {
+        setTimeout(() => populateInitialSuggestions(useAsyncStorage, retryCount + 1, maxRetries), Math.pow(2, retryCount) * 5000);
+      } else if (!useAsyncStorage) {
+        await populateInitialSuggestions(true, 0, maxRetries);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchSuggestions = useCallback(
+    debounce(async (input) => {
+      if (!input || input.length < 1) {
+        setSuggestions([]);
+        onSuggestionsStateChange?.({ showSuggestions: false, suggestions: [], suggestionsHeight: 0 });
+        return;
+      }
+      setIsLoading(true);
+      try {
+        let results = await getSuggestions(input, 20, 0);
+        if (results.length === 0) {
+          const cached = await AsyncStorage.getItem('suggestions');
+          if (cached) {
+            results = JSON.parse(cached)
+              .filter(name => name.toLowerCase().startsWith(input.toLowerCase()))
+              .slice(0, 20);
+          }
+        }
+        setSuggestions(results);
+        const estimatedHeight = Math.min(results.length * 48 + 8, 240);
+        onSuggestionsStateChange?.({ showSuggestions: results.length > 0, suggestions: results, suggestionsHeight: estimatedHeight });
+      } catch (error) {
+        console.error('Error fetching suggestions:', error);
+        setError('Failed to fetch suggestions');
+        setSuggestions([]);
+        onSuggestionsStateChange?.({ showSuggestions: false, suggestions: [], suggestionsHeight: 0 });
+      } finally {
+        setIsLoading(false);
+      }
+    }, 300),
+    [onSuggestionsStateChange]
+  );
+
+  const handleInput = text => {
+    onChangeText(text);
+    fetchSuggestions(text);
+  };
+
+  const handleSelectSuggestion = suggestion => {
+    onChangeText(suggestion);
+    setSuggestions([]);
+    onSuggestionsStateChange?.({ showSuggestions: false, suggestions: [], suggestionsHeight: 0 });
+    setIsFocused(false);
+    onFocusChange?.(false);
+    Keyboard.dismiss();
+    onSubmit(suggestion);
+  };
+
+  const handleSubmitEditing = () => {
+    if (value) {
+      setSuggestions([]);
+      onSuggestionsStateChange?.({ showSuggestions: false, suggestions: [], suggestionsHeight: 0 });
+      setIsFocused(false);
+      onFocusChange?.(false);
+      onSubmit(value);
+    }
+  };
+
+  const handleFocus = () => {
+    setIsFocused(true);
+    onFocusChange?.(true);
+    if (value) fetchSuggestions(value);
+  };
+
+  const handleClear = () => {
+    onChangeText('');
+    setSuggestions([]);
+    onSuggestionsStateChange?.({ showSuggestions: false, suggestions: [], suggestionsHeight: 0 });
+    setIsFocused(false);
+    onFocusChange?.(false);
+    Keyboard.dismiss();
+  };
 
   return (
-    <Modal visible={visible} animationType="fade" transparent>
-      <View style={styles.container}>
-        {/* Progress Bars */}
-        <View style={styles.progressContainer}>
-          {getAllStatuses().map((_, idx) => (
-            <View key={idx} style={styles.progressBackground}>
-              <Animated.View
-                style={[
-                  styles.progressBar,
-                  {
-                    width:
-                      idx === currentIndex
-                        ? progress.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: ["0%", "100%"],
-                          })
-                        : idx < currentIndex
-                        ? "100%"
-                        : "0%",
-                  },
-                ]}
-              />
-            </View>
-          ))}
-        </View>
-
-        {/* Left Side - Previous */}
-        <TouchableOpacity
-          style={styles.leftExpanded}
-          onPress={handlePrev}
-          onPressIn={togglePause}
-          onPressOut={togglePause}
+    <View style={[styles.container, style]}>
+      <View
+        style={[styles.inputWrapper, isFocused && styles.inputWrapperFocused]}
+        onStartShouldSetResponder={() => true}
+        onResponderGrant={() => console.log('Input wrapper touched')}
+      >
+        <TextInput
+          ref={inputRef}
+          style={styles.input}
+          value={value}
+          onChangeText={handleInput}
+          onFocus={handleFocus}
+          onBlur={() => {
+            console.log('Input blurred');
+            setIsFocused(false);
+            onFocusChange?.(false);
+          }}
+          onSubmitEditing={handleSubmitEditing}
+          placeholder="What are you looking for?"
+          placeholderTextColor="#777"
+          returnKeyType="search"
         />
-
-        {/* Status Content */}
-        <TouchableOpacity
-          style={styles.content}
-          activeOpacity={1}
-          onPress={togglePause}
-        >
-          {hasMedia ? (
-            <>
-              {isVideo ? (
-                <VideoView
-                  style={styles.media}
-                  resizeMode="cover"
-                  player={player}
-                  allowsFullscreen={false}
-              allowsPictureInPicture={false}
-                />
-              ) : (
-                <Image
-                  source={{ uri: currentStatus.media }}
-                  style={styles.media}
-                  resizeMode="contain"
-                />
-              )}
-              {currentStatus?.text?.trim().length > 0 && (
-                <Text style={styles.caption}>{currentStatus.text}</Text>
-              )}
-            </>
-          ) : (
-            <View style={styles.plainTextContainer}>
-              <Text style={styles.plainText}>{currentStatus?.text}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-
-        {/* Right Side - Next */}
-        <TouchableOpacity
-          style={styles.rightExpanded}
-          onPress={handleNext}
-          onPressIn={togglePause}
-          onPressOut={togglePause}
-        />
-
-        {/* Close Button */}
-        <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-          <Text style={styles.closeText}>✕</Text>
-        </TouchableOpacity>
+        {value && (
+          <TouchableOpacity style={styles.clearButton} onPress={handleClear}>
+            <Text style={styles.clearButtonText}>✕</Text>
+          </TouchableOpacity>
+        )}
+        {loading && <ActivityIndicator size="small" color="#007bff" style={styles.loader} />}
       </View>
-    </Modal>
+      {error && <Text style={styles.errorText}>{error}</Text>}
+      {suggestions.length > 0 && (
+        <View
+          style={styles.suggestionsContainer}
+          onStartShouldSetResponder={() => true}
+          onResponderGrant={() => console.log('Suggestions container touched')}
+        >
+          <FlatList
+            ref={suggestionsRef || flatListRef}
+            data={suggestions}
+            keyExtractor={(item, index) => `${item}-${index}`}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.suggestionItem}
+                onPress={() => handleSelectSuggestion(item)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.suggestionText}>{item}</Text>
+              </TouchableOpacity>
+            )}
+            keyboardShouldPersistTaps="handled"
+            scrollEnabled={true}
+            nestedScrollEnabled={true}
+            showsVerticalScrollIndicator={true}
+            style={styles.suggestionsList}
+            contentContainerStyle={styles.suggestionsContent}
+            onScroll={e => console.log('Suggestions FlatList scrolled:', e.nativeEvent.contentOffset)}
+            onContentSizeChange={(w, h) => console.log(`Suggestions content size: ${w}x${h}`)}
+            onTouchStart={() => console.log('Suggestions FlatList touched')}
+          />
+        </View>
+      )}
+    </View>
   );
 };
 
-export default StatusViewer;
+const styles = StyleSheet.create({
+  container: {
+    width: '100%',
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    paddingHorizontal: 10,
+  },
+  inputWrapperFocused: {
+    borderColor: '#007bff',
+    shadowColor: '#007bff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 8,
+  },
+  input: {
+    flex: 1,
+    height: 48,
+    fontSize: 16,
+    color: '#333',
+  },
+  clearButton: {
+    padding: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  clearButtonText: {
+    fontSize: 16,
+    color: '#777',
+  },
+  loader: {
+    marginLeft: 10,
+  },
+  suggestionsContainer: {
+    marginTop: 4,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 4,
+    maxHeight: 240,
+  },
+  suggestionsList: {
+    maxHeight: 240,
+  },
+  suggestionsContent: {
+    paddingBottom: 8,
+  },
+  suggestionItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    height: 48,
+  },
+  suggestionText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  errorText: {
+    color: '#ff4d4d',
+    fontSize: 12,
+    marginTop: 4,
+  },
+});
+
+export default React.memo(AutocompleteInput);
+
+
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, TouchableOpacity, StyleSheet, Text, Alert, ActivityIndicator } from 'react-native';
+import axios from 'axios';
+import * as Location from 'expo-location';
+import AutocompleteInput from '../AutocompleteInput';
+import { LinearGradient } from 'expo-linear-gradient';
+
+export default function GeolocationSearch({ onSearch }) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleSearch = useCallback(async (query) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setError('Location permission denied');
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      const { latitude, longitude } = location.coords;
+
+      const response = await axios.get('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop-product-search/', {
+        params: { input: query, lat: latitude, lon: longitude },
+      });
+
+      if (response.data.error) {
+        Alert.alert('Error', response.data.error);
+        return;
+      }
+
+      if (response.data.shops.length === 0) {
+        Alert.alert('No Results', 'No shops found for your search.');
+      }
+
+      onSearch(response.data.shops);
+    } catch (err) {
+      setError('Error fetching data. Please check your connection.');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [onSearch]);
+
+  return (
+    <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.container}>
+      <View style={styles.card}>
+        {error && <Text style={styles.error}>{error}</Text>}
+        <AutocompleteInput
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          onSubmit={handleSearch}
+          style={styles.input}
+        />
+        <TouchableOpacity
+          style={[styles.searchButton, loading && styles.searchButtonDisabled]}
+          onPress={() => handleSearch(searchQuery)}
+          disabled={loading}
+          activeOpacity={0.8}
+        >
+          {loading ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.searchButtonText}>Search</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+    </LinearGradient>
+  );
+}
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#2E2E2E",
-    justifyContent: "center",
-    alignItems: "center",
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  // Progress bars
-  progressContainer: {
-    flexDirection: "row",
-    position: "absolute",
-    top: 40,
-    width: "90%",
-    zIndex: 999,
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
+    width: '100%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 4,
   },
-  progressBackground: {
-    flex: 1,
-    height: 3,
-    backgroundColor: "rgba(255,255,255,0.3)",
-    marginHorizontal: 2,
-    borderRadius: 2,
+  input: {
+    marginBottom: 12,
   },
-  progressBar: {
-    height: 3,
-    backgroundColor: "#fff",
-    borderRadius: 2,
+  searchButton: {
+    backgroundColor: '#007bff',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
   },
-  // Tap zones
-  leftExpanded: {
-    position: "absolute",
-    width: "40%",
-    height: "100%",
-    left: 0,
+  searchButtonDisabled: {
+    backgroundColor: '#A7C7E7',
   },
-  rightExpanded: {
-    position: "absolute",
-    width: "40%",
-    height: "100%",
-    right: 0,
+  searchButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
-  // Main content
-  content: {
-    width: "100%",
-    height: "100%",
-    justifyContent: "center",
-  },
-  media: {
-    width: "100%",
-    height: "70%",
-  },
-  caption: {
-    color: "#f1f1f1",
-    fontSize: 20,
-    marginTop: 10,
-    textAlign: "center",
-    fontWeight: "600",
-    paddingHorizontal: 20,
-  },
-  plainTextContainer: {
-    width: "100%",
-    height: "100%",
-    justifyContent: "center",
-    paddingHorizontal: 20,
-  },
-  plainText: {
-    fontSize: 32,
-    fontWeight: "700",
-    color: "#f1f1f1",
-    textAlign: "center",
-  },
-  // Close button
-  closeButton: {
-    position: "absolute",
-    top: 40,
-    right: 20,
-    zIndex: 999,
-  },
-  closeText: {
-    fontSize: 30,
-    color: "#fff",
+  error: {
+    color: 'red',
+    fontSize: 12,
+    marginBottom: 8,
+    textAlign: 'center',
   },
 });
+
+
+
+
+import React, { useState } from 'react';
+import { View, TouchableOpacity, StyleSheet, Text, Animated } from 'react-native';
+import { useRouter, usePathname } from 'expo-router';
+import GeolocationSearch from './GeolocationSearch';
+import LocationSearch from './LocationSearch';
+import ShopIdSearch from './ShopIdSearch';
+import { LinearGradient } from "expo-linear-gradient";
+
+export default function ShopSearchComponent() {
+  const [activeFilter, setActiveFilter] = useState('geolocation');
+  const [fadeAnim] = useState(new Animated.Value(1));
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const handleSearch = (searchData) => {
+    if (router) {
+      router.push({
+        pathname: '/shop/SearchResult',
+        params: { searchResults: JSON.stringify(searchData), prevRoute: pathname },
+      });
+    }
+  };
+
+  const switchFilter = (filter) => {
+    if (filter !== activeFilter) {
+      Animated.sequence([
+        Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
+        Animated.timing(fadeAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
+      ]).start();
+      setActiveFilter(filter);
+    }
+  };
+
+  return (
+    <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={[styles.container, { overflow: 'visible' }]}>
+      <View style={styles.filterContainer}>
+        {['geolocation', 'location', 'Space ID'].map((filter) => (
+          <TouchableOpacity
+            key={filter}
+            style={[styles.filterButton, activeFilter === filter && styles.activeFilter]}
+            onPress={() => switchFilter(filter)}
+          >
+            <Text style={[styles.filterText, activeFilter === filter && styles.activeFilterText]}>
+              {filter.charAt(0).toUpperCase() + filter.slice(1)}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <Animated.View style={[styles.searchContainer, { opacity: fadeAnim, overflow: 'visible' }]}>
+        {activeFilter === 'geolocation' && <GeolocationSearch onSearch={handleSearch} />}
+        {activeFilter === 'location' && <LocationSearch onSearch={handleSearch} />}
+        {activeFilter === 'shop ID' && <ShopIdSearch onSearch={handleSearch} />}
+      </Animated.View>
+    </LinearGradient>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 20,
+    overflow: 'visible',
+  },
+  filterContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    backgroundColor: '#F2F7FC',
+    padding: 10,
+    borderRadius: 25,
+    marginBottom: 15,
+  },
+  filterButton: {
+    flex: 1,
+    paddingVertical: 14,
+    marginHorizontal: 4,
+    borderRadius: 25,
+    backgroundColor: 'white',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#A7C7E7',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  activeFilter: {
+    backgroundColor: '#4785CC',
+    borderColor: '#356EB5',
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 5,
+  },
+  filterText: {
+    fontSize: 16,
+    color: '#5A5A5A',
+    fontWeight: '500',
+  },
+  activeFilterText: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  searchContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    borderRadius: 20,
+    padding: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 3,
+    overflow: 'visible',
+  },
+});
+
+
+
+
+
+
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { FlatList, StyleSheet, SafeAreaView } from 'react-native';
+import Header from '../../components/shop/Header';
+import FollowedShops from '../../components/shop/FollowedShops';
+import SearchBar from '../../components/shop/SearchBar';
+import Categories from '../../components/shop/Categories';
+import RecentShops from '../../components/shop/RecentShops';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+let hasFetchedOnce = false;
+
+const App = () => {
+  const [data, setData] = useState({
+    categories: [],
+    followed_shops: [],
+    recently_visited_shops: [],
+  });
+  const [suggestionsHeight, setSuggestionsHeight] = useState(0);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [inputFocused, setInputFocused] = useState(false);
+
+  useEffect(() => {
+    const loadCachedData = async () => {
+      try {
+        const cachedData = await AsyncStorage.getItem('shopDashboardData');
+        if (cachedData) {
+          setData(JSON.parse(cachedData));
+          console.log('Loaded cached dashboard data');
+        }
+      } catch (error) {
+        console.error('Error loading cached data:', error);
+      }
+    };
+
+    const fetchData = async () => {
+      try {
+        const sessionId = await AsyncStorage.getItem('sessionToken');
+        const response = await axios.get(
+          'https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop-dashboard-overview/',
+          {
+            headers: {
+              Authorization: sessionId,
+            },
+          }
+        );
+        setData(response.data);
+        await AsyncStorage.setItem('shopDashboardData', JSON.stringify(response.data));
+        console.log('Fetched dashboard data');
+      } catch (error) {
+        console.error('Error fetching dashboard data:', error);
+      }
+    };
+
+    loadCachedData();
+    if (!hasFetchedOnce) {
+      fetchData();
+      hasFetchedOnce = true;
+    }
+  }, []);
+
+  const handleSuggestionsStateChange = useCallback(({ showSuggestions, suggestionsHeight }) => {
+    console.log('Suggestions state changed:', { showSuggestions, suggestionsHeight });
+    setShowSuggestions(showSuggestions);
+    setSuggestionsHeight(showSuggestions ? suggestionsHeight : 0);
+  }, []);
+
+  const handleFocusChange = useCallback((focused) => {
+    console.log('Input focus changed:', focused);
+    setInputFocused(focused);
+  }, []);
+
+  const sections = useMemo(
+    () => [
+      { type: 'header', id: 'header' },
+      {
+        type: 'searchBar',
+        id: 'searchBar',
+        onSuggestionsStateChange: handleSuggestionsStateChange,
+        onFocusChange: handleFocusChange,
+      },
+      { type: 'categories', id: 'categories', data: data.categories },
+      { type: 'recentShops', id: 'recentShops', data: data.recently_visited_shops },
+      { type: 'followedShops', id: 'followedShops', data: data.followed_shops },
+    ],
+    [data.categories, data.recently_visited_shops, data.followed_shops, handleSuggestionsStateChange, handleFocusChange]
+  );
+
+  const renderSection = ({ item }) => {
+    switch (item.type) {
+      case 'header':
+        return <Header />;
+      case 'searchBar':
+        return <SearchBar onSuggestionsStateChange={item.onSuggestionsStateChange} onFocusChange={item.onFocusChange} />;
+      case 'categories':
+        return <Categories categories={item.data} />;
+      case 'recentShops':
+        return <RecentShops shops={item.data} />;
+      case 'followedShops':
+        return <FollowedShops shops={item.data} />;
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <FlatList
+        data={sections}
+        renderItem={renderSection}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={[styles.container, { paddingBottom: 20 + suggestionsHeight }]}
+        nestedScrollEnabled={true}
+        keyboardShouldPersistTaps="always"
+        scrollEnabled={!inputFocused} // Disable only when input is focused
+        onTouchStart={() => console.log('Parent FlatList touched')}
+        onScroll={e => console.log('Parent FlatList scrolled:', e.nativeEvent.contentOffset)}
+      />
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: 'white',
+  },
+  container: {
+    backgroundColor: 'white',
+  },
+});
+
+export default App;

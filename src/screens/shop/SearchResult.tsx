@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   Image,
   Dimensions,
-  SafeAreaView,
   StatusBar,
   Modal,
   TouchableWithoutFeedback,
@@ -21,6 +20,7 @@ import Slider from "@react-native-community/slider";
 import Ionicons from "react-native-vector-icons/Ionicons";
 import SubscriptionProvider, { SubscriptionContext } from "../../components/SubscriptionProvider";
 import SubscriptionRequired from "@/components/RequiredSubscription";
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const screenWidth = Dimensions.get("window").width;
 
@@ -28,12 +28,16 @@ const SearchResults = () => {
   const params = useLocalSearchParams();
   const { subscriptionStatus, loading } = useContext(SubscriptionContext);
   const { prevRoute } = params;
-  const searchResults = useMemo(
-    () => (params.searchResults ? JSON.parse(params.searchResults) : []),
-    [params.searchResults]
-  );
+  const searchResults = useMemo(() => {
+    try {
+      return params.searchResults ? JSON.parse(params.searchResults) : [];
+    } catch (error) {
+      console.error('Error parsing searchResults:', error);
+      return [];
+    }
+  }, [params.searchResults]);
 
-  console.log(searchResults, "result");
+  console.log('searchResults:', searchResults);
 
   const router = useRouter();
   const [modalVisible, setModalVisible] = useState(false);
@@ -53,32 +57,44 @@ const SearchResults = () => {
   const [filteredResults, setFilteredResults] = useState(searchResults);
 
   const allDistancesNull = useMemo(
-  () => searchResults.length > 0 && searchResults.every((shop) => shop.distance == null),
-  [searchResults]
-);
-
+    () => Array.isArray(searchResults) && searchResults.length > 0 && searchResults.every((shop) => shop?.distance == null),
+    [searchResults]
+  );
 
   useEffect(() => {
     setMinRating(0);
     setMaxRating(5);
     setMinDistance(0);
     setMaxDistance(50);
-    setFilteredResults(searchResults);
+    setFilteredResults(Array.isArray(searchResults) ? searchResults : []);
   }, [searchResults]);
 
   useEffect(() => {
+    if (!Array.isArray(searchResults)) {
+      console.warn('searchResults is not an array:', searchResults);
+      setFilteredResults([]);
+      return;
+    }
+
     const results = searchResults.filter((shop) => {
-      let ratingCheck = shop.average_rating >= minRating && shop.average_rating <= maxRating;
+      if (!shop || typeof shop !== 'object') return false;
+
+      const rating = shop.average_rating ?? 0;
+      const distance = shop.distance ?? null;
+
+      const ratingCheck = rating >= minRating && rating <= maxRating;
       let distanceCheck = true;
 
-      if (!allDistancesNull && shop.distance !== null) {
-        distanceCheck = shop.distance >= minDistance && shop.distance <= maxDistance;
+      if (!allDistancesNull && distance !== null) {
+        distanceCheck = distance >= minDistance && distance <= maxDistance;
       }
+
       return ratingCheck && distanceCheck;
     });
 
+    console.log('Filtered results:', results);
     setFilteredResults(results);
-  }, [minRating, maxRating, minDistance, maxDistance]);
+  }, [minRating, maxRating, minDistance, maxDistance, searchResults, allDistancesNull]);
 
   const handleFilterPress = () => {
     if (["regular", "standard", "premium"].includes(subscriptionStatus)) {
@@ -113,201 +129,174 @@ const SearchResults = () => {
       setMaxDistance(50);
     }
 
-    setFilteredResults(searchResults);
+    setFilteredResults(Array.isArray(searchResults) ? searchResults : []);
   };
 
   if (loading) {
     return <ActivityIndicator size="large" color="#007BFF" style={styles.loader} />;
   }
 
- const renderShopCard = ({ item }) => (
-  <LinearGradient colors={["rgba(255,255,255,0.6)", "rgba(240,240,240,0.4)"]} style={styles.shopCard}>
-    <View style={styles.imageContainer}>
-      {/* Rating & Verified Badge Container */}
-      {(item.average_rating !== null || item.verified) && (
-        <View style={styles.ratingContainer}>
-          {item.verified && (
-            <View style={styles.verifiedBadge}>
-              <MaterialIcons name="verified" size={14} color="#0FA958" />
-              <Text style={styles.verifiedText}>Verified</Text>
-            </View>
-          )}
-          {item.average_rating !== null && (
-            <View style={styles.ratingBadge}>
-              <MaterialIcons name="star" size={14} color="#FFD700" />
-              <Text style={styles.ratingText}>{item.average_rating}</Text>
-            </View>
-          )}
-        </View>
-      )}
-
-      {/* Shop Image */}
-      {item.image ? (
-        <Image source={{ uri: `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${item.image}` }} style={styles.shopImage} />
-      ) : (
-        <View style={styles.noImageContainer}>
-          <Text style={styles.noImageText}>No Image</Text>
-        </View>
-      )}
-    </View>
-
-    {/* Shop Details */}
-    <View style={styles.detailsContainer}>
-      <Text style={styles.shopName}>{item.name || "Unnamed Shop"}</Text>
-      <View style={styles.row}>
-        <MaterialIcons name="store" size={18} color="#4CAF50" />
-        <Text style={styles.shopAddress}>{item.address || "No Address"}</Text>
+  const renderShopCard = ({ item }) => (
+    <LinearGradient colors={["rgba(255,255,255,0.6)", "rgba(240,240,240,0.4)"]} style={styles.shopCard}>
+      <View style={styles.imageContainer}>
+        {(item.average_rating !== null || item.verified) && (
+          <View style={styles.ratingContainer}>
+            {item.verified && (
+              <View style={styles.verifiedBadge}>
+                <MaterialIcons name="verified" size={14} color="#0FA958" />
+                <Text style={styles.verifiedText}>Verified</Text>
+              </View>
+            )}
+            {item.average_rating !== null && (
+              <View style={styles.ratingBadge}>
+                <MaterialIcons name="star" size={14} color="#FFD700" />
+                <Text style={styles.ratingText}>{item.average_rating}</Text>
+              </View>
+            )}
+          </View>
+        )}
+        {item.image ? (
+          <Image source={{ uri: `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${item.image}` }} style={styles.shopImage} />
+        ) : (
+          <View style={styles.noImageContainer}>
+            <Text style={styles.noImageText}>No Image</Text>
+          </View>
+        )}
       </View>
-      <View style={styles.row}>
-        <MaterialIcons name="place" size={18} color="#555" />
-        <Text style={styles.shopDistance}>
-          Distance: {item.distance !== null && item.distance !== undefined ? `${item.distance} km` : "N/A"}
-        </Text>
+      <View style={styles.detailsContainer}>
+        <Text style={styles.shopName}>{item.name || "Unnamed Shop"}</Text>
+        <View style={styles.row}>
+          <MaterialIcons name="store" size={18} color="#4CAF50" />
+          <Text style={styles.shopAddress}>{item.address || "No Address"}</Text>
+        </View>
+        <View style={styles.row}>
+          <MaterialIcons name="place" size={18} color="#555" />
+          <Text style={styles.shopDistance}>
+            Distance: {item.distance !== null && item.distance !== undefined ? `${item.distance} km` : "N/A"}
+          </Text>
+        </View>
       </View>
-    </View>
-
-    {/* Go to Shop Button */}
-    <TouchableOpacity
-      style={styles.goToShopButton}
-      onPress={() => {
-        router.push({
-          pathname: '/shop/shop-page',
-          params: { shopId: item.id },
-        });
-      }}
-    >
-      <Text style={styles.buttonText}>Go to Space</Text>
-    </TouchableOpacity>
-  </LinearGradient>
-);
-
+      <TouchableOpacity
+        style={styles.goToShopButton}
+        onPress={() => {
+          router.push({
+            pathname: '/shop/shop-page',
+            params: { shopId: item.id },
+          });
+        }}
+      >
+        <Text style={styles.buttonText}>Go to Space</Text>
+      </TouchableOpacity>
+    </LinearGradient>
+  );
 
   return (
-  <SafeAreaView style={styles.safeArea}>
-    <StatusBar barStyle="dark-content" />
-    <LinearGradient colors={["#F5F5F5", "#E0E0E0"]} style={styles.container}>
-
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Search Results</Text>
-      </View>
-
-      {/* Filter Button */}
-      <TouchableOpacity onPress={handleFilterPress} style={styles.filterContainer}>
-  <Ionicons name="filter-outline" size={20} color="#007BFF" style={styles.filterIcon} />
-  <Text style={styles.filterText}>Filter</Text>
-</TouchableOpacity>
-
-
-      {/* Shop List */}
-      <FlatList
-        data={filteredResults}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={renderShopCard}
-        ListEmptyComponent={<Text style={styles.noResults}>No shops found.</Text>}
-      />
-    </LinearGradient>
-
-    {/* Subscription Required Modal */}
-    <Modal visible={subscriptionModalVisible} animationType="slide" transparent>
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContainer}>
-          <SubscriptionRequired onClose={() => setSubscriptionModalVisible(false)} />
-          <TouchableOpacity onPress={() => setSubscriptionModalVisible(false)} style={styles.closeButton}>
-            <Text style={styles.closeButtonText}>Close</Text>
+    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
+      <StatusBar barStyle="dark-content" />
+      <LinearGradient colors={["#F5F5F5", "#E0E0E0"]} style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <MaterialIcons name="arrow-back" size={26} color="white" />
           </TouchableOpacity>
+          <Text style={styles.headerTitle}>Search Results</Text>
+          <View style={styles.headerSpacer} />
         </View>
-      </View>
-    </Modal>
-
-    {/* Filter Modal */}
-    <Modal visible={modalVisible} animationType="fade" transparent>
-      <View style={styles.modalOverlay}>
-        <KeyboardAvoidingView behavior="padding" style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            {/* Close Button */}
-            <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.modalCloseButton}>
-              <Ionicons name="close" size={24} color="#333" />
+        <TouchableOpacity onPress={handleFilterPress} style={styles.filterContainer}>
+          <Ionicons name="filter-outline" size={20} color="#007BFF" style={styles.filterIcon} />
+          <Text style={styles.filterText}>Filter</Text>
+        </TouchableOpacity>
+        <FlatList
+          data={filteredResults}
+          keyExtractor={(item) => item.id.toString()}
+          renderItem={renderShopCard}
+          ListEmptyComponent={<Text style={styles.noResults}>No shops found.</Text>}
+        />
+      </LinearGradient>
+      <Modal visible={subscriptionModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <SubscriptionRequired onClose={() => setSubscriptionModalVisible(false)} />
+            <TouchableOpacity onPress={() => setSubscriptionModalVisible(false)} style={styles.closeButton}>
+              <Text style={styles.closeButtonText}>Close</Text>
             </TouchableOpacity>
-
-            <Text style={styles.filterTitle}>Filter Options</Text>
-
-            {/* Rating Sliders */}
-            <View style={styles.sliderContainer}>
-              <Text style={styles.sliderLabel}>Min Rating: {tempMinRating.toFixed(1)}</Text>
-              <Slider
-                minimumValue={0}
-                maximumValue={5}
-                step={1}
-                value={tempMinRating}
-                onValueChange={setTempMinRating}
-                style={styles.slider}
-              />
-            </View>
-
-            <View style={styles.sliderContainer}>
-              <Text style={styles.sliderLabel}>Max Rating: {tempMaxRating.toFixed(1)}</Text>
-              <Slider
-                minimumValue={0}
-                maximumValue={5}
-                step={1}
-                value={tempMaxRating}
-                onValueChange={setTempMaxRating}
-                style={styles.slider}
-              />
-            </View>
-
-            {/* Distance Sliders (Disabled if all distances are missing) */}
-            {!allDistancesNull && (
-              <>
-                <View style={styles.sliderContainer}>
-                  <Text style={styles.sliderLabel}>Min Distance: {tempMinDistance.toFixed(1)} km</Text>
-                  <Slider
-                    minimumValue={0}
-                    maximumValue={50}
-                    step={0.1}
-                    value={tempMinDistance}
-                    onValueChange={setTempMinDistance}
-                    style={styles.slider}
-                  />
-                </View>
-
-                <View style={styles.sliderContainer}>
-                  <Text style={styles.sliderLabel}>Max Distance: {tempMaxDistance.toFixed(1)} km</Text>
-                  <Slider
-                    minimumValue={0}
-                    maximumValue={50}
-                    step={0.1}
-                    value={tempMaxDistance}
-                    onValueChange={setTempMaxDistance}
-                    style={styles.slider}
-                  />
-                </View>
-              </>
-            )}
-
-            {/* Buttons Row */}
-            <View style={styles.buttonRow}>
-              {/* Reset Button */}
-              <TouchableOpacity onPress={resetFilters} style={styles.resetButton}>
-                <Text style={styles.resetButtonText}>Reset</Text>
-              </TouchableOpacity>
-
-              {/* Apply Filters Button */}
-              <TouchableOpacity onPress={applyFilters} style={styles.applyButton}>
-                <Text style={styles.applyButtonText}>Apply Filters</Text>
-              </TouchableOpacity>
-            </View>
           </View>
-        </KeyboardAvoidingView>
-      </View>
-    </Modal>
-  </SafeAreaView>
-);
-}
+        </View>
+      </Modal>
+      <Modal visible={modalVisible} animationType="fade" transparent>
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView behavior="padding" style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.modalCloseButton}>
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+              <Text style={styles.filterTitle}>Filter Options</Text>
+              <View style={styles.sliderContainer}>
+                <Text style={styles.sliderLabel}>Min Rating: {tempMinRating.toFixed(1)}</Text>
+                <Slider
+                  minimumValue={0}
+                  maximumValue={5}
+                  step={1}
+                  value={tempMinRating}
+                  onValueChange={setTempMinRating}
+                  style={styles.slider}
+                />
+              </View>
+              <View style={styles.sliderContainer}>
+                <Text style={styles.sliderLabel}>Max Rating: {tempMaxRating.toFixed(1)}</Text>
+                <Slider
+                  minimumValue={0}
+                  maximumValue={5}
+                  step={1}
+                  value={tempMaxRating}
+                  onValueChange={setTempMaxRating}
+                  style={styles.slider}
+                />
+              </View>
+              {!allDistancesNull && (
+                <>
+                  <View style={styles.sliderContainer}>
+                    <Text style={styles.sliderLabel}>Min Distance: {tempMinDistance.toFixed(1)} km</Text>
+                    <Slider
+                      minimumValue={0}
+                      maximumValue={50}
+                      step={0.1}
+                      value={tempMinDistance}
+                      onValueChange={setTempMinDistance}
+                      style={styles.slider}
+                    />
+                  </View>
+                  <View style={styles.sliderContainer}>
+                    <Text style={styles.sliderLabel}>Max Distance: {tempMaxDistance.toFixed(1)} km</Text>
+                    <Slider
+                      minimumValue={0}
+                      maximumValue={50}
+                      step={0.1}
+                      value={tempMaxDistance}
+                      onValueChange={setTempMaxDistance}
+                      style={styles.slider}
+                    />
+                  </View>
+                </>
+              )}
+              {allDistancesNull && (
+                <Text style={styles.noDistanceText}>Distance filtering unavailable for this search.</Text>
+              )}
+              <View style={styles.buttonRow}>
+                <TouchableOpacity onPress={resetFilters} style={styles.resetButton}>
+                  <Text style={styles.resetButtonText}>Reset</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={applyFilters} style={styles.applyButton}>
+                  <Text style={styles.applyButtonText}>Apply Filters</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+};
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -319,32 +308,37 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    backgroundColor: "#3A7BD5",
+    borderBottomLeftRadius: 35,
+    borderBottomRightRadius: 35,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: "bold",
-    marginLeft: 75,
-    color: "black",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 6,
   },
   backButton: {
-    borderRadius: 50,
-    backgroundColor: "#E0E0E0",
-    marginRight: 12,
+    padding: 5,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
-  
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#FFFFFF",
+    flex: 1,
+    textAlign: "center",
+  },
+  headerSpacer: {
+    width: 42,
+  },
   shopCard: {
     borderRadius: 18,
     padding: 16,
     marginVertical: 10,
+    marginHorizontal: 16,
     backgroundColor: "rgba(255, 255, 255, 0.5)",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
@@ -400,7 +394,6 @@ const styles = StyleSheet.create({
     color: "#0FA958",
     marginLeft: 4,
   },
-
   imageContainer: {
     marginBottom: 12,
   },
@@ -459,18 +452,6 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: "center",
   },
-  buttonGradient: {
-  flexDirection: "row",
-  alignItems: "center",
-  justifyContent: "center",
-  paddingVertical: 14,
-  borderRadius: 12,
-  shadowColor: "#000",
-  shadowOffset: { width: 0, height: 4 },
-  shadowOpacity: 0.2,
-  shadowRadius: 6,
-},
-
   buttonText: {
     fontSize: 17,
     fontWeight: "bold",
@@ -481,11 +462,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 18,
     color: "#AAA",
-  },
-  emptyListContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+    marginTop: 20,
   },
   modalOverlay: {
     flex: 1,
@@ -503,7 +480,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 4,
-    elevation: 5, // For Androi
+    elevation: 5,
   },
   modalContent: {
     backgroundColor: "#FFF",
@@ -565,73 +542,60 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#FFF",
   },
-  filterButton: {
-  borderRadius: 12,
-  overflow: "hidden",
-  marginTop: 10,
-  alignSelf: "center",
-  width: "90%",
-  elevation: 5,
-},
-
-
-buttonIcon: {
-  marginRight: 8,
-},
-
-filterButtonText: {
-  fontSize: 16,
-  fontWeight: "bold",
-  color: "#FFF",
-  textTransform: "uppercase",
+  resetButton: {
+    backgroundColor: "transparent",
+    borderWidth: 2,
+    borderColor: "#DC3545",
+    paddingVertical: 12,
+    paddingHorizontal: 25,
+    borderRadius: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    shadowColor: "#DC3545",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 5,
   },
-resetButton: {
-  backgroundColor: "transparent",
-  borderWidth: 2,
-  borderColor: "#DC3545",
-  paddingVertical: 12,
-  paddingHorizontal: 25,
-  borderRadius: 30,
-  alignItems: "center",
-  justifyContent: "center",
-  flexDirection: "row",
-  shadowColor: "#DC3545",
-  shadowOffset: { width: 0, height: 4 },
-  shadowOpacity: 0.3,
-  shadowRadius: 5,
-  elevation: 5, // For Android shadow
-},
-
-resetButtonText: {
-  color: "#DC3545",
-  fontSize: 16,
-  fontWeight: "bold",
-  textTransform: "uppercase",
-  letterSpacing: 1,
-},
-filterContainer: {
-  flexDirection: "row",
-  alignItems: "center",
-  paddingVertical: 8,
-  paddingHorizontal: 16,
-  borderBottomWidth: 1,
-  borderBottomColor: "#E0E0E0",
-  marginTop: 10,
-  top: 0,
-  width: "100%",
-  zIndex: 10, // Ensures it stays above scrollable content
-},
-
-filterIcon: {
-  marginRight: 6,
-},
-
-filterText: {
-  fontSize: 18,
-  fontWeight: "700",
-  color: "#222",
-},
-
+  resetButtonText: {
+    color: "#DC3545",
+    fontSize: 16,
+    fontWeight: "bold",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  filterContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E0E0E0",
+    marginTop: 10,
+    top: 0,
+    width: "100%",
+    zIndex: 10,
+  },
+  filterIcon: {
+    marginRight: 6,
+  },
+  filterText: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#222",
+  },
+  noDistanceText: {
+    fontSize: 14,
+    color: "#888",
+    textAlign: "center",
+    marginBottom: 10,
+  },
+  loader: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
 });
 
 export default (props) => (

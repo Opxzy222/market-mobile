@@ -5,66 +5,65 @@ import {
   Text,
   Alert,
   StyleSheet,
-  Image,
   ActivityIndicator,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
-import * as VideoThumbnails from "expo-video-thumbnails";
 import { Ionicons } from "@expo/vector-icons";
 
 const SendVideo = ({ onSend }) => {
   console.log("SendVideo render start");
 
   const [selectedVideo, setSelectedVideo] = useState(null);
-  const [thumbnailUri, setThumbnailUri] = useState(null);
-  const [isThumbnailLoading, setIsThumbnailLoading] = useState(false);
-  const [thumbnailError, setThumbnailError] = useState(false);
   const [videoValid, setVideoValid] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
 
   useEffect(() => {
     console.log("useEffect: selectedVideo changed:", selectedVideo);
     if (!selectedVideo) {
       setVideoValid(false);
-      setThumbnailUri(null);
-      setThumbnailError(false);
+      setIsValidating(false);
       return;
     }
 
     const validateVideo = async () => {
+      let isMounted = true;
       try {
         console.log("Validating URI:", selectedVideo.uri);
-        const info = await FileSystem.getInfoAsync(selectedVideo.uri);
-        if (!info.exists || info.isDirectory) {
-          throw new Error("Video file not found");
+        setIsValidating(true);
+        const fileName = selectedVideo.name || selectedVideo.uri.split("/").pop() || "";
+        if (!fileName.toLowerCase().endsWith(".mp4")) {
+          throw new Error("Unsupported video format (only MP4 supported)");
         }
-        console.log("URI valid, size:", info.size);
-        setVideoValid(true);
 
-        // Generate thumbnail
-        setIsThumbnailLoading(true);
-        try {
-          const { uri: thumbUri } = await VideoThumbnails.getThumbnailAsync(
-            selectedVideo.uri,
-            { time: 0, quality: 0.5 } // Lower quality for old devices
-          );
-          console.log("Thumbnail generated:", thumbUri);
-          setThumbnailUri(thumbUri);
-          setThumbnailError(false);
-        } catch (thumbError) {
-          console.error("Thumbnail error:", thumbError);
-          setThumbnailError(true);
-          // Fallback to placeholder
-          setThumbnailUri(null);
-        } finally {
-          setIsThumbnailLoading(false);
+        if (selectedVideo.uri.startsWith("file://") || selectedVideo.uri.startsWith("content://")) {
+          const info = await FileSystem.getInfoAsync(selectedVideo.uri);
+          if (!info.exists || info.isDirectory) {
+            throw new Error("Video file not found");
+          }
+          console.log("URI valid, size:", info.size);
+        } else {
+          console.log("Remote URI, skipping FileSystem validation");
+        }
+
+        if (isMounted) {
+          setVideoValid(true);
         }
       } catch (error) {
-        console.error("Video validation failed:", error);
-        setVideoValid(false);
-        setThumbnailError(true);
-        Alert.alert("Error", "Invalid video file. Please try another.");
+        console.error("Video validation failed:", error.message, error.stack);
+        if (isMounted) {
+          setVideoValid(false);
+          Alert.alert("Error", "Invalid video file. Please try another.");
+        }
+      } finally {
+        if (isMounted) {
+          setIsValidating(false);
+        }
       }
+
+      return () => {
+        isMounted = false;
+      };
     };
 
     validateVideo();
@@ -88,7 +87,6 @@ const SendVideo = ({ onSend }) => {
           return;
         }
 
-        console.log("Skipping duration check for:", uri);
         setSelectedVideo({
           uri,
           name: name || `video_${Date.now()}.mp4`,
@@ -97,7 +95,7 @@ const SendVideo = ({ onSend }) => {
         console.log("Picker canceled or no assets selected.");
       }
     } catch (error) {
-      console.error("Error picking video:", error);
+      console.error("Error picking video:", error.message, error.stack);
       Alert.alert("Error", "Failed to select video. Please try again.");
     }
   };
@@ -105,9 +103,8 @@ const SendVideo = ({ onSend }) => {
   const handleRemoveVideo = () => {
     console.log("Removing video");
     setSelectedVideo(null);
-    setThumbnailUri(null);
-    setThumbnailError(false);
     setVideoValid(false);
+    setIsValidating(false);
   };
 
   const handleSend = () => {
@@ -115,9 +112,8 @@ const SendVideo = ({ onSend }) => {
       console.log("Sending video:", selectedVideo);
       onSend(selectedVideo);
       setSelectedVideo(null);
-      setThumbnailUri(null);
-      setThumbnailError(false);
       setVideoValid(false);
+      setIsValidating(false);
     }
   };
 
@@ -126,8 +122,8 @@ const SendVideo = ({ onSend }) => {
     selectedVideo,
     "videoValid:",
     videoValid,
-    "thumbnailError:",
-    thumbnailError
+    "isValidating:",
+    isValidating
   );
 
   return (
@@ -144,27 +140,32 @@ const SendVideo = ({ onSend }) => {
 
       {selectedVideo && (
         <View style={styles.previewContainer}>
-          {isThumbnailLoading ? (
+          {isValidating ? (
             <View style={styles.placeholder}>
               <ActivityIndicator size="small" color="#999" />
+              <Text style={styles.loadingText}>Validating video...</Text>
             </View>
-          ) : thumbnailError || !videoValid ? (
+          ) : !videoValid ? (
             <View style={styles.placeholder}>
               <Ionicons
-                name="play-circle"
+                name="videocam-outline"
                 size={40}
                 color="#999"
                 style={styles.playIcon}
               />
-              <Text style={styles.errorText}>No preview available</Text>
+              <Text style={styles.errorText}>Invalid video</Text>
             </View>
           ) : (
             <View style={styles.thumbnailContainer}>
-              <Image
-                source={{ uri: thumbnailUri }}
-                style={styles.previewVideo}
-                resizeMode="cover"
-              />
+              <View style={styles.placeholder}>
+                <Ionicons
+                  name="videocam-outline"
+                  size={40}
+                  color="#999"
+                  style={styles.playIcon}
+                />
+                <Text style={styles.previewText}>Video ready</Text>
+              </View>
               <View style={styles.playIconContainer}>
                 <Ionicons
                   name="play-circle"
@@ -184,7 +185,7 @@ const SendVideo = ({ onSend }) => {
             <TouchableOpacity
               onPress={handleSend}
               style={[styles.sendButton, !videoValid && styles.sendButtonDisabled]}
-              disabled={!videoValid}
+              disabled={!videoValid || isValidating}
             >
               <Text style={styles.sendButtonText}>Send</Text>
             </TouchableOpacity>
@@ -234,10 +235,13 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     overflow: "hidden",
   },
-  previewVideo: {
+  placeholder: {
     width: 150,
     height: 150,
     borderRadius: 10,
+    backgroundColor: "#f0f0f0",
+    justifyContent: "center",
+    alignItems: "center",
   },
   playIconContainer: {
     position: "absolute",
@@ -251,18 +255,20 @@ const styles = StyleSheet.create({
   playIcon: {
     marginBottom: 5,
   },
-  placeholder: {
-    width: 150,
-    height: 150,
-    borderRadius: 10,
-    backgroundColor: "#f0f0f0",
-    justifyContent: "center",
-    alignItems: "center",
+  previewText: {
+    color: "#333",
+    fontSize: 12,
+    textAlign: "center",
   },
   errorText: {
     color: "#ff4d4d",
     fontSize: 12,
     textAlign: "center",
+  },
+  loadingText: {
+    color: "#999",
+    fontSize: 12,
+    marginTop: 5,
   },
   actionButtons: {
     flexDirection: "row",

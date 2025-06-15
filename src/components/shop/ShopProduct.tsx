@@ -134,7 +134,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     backgroundColor: '#ffffff',
     borderRadius: 12,
-    padding: 16,
+    padding: 5,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
   },
   subcategorySection: {
     marginBottom: 15,
-    padding: 12,
+    padding: 5,
     borderRadius: 10,
     backgroundColor: '#f0f7ff',
     borderLeftWidth: 4,

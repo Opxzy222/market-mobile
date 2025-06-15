@@ -3,204 +3,370 @@ import {
   View,
   Text,
   TextInput,
-  Button,
   TouchableOpacity,
   FlatList,
   Image,
+  ScrollView,
   ActivityIndicator,
   Modal,
   StyleSheet,
   Alert,
   Platform,
+  Dimensions,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
-import * as MediaLibrary from "expo-media-library";
-import { Video } from "expo-av";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
+import { VideoView, useVideoPlayer } from "expo-video";
 import { format } from "date-fns";
-import { Ionicons } from '@expo/vector-icons';
-import { MaterialIcons } from '@expo/vector-icons';
+import { Ionicons } from "@expo/vector-icons";
+import { MaterialIcons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import StatusViewer from "../../components/shop/ShopStatusViewer";
-import SubscriptionProvider, { SubscriptionContext } from '../../components/SubscriptionProvider';
+import SubscriptionProvider, { SubscriptionContext } from "../../components/SubscriptionProvider";
 import SubscriptionRequired from "@/components/RequiredSubscription";
+import { SafeAreaView } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios from "axios";
 
+console.log("StatusViewer:", StatusViewer);
+
+const { width } = Dimensions.get("window");
 const BACKEND_URL = "https://retail-alvinia-goza-f6a0e4f7.koyeb.app";
+const FALLBACK_IMAGE = "https://randomuser.me/api/portraits/lego/1.jpg";
+
+const StatusItem = ({ item, index, onPress, onDelete }) => {
+  const player = item.media && item.media_type === "video"
+    ? useVideoPlayer(item.media, (player) => {
+        player.loop = true;
+        player.pause();
+      })
+    : null;
+
+  const handleDeletePress = () => {
+    Alert.alert(
+      "Delete Status",
+      "Are you sure you want to delete this status?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => onDelete(item.id),
+        },
+      ]
+    );
+  };
+
+  return (
+    <View style={styles.statusItem}>
+      <TouchableOpacity onPress={() => onPress(index)} style={styles.statusContent}>
+        {item.media && item.media_type === "image" && (
+          <Image
+            source={{ uri: item.media }}
+            style={[styles.avatar, styles.unreadBorder]}
+            onError={() => console.error(`Failed to load status media: ${item.media}`)}
+          />
+        )}
+        {item.media && item.media_type === "video" && player && (
+          <VideoView
+            player={player}
+            style={[styles.avatar, styles.unreadBorder]}
+            contentFit="cover"
+            nativeControls={true}
+          />
+        )}
+        {!item.media && (
+          <Image
+            source={{ uri: item.image || FALLBACK_IMAGE }}
+            style={[styles.avatar, styles.unreadBorder]}
+            onError={() => console.error(`Failed to load shop image: ${item.image}`)}
+          />
+        )}
+        <View style={styles.statusInfo}>
+          <Text style={styles.name}>{item.shop}</Text>
+          <Text style={styles.time}>{format(new Date(item.created_at), "MMMM d, h:mm a")}</Text>
+          <Text style={styles.views}>Views: {item.views_count}</Text>
+        </View>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={handleDeletePress} style={styles.deleteButton}>
+        <Ionicons name="trash-outline" size={20} color="#FF3B30" />
+      </TouchableOpacity>
+    </View>
+  );
+};
 
 const StatusScreen = () => {
   const [statuses, setStatuses] = useState([]);
   const [isTextPosting, setIsTextPosting] = useState(false);
   const [isMediaPosting, setIsMediaPosting] = useState(false);
   const [statusText, setStatusText] = useState("");
-  const [selectedMedia, setSelectedMedia] = useState(null);
+  const [selectedMedia, setSelectedMedia] = useState([]);
   const [currentStatusIndex, setCurrentStatusIndex] = useState(null);
-  const [permissionGranted, setPermissionGranted] = useState(false);
-  const [mediaAssets, setMediaAssets] = useState([]);
-  const [isMediaPickerOpen, setIsMediaPickerOpen] = useState(false);
-  const { subscriptionStatus } = useContext(SubscriptionContext);
   const [loading, setLoading] = useState(false);
-
-  // Ref for the hidden file input on web
+  const { subscriptionStatus } = useContext(SubscriptionContext);
   const fileInputRef = useRef(null);
-
   const params = useLocalSearchParams();
-  const { shopId } = params;
+  const { shopId, prevRoute } = params;
   const router = useRouter();
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
-  // Fetch statuses when shopId changes
   useEffect(() => {
-    fetchStatuses();
-  }, [shopId]);
-
-  useFocusEffect(
-    useCallback(() => {
-      fetchStatuses();
-    }, [shopId])
-  );
-
-  // Request permissions on native, or bypass on web
-  useEffect(() => {
-    if (Platform.OS === "web") {
-      // On web, we bypass native media permissions.
-      setPermissionGranted(true);
-    } else {
-      requestPermissions();
-    }
+    const fetchSessionId = async () => {
+      try {
+        const sessionIdString = await AsyncStorage.getItem("sessionToken");
+        setSessionId(sessionIdString);
+      } catch (error) {
+        console.error("Error fetching session ID:", error);
+      }
+    };
+    fetchSessionId();
   }, []);
 
-  const requestPermissions = async () => {
-    try {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status === "granted") {
-        setPermissionGranted(true);
-      } else {
-        Alert.alert("Permission Denied", "We need access to your media library.");
-      }
-    } catch (error) {
-      console.error("Error requesting permissions:", error);
-    }
-  };
-
-  const fetchStatuses = async () => {
+  const fetchStatuses = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${BACKEND_URL}/shop/${shopId}/active_status/`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
+      const response = await axios.get(`${BACKEND_URL}/shop/${shopId}/active_status/`, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: sessionId ? `Bearer ${sessionId}` : "",
+        },
       });
-      if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
-      const data = await response.json();
-      setStatuses(data.statuses || []);
+      console.log("API Response:", JSON.stringify(response.data, null, 2));
+      setStatuses(response.data.statuses || []);
     } catch (error) {
       console.error("Error fetching statuses:", error);
+      Alert.alert("Error", "Failed to fetch statuses. Please try again.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [shopId, sessionId]);
 
-  // For native: open media picker using MediaLibrary
-  const pickMediaNative = async () => {
+  useEffect(() => {
+    if (sessionId) {
+      fetchStatuses();
+    }
+  }, [fetchStatuses, sessionId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (sessionId) {
+        fetchStatuses();
+      }
+    }, [fetchStatuses, sessionId])
+  );
+
+  const handleDeleteStatus = useCallback(async (statusId) => {
     try {
-      const assetResponse = await MediaLibrary.getAssetsAsync({
-        mediaType: ["photo", "video"],
-        first: 50,
+      setLoading(true);
+      await axios.delete(`${BACKEND_URL}/status/${statusId}/delete/`, {
+        headers: {
+          Authorization: sessionId,
+        },
       });
-      setMediaAssets(assetResponse.assets);
-      setIsMediaPickerOpen(true);
+      Alert.alert("Success", "Status deleted successfully.");
+      fetchStatuses();
     } catch (error) {
-      console.error("Error fetching media assets:", error);
+      console.error("Error deleting status:", error);
+      const errorMessage = error.response?.data?.error || "Failed to delete status.";
+      Alert.alert("Error", errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, [sessionId, fetchStatuses]);
+
+  const pickMedia = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["image/*", "video/*"],
+        copyToCacheDirectory: true,
+        multiple: true,
+      });
+
+      if (!result.canceled && result.assets?.length > 0) {
+        const newMediaPromises = result.assets.map(async (asset) => {
+          const { uri, name, mimeType, size } = asset;
+          const isVideo = mimeType?.startsWith("video/");
+          const isImage = mimeType?.startsWith("image/");
+
+          if (!isImage && !isVideo) {
+            Alert.alert(
+              "Warning",
+              `File "${name || "selected file"}" is not a valid image or video.`
+            );
+            return null;
+          }
+
+          try {
+            const info = await FileSystem.getInfoAsync(uri);
+            if (!info.exists || info.isDirectory) {
+              throw new Error("File not found");
+            }
+
+            if (info.size > 10 * 1024 * 1024) {
+              Alert.alert(
+                "Warning",
+                `File "${name || "selected file"}" is too large (max 10 MB).`
+              );
+              return null;
+            }
+
+            return {
+              id: `${uri}_${Date.now()}`,
+              uri,
+              name: name || `media_${Date.now()}.${isVideo ? "mp4" : "jpg"}`,
+              type: isVideo ? "video" : "image",
+              valid: true,
+            };
+          } catch (error) {
+            console.error("Validation failed for:", uri, error);
+            Alert.alert(
+              "Warning",
+              `File "${name || "selected file"}" is invalid and will be skipped.`
+            );
+            return null;
+          }
+        });
+
+        const newMedia = (await Promise.all(newMediaPromises)).filter(
+          (item) => item !== null
+        );
+        setSelectedMedia((prevMedia) => [...prevMedia, ...newMedia]);
+      }
+    } catch (error) {
+      console.error("Error picking media:", error);
+      Alert.alert(
+        "Error",
+        "Failed to select media. Please ensure permissions are granted and try again.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Retry", onPress: pickMedia },
+        ]
+      );
     }
   };
 
-  // Unified pickMedia function: on web, trigger file input; on native, use MediaLibrary
-  const pickMedia = () => {
-    if (!permissionGranted) {
-      Alert.alert("Permission not granted", "Media library permission is required!");
-      return;
-    }
-    if (Platform.OS === "web") {
-      // Trigger the hidden file input element
-      fileInputRef.current.click();
-    } else {
-      pickMediaNative();
-    }
-  };
-
-  // Handle file input change on web
   const handleSelectMediaWeb = (event) => {
     const files = Array.from(event.target.files);
     if (files.length > 0) {
-      // For simplicity, we only take the first selected file
-      const file = files[0];
-      const mediaType = file.type.startsWith("image") ? "image" : "video";
-      setSelectedMedia({
-        uri: URL.createObjectURL(file),
-        type: mediaType,
-        name: file.name,
-        file, // keep the File object for potential upload conversion
-      });
+      const newMedia = files.map((file) => {
+        const mediaType = file.type.startsWith("image") ? "image" : "video";
+        if (file.size > 10 * 1024 * 1024) {
+          Alert.alert(
+            "Warning",
+            `File "${file.name}" is too large (max 10 MB).`
+          );
+          return null;
+        }
+        return {
+          id: `${file.name}_${Date.now()}`,
+          uri: URL.createObjectURL(file),
+          name: file.name,
+          type: mediaType,
+          file,
+          valid: true,
+        };
+      }).filter((item) => item !== null);
+      setSelectedMedia((prevMedia) => [...prevMedia, ...newMedia]);
     }
   };
 
-  // Handle selection from native media picker modal
-  const selectMediaAsset = (asset) => {
-    setSelectedMedia({
-      uri: asset.uri,
-      type: asset.mediaType === "video" ? "video" : "image",
-      name: asset.filename || asset.id,
-    });
-    setIsMediaPickerOpen(false);
+  const removeMedia = (id) => {
+    setSelectedMedia((prevMedia) => prevMedia.filter((m) => m.id !== id));
   };
 
-  // Handle plain text status posting
   const handlePostTextStatus = async () => {
-    if (!statusText) return;
+    if (!statusText) {
+      Alert.alert("Error", "Please enter some text to post.");
+      return;
+    }
     try {
+      setLoading(true);
       const formData = new FormData();
       formData.append("text", statusText);
-      await fetch(`${BACKEND_URL}/shop/${shopId}/status/`, {
-        method: "POST",
-        body: formData,
+      await axios.post(`${BACKEND_URL}/shop/${shopId}/status/`, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          Authorization: `Bearer ${sessionId}`,
+        },
       });
       setStatusText("");
       setIsTextPosting(false);
       fetchStatuses();
     } catch (error) {
       console.error("Error posting text status:", error);
+      Alert.alert("Error", "Failed to post status. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Handle media status posting (media with an optional caption)
   const handlePostMediaStatus = async () => {
-    if (!selectedMedia && !statusText) return;
+    if (!selectedMedia.length && !statusText) {
+      Alert.alert("Error", "Please add a caption or select at least one media file.");
+      return;
+    }
+    setLoading(true);
     try {
       const formData = new FormData();
-      if (statusText) {
-        formData.append("text", statusText);
-      }
-      if (selectedMedia) {
-        // On web, if we have a File object, use it directly.
-        if (Platform.OS === "web" && selectedMedia.file) {
-          formData.append("media", selectedMedia.file);
-        } else {
-          const fileName = selectedMedia.name || selectedMedia.uri.split("/").pop();
-          const mimeType = selectedMedia.type === "video" ? "video/mp4" : "image/jpeg";
-          formData.append("media", {
-            uri: selectedMedia.uri,
-            type: mimeType,
-            name: fileName,
-          });
+      if (statusText) formData.append("text", statusText);
+
+      const validMedia = [];
+      for (const file of selectedMedia) {
+        if (file.valid) {
+          try {
+            if (Platform.OS === "web" && file.file) {
+              formData.append("media", file.file);
+              validMedia.push(file);
+            } else {
+              const info = await FileSystem.getInfoAsync(file.uri);
+              if (!info.exists) {
+                Alert.alert(
+                  "Warning",
+                  `File "${file.name}" is no longer accessible and will be skipped.`
+                );
+                continue;
+              }
+              const newFile = {
+                uri: file.uri.startsWith("file://") ? file.uri : `file://${file.uri}`,
+                type: file.type === "image" ? "image/jpeg" : "video/mp4",
+                name: file.name,
+              };
+              formData.append("media", newFile);
+              validMedia.push(file);
+            }
+          } catch (error) {
+            console.error("File validation failed before submit:", file.uri, error);
+            Alert.alert(
+              "Warning",
+              `File "${file.name}" is invalid and will be skipped.`
+            );
+          }
         }
       }
-      await fetch(`${BACKEND_URL}/shop/${shopId}/status/`, {
-        method: "POST",
-        body: formData,
+
+      if (validMedia.length === 0 && !statusText) {
+        Alert.alert("Error", "No valid media files or text to submit.");
+        setSelectedMedia([]);
+        setLoading(false);
+        return;
+      }
+
+      await axios.post(`${BACKEND_URL}/shop/${shopId}/status/`, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          Authorization: `Bearer ${sessionId}`,
+        },
       });
       setStatusText("");
-      setSelectedMedia(null);
+      setSelectedMedia([]);
       setIsMediaPosting(false);
       fetchStatuses();
     } catch (error) {
       console.error("Error posting media status:", error);
+      Alert.alert("Error", "Failed to post media status. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -212,424 +378,514 @@ const StatusScreen = () => {
     setCurrentStatusIndex(null);
   };
 
-  const renderStatusItem = ({ item, index }) => (
-    <TouchableOpacity onPress={() => handleViewStatus(index)} style={styles.statusItem}>
-      {item.media && item.media_type === "image" && (
-        <Image source={{ uri: item.media }} style={[styles.avatar, styles.unreadBorder]} />
-      )}
-      {item.media && item.media_type === "video" && (
-        <Video
-          source={{ uri: item.media }}
-          style={[styles.avatar, styles.unreadBorder]}
-          resizeMode="cover"
-          useNativeControls
-          isLooping
-        />
-      )}
-      {!item.media && (
-        <Image
-          source={{ uri: "https://randomuser.me/api/portraits/lego/1.jpg" }}
-          style={[styles.avatar, styles.unreadBorder]}
-        />
-      )}
-      <View>
-        <Text style={styles.name}>{item.shop}</Text>
-        <Text style={styles.time}>{format(new Date(item.created_at), "MMMM d, h:mm a")}</Text>
-        <Text style={styles.views}>Views: {item.views_count}</Text>
-      </View>
-    </TouchableOpacity>
+  const renderMediaPreview = () => (
+    <ScrollView
+      horizontal
+      contentContainerStyle={styles.mediaPreviewContainer}
+      showsHorizontalScrollIndicator={false}
+    >
+      {selectedMedia.map((item) => (
+        <View key={item.id} style={styles.mediaPreviewWrapper}>
+          {item.valid ? (
+            item.type === "image" ? (
+              <Image
+                source={{ uri: item.uri }}
+                style={styles.mediaPreview}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.mediaPreview}>
+                <Image
+                  source={{ uri: item.uri }}
+                  style={styles.mediaPreview}
+                  resizeMode="cover"
+                />
+                <View style={styles.playIconContainer}>
+                  <Ionicons
+                    name="play-circle"
+                    size={30}
+                    color="rgba(255, 255, 255, 0.8)"
+                  />
+                </View>
+              </View>
+            )
+          ) : (
+            <View style={styles.placeholder}>
+              <Ionicons
+                name={item.type === "image" ? "image-outline" : "videocam-outline"}
+                size={30}
+                color="#999"
+              />
+              <Text style={styles.errorText}>No preview</Text>
+            </View>
+          )}
+          <TouchableOpacity
+            style={styles.removeMediaButton}
+            onPress={() => removeMedia(item.id)}
+          >
+            <Ionicons name="close-circle" size={20} color="#FF3B30" />
+          </TouchableOpacity>
+        </View>
+      ))}
+    </ScrollView>
   );
 
-  // Inside your component's return:
-return (
-  <View style={styles.container}>
-    <View style={styles.header}>
-      <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-        <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
-      </TouchableOpacity>
-      <Text style={styles.headerTitle}>My Status</Text>
-    </View>
-    <View style={styles.card}>
-    {/* My Status Section */}
-    <TouchableOpacity style={styles.myStatus} onPress={() => {}}>
-      <Image
-        source={{ uri: "https://randomuser.me/api/portraits/lego/1.jpg" }}
-        style={styles.avatar}
-      />
-      <View>
-        <Text style={styles.name}>My Status</Text>
-        <Text style={styles.time}>
-          {statuses.length > 0 ? "Tap to view" : "No updates"}
-        </Text>
+  return (
+    <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => router.replace(prevRoute || "((tabs)/shop)")}
+            style={styles.backButton}
+          >
+            <MaterialIcons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>My Status</Text>
+        </View>
+
+        <View style={styles.card}>
+          <TouchableOpacity style={styles.myStatus} onPress={() => {}}>
+            <Image
+              source={{ uri: statuses[0]?.image || FALLBACK_IMAGE }}
+              style={styles.avatar}
+              onError={() => console.error(`Failed to load myStatus image: ${statuses[0]?.image}`)}
+            />
+            <View>
+              <Text style={styles.name}>My Status</Text>
+              <Text style={styles.time}>
+                {statuses.length > 0 ? "Tap to view" : "No updates"}
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          <View style={styles.postButtonsContainer}>
+            <TouchableOpacity
+              style={styles.postButton}
+              onPress={() => {
+                setStatusText("");
+                setSelectedMedia([]);
+                setIsTextPosting(true);
+              }}
+            >
+              <Ionicons name="create-outline" size={20} color="#fff" />
+              <Text style={styles.postButtonText}>Text</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.postButton, styles.mediaButton]}
+              onPress={() => {
+                setStatusText("");
+                setSelectedMedia([]);
+                setIsMediaPosting(true);
+              }}
+            >
+              <Ionicons name="image-outline" size={20} color="#fff" />
+              <Text style={styles.postButtonText}>Media</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.subHeader}>Recent Updates</Text>
+          {loading ? (
+            <ActivityIndicator size="large" color="#34C759" />
+          ) : (
+            <FlatList
+              data={statuses}
+              renderItem={({ item, index }) => (
+                <StatusItem
+                  item={item}
+                  index={index}
+                  onPress={handleViewStatus}
+                  onDelete={handleDeleteStatus}
+                />
+              )}
+              keyExtractor={(item) => item.id.toString()}
+              contentContainerStyle={styles.flatListContent}
+            />
+          )}
+
+          <Modal visible={isTextPosting} animationType="slide" transparent>
+            {subscriptionStatus === "standard" || subscriptionStatus === "premium" ? (
+              <View style={styles.modalContainer}>
+                <View style={styles.modalCard}>
+                  <View style={styles.modalHeaderRow}>
+                    <Ionicons name="chatbubble-ellipses-outline" size={24} color="#333" />
+                    <Text style={styles.modalHeaderText}>Post a Text Status</Text>
+                  </View>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="What's on your mind?"
+                    placeholderTextColor="#888"
+                    value={statusText}
+                    onChangeText={setStatusText}
+                    multiline
+                    numberOfLines={4}
+                  />
+                  <View style={styles.actionRow}>
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      onPress={() => setIsTextPosting(false)}
+                    >
+                      <Ionicons name="close-circle-outline" size={24} color="#FF3B30" />
+                      <Text style={styles.actionButtonText}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      onPress={handlePostTextStatus}
+                      disabled={loading}
+                    >
+                      {loading ? (
+                        <ActivityIndicator size="small" color="#34C759" />
+                      ) : (
+                        <>
+                          <Ionicons name="checkmark-circle-outline" size={24} color="#34C759" />
+                          <Text style={styles.actionButtonText}>Post</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.modalOverlay}
+                activeOpacity={1}
+                onPress={() => setIsTextPosting(false)}
+              >
+                <SubscriptionRequired />
+              </TouchableOpacity>
+            )}
+          </Modal>
+
+          <Modal visible={isMediaPosting} animationType="slide" transparent>
+            {subscriptionStatus === "standard" || subscriptionStatus === "premium" ? (
+              <View style={styles.modalContainer}>
+                <View style={styles.modalCard}>
+                  <View style={styles.modalHeaderRow}>
+                    <Ionicons name="images-outline" size={24} color="#333" />
+                    <Text style={styles.modalHeaderText}>Post a Media Status</Text>
+                  </View>
+                  {selectedMedia.length > 0 && renderMediaPreview()}
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Add a caption (optional)"
+                    placeholderTextColor="#888"
+                    value={statusText}
+                    onChangeText={setStatusText}
+                    multiline
+                    numberOfLines={4}
+                  />
+                  <View style={styles.actionRow}>
+                    <TouchableOpacity style={styles.actionButton} onPress={pickMedia}>
+                      <Ionicons name="folder-open-outline" size={24} color="#007AFF" />
+                      <Text style={styles.actionButtonText}>Select</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      onPress={() => {
+                        setIsMediaPosting(false);
+                        setSelectedMedia([]);
+                      }}
+                    >
+                      <Ionicons name="close-circle-outline" size={24} color="#FF3B30" />
+                      <Text style={styles.actionButtonText}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      onPress={handlePostMediaStatus}
+                      disabled={loading}
+                    >
+                      {loading ? (
+                        <ActivityIndicator size="small" color="#34C759" />
+                      ) : (
+                        <>
+                          <Ionicons name="checkmark-circle-outline" size={24} color="#34C759" />
+                          <Text style={styles.actionButtonText}>Post</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                  {Platform.OS === "web" && (
+                    <input
+                      type="file"
+                      accept="image/*,video/*"
+                      multiple
+                      ref={fileInputRef}
+                      onChange={handleSelectMediaWeb}
+                      style={{ display: "none" }}
+                    />
+                  )}
+                </View>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.modalOverlay}
+                activeOpacity={1}
+                onPress={() => setIsMediaPosting(false)}
+              >
+                <SubscriptionRequired />
+              </TouchableOpacity>
+            )}
+          </Modal>
+
+          {currentStatusIndex !== null && StatusViewer ? (
+            <StatusViewer
+              statuses={statuses}
+              initialIndex={currentStatusIndex}
+              onClose={handleCloseViewer}
+            />
+          ) : null}
+        </View>
       </View>
-    </TouchableOpacity>
-
-    {/* Buttons for Posting Different Status Types */}
-    <View style={styles.postButtonsContainer}>
-      <TouchableOpacity
-  style={styles.postButton}
-  onPress={() => {
-    setStatusText("");
-    setIsTextPosting(true);
-  }}
->
-  <Ionicons name="create-outline" size={20} color="#fff" />
-  <Text style={styles.postButtonText}>Post Text Status</Text>
-</TouchableOpacity>
-
-<TouchableOpacity
-  style={[styles.postButton, styles.mediaButton]}
-  onPress={() => {
-    setStatusText("");
-    setSelectedMedia(null);
-    setIsMediaPosting(true);
-  }}
->
-  <Ionicons name="image-outline" size={20} color="#fff" />
-  <Text style={styles.postButtonText}>Post Media Status</Text>
-</TouchableOpacity>
-    </View>
-
-    {/* Recent Updates */}
-    <Text style={styles.subHeader}>Recent Updates</Text>
-    {loading ? (
-      <ActivityIndicator size="large" color="#25D366" />
-    ) : (
-      <FlatList
-        data={statuses}
-        renderItem={renderStatusItem}
-        keyExtractor={(item) => item.id.toString()}
-      />
-    )}
-
-    {/* Modal for Posting Plain Text Status */}
-    <Modal visible={isTextPosting} animationType="slide" transparent>
-  {subscriptionStatus === "standard" || subscriptionStatus === "premium" ? (
-    <View style={styles.modalContainer}>
-      <View style={styles.modalCard}>
-        <View style={styles.modalHeaderRow}>
-          <Ionicons name="chatbubble-ellipses-outline" size={24} color="#555" />
-          <Text style={styles.modalHeaderText}>Post a Text Status</Text>
-        </View>
-        <TextInput
-          style={styles.input}
-          placeholder="What's on your mind?"
-          placeholderTextColor="#888"
-          value={statusText}
-          onChangeText={setStatusText}
-          multiline
-        />
-        <View style={styles.actionRow}>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => setIsTextPosting(false)}
-          >
-            <Ionicons name="close-circle-outline" size={24} color="#d9534f" />
-            <Text style={styles.actionButtonText}>Cancel</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={handlePostTextStatus}
-          >
-            <Ionicons name="checkmark-circle-outline" size={24} color="#5cb85c" />
-            <Text style={styles.actionButtonText}>Post</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  ) : (
-    <TouchableOpacity
-      style={styles.modalOverlay}
-      activeOpacity={1}
-      onPress={() => setIsTextPosting(false)}
-    >
-      <SubscriptionRequired />
-    </TouchableOpacity>
-  )}
-</Modal>
-
-{/* Modal for Posting Media Status */}
-<Modal visible={isMediaPosting} animationType="slide" transparent>
-  {subscriptionStatus === "standard" || subscriptionStatus === "premium" ? (
-    <View style={styles.modalContainer}>
-      <View style={styles.modalCard}>
-        <View style={styles.modalHeaderRow}>
-          <Ionicons name="images-outline" size={24} color="#555" />
-          <Text style={styles.modalHeaderText}>Post a Media Status</Text>
-        </View>
-        <TextInput
-          style={styles.input}
-          placeholder="Add a caption (optional)"
-          placeholderTextColor="#888"
-          value={statusText}
-          onChangeText={setStatusText}
-          multiline
-        />
-        <View style={styles.actionRow}>
-          <TouchableOpacity style={styles.actionButton} onPress={pickMedia}>
-            <Ionicons name="folder-open-outline" size={24} color="#0275d8" />
-            <Text style={styles.actionButtonText}>Pick Media</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => {
-              setIsMediaPosting(false);
-              setSelectedMedia(null);
-            }}
-          >
-            <Ionicons name="close-circle-outline" size={24} color="#d9534f" />
-            <Text style={styles.actionButtonText}>Cancel</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={handlePostMediaStatus}
-          >
-            <Ionicons name="checkmark-circle-outline" size={24} color="#5cb85c" />
-            <Text style={styles.actionButtonText}>Post</Text>
-          </TouchableOpacity>
-        </View>
-        {/* Hidden file input for web */}
-        {Platform.OS === "web" && (
-          <input
-            type="file"
-            accept="image/*,video/*"
-            multiple={false}
-            ref={fileInputRef}
-            onChange={handleSelectMediaWeb}
-            style={{ display: "none" }}
-          />
-        )}
-      </View>
-    </View>
-  ) : (
-    <TouchableOpacity
-      style={styles.modalOverlay}
-      activeOpacity={1}
-      onPress={() => setIsMediaPosting(false)}
-    >
-      <SubscriptionRequired />
-    </TouchableOpacity>
-  )}
-</Modal>
-
-
-    {/* Status Viewer Modal */}
-    {currentStatusIndex !== null && (
-      <StatusViewer
-        statuses={statuses}
-        initialIndex={currentStatusIndex}
-        onClose={handleCloseViewer}
-      />
-      )}
-    </View>
-  </View>
-);
+    </SafeAreaView>
+  );
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#F5F5F5",
+  },
   container: {
     flex: 1,
-    backgroundColor: "#f7f7f7",
-    padding: 15,
+    width: "100%",
+    maxWidth: width,
+    alignSelf: "center",
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     padding: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: "bold",
-    marginLeft: 75,
-    color: "black",
+    backgroundColor: "#007AFF",
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
   },
   backButton: {
-    borderRadius: 50,
-    backgroundColor: "#E0E0E0",
-    marginRight: 12,
+    padding: 5,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#fff",
+    marginLeft: 16,
   },
   card: {
     flex: 1,
-    padding: 15,
+    padding: 16,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    margin: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
   },
   myStatus: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
+    padding: 12,
     borderRadius: 12,
-    padding: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
-    marginBottom: 15,
+    backgroundColor: "#F8F8F8",
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  postButtonsContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 16,
   },
   postButton: {
-  flexDirection: "row",
-  alignItems: "center",
-  justifyContent: "center",
-  backgroundColor: "#25D366", // WhatsApp-style green
-  paddingVertical: 12,
-  paddingHorizontal: 16,
-  borderRadius: 10,
-  shadowColor: "#000",
-  shadowOpacity: 0.15,
-  shadowRadius: 6,
-  elevation: 5,
-  marginVertical: 8,
-},
-mediaButton: {
-  backgroundColor: "#007AFF", // iOS blue for media post
-},
-postButtonText: {
-  fontSize: 16,
-  fontWeight: "600",
-  color: "#fff",
-  marginLeft: 8,
-},
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#34C759",
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginHorizontal: 4,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.1)",
+  },
+  mediaButton: {
+    backgroundColor: "#007AFF",
+  },
+  postButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#fff",
+    marginLeft: 8,
+  },
   avatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     marginRight: 12,
   },
   name: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "600",
     color: "#333",
   },
   time: {
-    fontSize: 14,
-    color: "#888",
+    fontSize: 12,
+    color: "#666",
   },
-  postButtonsContainer: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    marginBottom: 20,
+  views: {
+    fontSize: 12,
+    color: "#666",
   },
   subHeader: {
-    fontSize: 20,
-    fontWeight: "600",
+    fontSize: 18,
+    fontWeight: "700",
     color: "#333",
-    marginVertical: 10,
+    marginBottom: 12,
   },
   statusItem: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: "#F8F8F8",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  statusContent: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  deleteButton: {
+    padding: 8,
   },
   unreadBorder: {
     borderWidth: 2,
-    borderColor: "#25D366",
+    borderColor: "#34C759",
   },
   modalContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "rgba(0,0,0,0.5)",
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
   },
   modalCard: {
     backgroundColor: "#fff",
     width: "100%",
+    maxWidth: 400,
     borderRadius: 16,
-    padding: 20,
+    padding: 16,
     shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 5,
+    shadowRadius: 12,
+    elevation: 6,
   },
   modalHeaderRow: {
-  flexDirection: "row",
-  alignItems: "center",
-  paddingVertical: 12,
-  paddingHorizontal: 16,
-  backgroundColor: "#f5f5f5",
-  borderTopLeftRadius: 12,
-  borderTopRightRadius: 12,
-  shadowColor: "#000",
-  shadowOpacity: 0.1,
-  shadowRadius: 8,
-  elevation: 4,
-},
-
-modalHeaderText: {
-  fontSize: 18,
-  fontWeight: "600",
-  color: "#333",
-  marginLeft: 10,
-},
-modalOverlay: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    backgroundColor: "#F8F8F8",
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  modalHeaderText: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#333",
+    marginLeft: 8,
+  },
+  modalOverlay: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.5)", // Semi-transparent background
+    backgroundColor: "rgba(0,0,0,0.5)",
   },
-
-modalCard: {
-  backgroundColor: "#fff",
-  borderRadius: 16,
-  paddingVertical: 20,
-  paddingHorizontal: 16,
-  shadowColor: "#000",
-  shadowOpacity: 0.15,
-  shadowRadius: 12,
-  elevation: 6,
-},
-
-iconStyle: {
-  color: "#007AFF", // Modern blue shade for better visibility
-},
-
   input: {
-    backgroundColor: "#f1f1f1",
-    borderRadius: 25,
-    paddingVertical: 15,
-    paddingHorizontal: 20,
+    backgroundColor: "#F8F8F8",
+    borderRadius: 12,
+    padding: 12,
     fontSize: 16,
     color: "#333",
     textAlignVertical: "top",
     minHeight: 100,
-    marginBottom: 20,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#ddd",
   },
   actionRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    flexWrap: "wrap",
   },
   actionButton: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#eaeaea",
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 25,
-    flex: 1,
-    marginHorizontal: 5,
+    backgroundColor: "#F8F8F8",
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginHorizontal: 4,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "#ddd",
   },
   actionButtonText: {
-    fontSize: 16,
+    fontSize: 14,
+    fontWeight: "600",
     color: "#333",
     marginLeft: 8,
-    fontWeight: "500",
+  },
+  mediaPreviewContainer: {
+    flexDirection: "row",
+    paddingHorizontal: 8,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  mediaPreviewWrapper: {
+    position: "relative",
+  },
+  mediaPreview: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+  },
+  playIconContainer: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    transform: [{ translateX: -15 }, { translateY: -15 }],
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    borderRadius: 15,
+    padding: 5,
+  },
+  placeholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    backgroundColor: "#f0f0f0",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  errorText: {
+    color: "#FF3B30",
+    fontSize: 10,
+    textAlign: "center",
+  },
+  removeMediaButton: {
+    position: "absolute",
+    top: -8,
+    right: -8,
+  },
+  flatListContent: {
+    paddingBottom: 16,
   },
 });
-
 
 export default (props) => (
   <SubscriptionProvider>

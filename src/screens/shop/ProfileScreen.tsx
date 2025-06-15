@@ -127,7 +127,7 @@ const ProfileScreen = () => {
           <MenuItem icon="person" title="Edit Profile" onPress={() => router.push({ pathname: '/shop/EditProfile', prevRoute: pathname})} />
           <MenuItem icon="lock-closed" title="Change Password" onPress={() => router.push({ pathname: 'ChangePassword', prevRoute: pathname})} />
           <MenuItem icon="shield-checkmark" title="Account Verification" onPress={() => router.push("AccountVerification")} />
-          <MenuItem icon="trash" title="Delete Account" onPress={() => router.push("DeleteAccount")} color="#D32F2F" />
+          <MenuItem icon="trash" title="Delete Account" onPress={() => router.push("login")} color="#D32F2F" />
           <MenuItem icon="log-out-outline" title="Logout" onPress={confirmAndLogout} color="#D32F2F" />
         </View>
 

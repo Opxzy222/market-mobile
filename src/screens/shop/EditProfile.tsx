@@ -1,7 +1,16 @@
-import React, { useEffect, useState } from "react";
-import { 
-  View, Text, TextInput, Image, TouchableOpacity, 
-  StyleSheet, ScrollView, ActivityIndicator 
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  Image,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  ActivityIndicator,
+  Keyboard,
+  Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import axios from "axios";
@@ -11,66 +20,144 @@ import { Ionicons } from "@expo/vector-icons";
 import { Button } from "@rneui/themed";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import { useRouter, useLocalSearchParams } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withSpring,
+  Easing,
+} from "react-native-reanimated";
+
+const CACHE_KEY = "EditProfile_Cache";
 
 const EditProfileScreen = () => {
   const [user, setUser] = useState(null);
   const [phoneNo, setPhoneNo] = useState("");
-  const [image, setImage] = useState(null);
+  const [image, setImage] = useState("");
   const [sessionId, setSessionId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [focused, setFocused] = useState(null);
   const params = useLocalSearchParams();
   const { shopId, prevRoute } = params;
   const router = useRouter();
+  const focusTimeoutRef = useRef(null);
 
-  useEffect(() => {
-    const fetchSessionId = async () => {
+  // Animation values
+  const cardOpacity = useSharedValue(0);
+  const cardScale = useSharedValue(0.95);
+  const buttonScale = useSharedValue(1);
+  const iconScale = useSharedValue(1);
+
+  // Load cached data and session ID
+  const loadCachedData = useCallback(async () => {
+    try {
+      const cachedUser = await AsyncStorage.getItem(CACHE_KEY);
+      if (cachedUser) {
+        const data = JSON.parse(cachedUser);
+        setUser(data);
+        setPhoneNo(data.phone_no || "");
+        setImage(data.image || "");
+        console.log("Loaded cached profile data");
+      }
+    } catch (error) {
+      console.error("Error loading cached data:", error);
+    }
+
+    try {
       const sessionIdString = await AsyncStorage.getItem("sessionToken");
       setSessionId(sessionIdString);
-      console.log(sessionId, 'hello')
-    };
-    fetchSessionId();
+      console.log("Fetched session token:", sessionIdString);
+      if (!sessionIdString) {
+        router.push("/login");
+      }
+    } catch (error) {
+      console.error("Error fetching session token:", error);
+      setError("Failed to load session");
+    }
+  }, [router]);
+
+  // Save to cache
+  const saveToCache = useCallback(async (data) => {
+    try {
+      await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(data));
+      console.log("Cached profile data saved");
+    } catch (error) {
+      console.error("Error saving to cache:", error);
+    }
   }, []);
 
-  useEffect(() => {
-    if (sessionId) {
-      axios.get(`https://retail-alvinia-goza-f6a0e4f7.koyeb.app/user/profile/`, {
-        headers: {
-          Authorization: sessionId,
-        },
-      })
-        .then(response => {
-          setUser(response.data);
-          setPhoneNo(response.data.phone_no || "");
-          setImage(response.data.image);
-        })
-        .catch(error => console.error("Error fetching profile:", error))
-        .finally(() => setLoading(false));
-    } else {
+  // Fetch profile data
+  const fetchProfile = useCallback(async () => {
+    if (!sessionId) {
+      console.log("No sessionId, skipping fetchProfile");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    try {
+      const response = await axios.get(
+        `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/user/profile/`,
+        {
+          headers: {
+            Authorization: sessionId,
+          },
+        }
+      );
+      setUser(response.data);
+      setPhoneNo(response.data.phone_no || "");
+      setImage(response.data.image || "");
+      saveToCache(response.data);
+      console.log("Fetched profile:", response.data);
+    } catch (error) {
+      console.error("Error fetching profile:", error);
+      setError("Failed to fetch profile. Using cached data if available.");
+    } finally {
       setLoading(false);
     }
-  }, [sessionId]);
+  }, [sessionId, saveToCache]);
+
+  useEffect(() => {
+    // Card entrance animation
+    cardOpacity.value = withTiming(1, { duration: 600, easing: Easing.out(Easing.ease) });
+    cardScale.value = withTiming(1, { duration: 600, easing: Easing.out(Easing.ease) });
+
+    loadCachedData().then(() => {
+      if (sessionId) {
+        fetchProfile(); // Always fetch fresh data
+      }
+    });
+  }, [sessionId, loadCachedData, fetchProfile]);
 
   const logStorageUsage = async () => {
-  try {
-    const keys = await AsyncStorage.getAllKeys();
-    let totalSize = 0;
-    for (const key of keys) {
-      const data = await AsyncStorage.getItem(key);
-      totalSize += ((data?.length || 0) * 2) / 1024; // Approximate KB
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      let totalSize = 0;
+      for (const key of keys) {
+        const data = await AsyncStorage.getItem(key);
+        totalSize += ((data?.length || 0) * 2) / 1024; // Approximate KB
+      }
+      console.log(`AsyncStorage usage: ${totalSize.toFixed(2)} KB`);
+    } catch (error) {
+      console.error("Error logging storage usage:", error);
     }
-    console.log(`AsyncStorage usage: ${totalSize.toFixed(2)} KB`);
-  } catch (error) {
-    console.error('Error logging storage usage:', error);
-  }
-};
+  };
 
-useEffect(() => {
-  logStorageUsage();
-}, []);
+  useEffect(() => {
+    logStorageUsage();
+    return () => {
+      if (focusTimeoutRef.current) {
+        clearTimeout(focusTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleUpdate = async () => {
     if (!sessionId) {
-      console.error("User ID is missing!");
+      console.error("Session ID is missing!");
+      alert("Please log in to update your profile.");
       return;
     }
 
@@ -86,12 +173,14 @@ useEffect(() => {
       try {
         const response = await fetch(image);
         const blob = await response.blob();
-        const file = new File([blob], "profile.jpg", { type: "image/jpeg" });
-
-        formData.append("image", file);
+        formData.append("image", {
+          uri: image,
+          type: "image/jpeg",
+          name: "profile.jpg",
+        });
         hasChanges = true;
       } catch (error) {
-        console.error("Error converting image to file:", error);
+        console.error("Error processing image:", error);
         alert("Failed to process image. Please try again.");
         return;
       }
@@ -115,6 +204,8 @@ useEffect(() => {
       );
 
       if (response.status === 200) {
+        setUser({ ...user, phone_no: phoneNo, image });
+        saveToCache({ ...user, phone_no: phoneNo, image });
         alert("Profile updated successfully!");
       } else {
         alert("Failed to update profile.");
@@ -126,6 +217,9 @@ useEffect(() => {
   };
 
   const pickImage = async () => {
+    iconScale.value = withSpring(0.8, { damping: 10 }, () => {
+      iconScale.value = withSpring(1);
+    });
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
@@ -134,86 +228,169 @@ useEffect(() => {
     });
     if (!result.canceled) {
       setImage(result.assets[0].uri);
+      console.log("Image picked:", result.assets[0].uri);
     }
   };
 
-  if (loading) {
+  // Animated styles
+  const animatedCardStyle = useAnimatedStyle(() => ({
+    opacity: cardOpacity.value,
+    transform: [{ scale: cardScale.value }],
+  }));
+
+  const animatedButtonStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: buttonScale.value }],
+  }));
+
+  const animatedIconStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: iconScale.value }],
+  }));
+
+  const handleButtonPressIn = () => {
+    buttonScale.value = withTiming(0.95, { duration: 100 });
+  };
+
+  const handleButtonPressOut = () => {
+    buttonScale.value = withTiming(1, { duration: 100 });
+  };
+
+  const handleFocus = (field) => {
+    if (focusTimeoutRef.current) {
+      clearTimeout(focusTimeoutRef.current);
+    }
+    focusTimeoutRef.current = setTimeout(() => {
+      console.log(`Input focused: ${field}`);
+      setFocused(field);
+    }, 100);
+  };
+
+  const handleBlur = (field) => {
+    if (focusTimeoutRef.current) {
+      clearTimeout(focusTimeoutRef.current);
+    }
+    console.log(`Input blurred: ${field}`);
+    setFocused(null);
+  };
+
+  if (loading && !user) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007bff" />
+        <ActivityIndicator size="large" color="#3A7BD5" />
         <Text style={styles.loadingText}>Loading profile...</Text>
       </View>
     );
   }
 
-  if (!user) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
-    );
-  }
-
   return (
-    <LinearGradient colors={["#F5F5F5", "#E0E0E0"]} style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.replace(prevRoute || '/(tabs)/profile')}>
-          <MaterialIcons name="arrow-back" size={26} color="#6B4226" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Profile Edit</Text>
-      </View>
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <View style={styles.profileCard}>
-          <View style={styles.imageContainer}>
-            <TouchableOpacity onPress={pickImage}>
-              <Image source={{ uri: user.image }} style={styles.profileImage} />
+    <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
+      <LinearGradient colors={["#F7FAFC", "#E5E7EB"]} style={styles.container}>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
+        >
+          <View style={styles.header}>
+            <TouchableOpacity
+              onPress={() => router.replace(prevRoute || "/(tabs)/profile")}
+              style={styles.backButton}
+            >
+              <MaterialIcons name="arrow-back" size={26} color="white" />
             </TouchableOpacity>
-            <TouchableOpacity onPress={pickImage} style={styles.uploadIcon}>
-              <Ionicons name="camera" size={22} color="white" />
-            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Profile Edit</Text>
+            <View style={styles.headerSpacer} />
           </View>
+          <ScrollView
+            contentContainerStyle={styles.scrollContainer}
+            keyboardShouldPersistTaps="handled"
+          >
+            {error && !user && (
+              <Text style={styles.errorText}>{error}</Text>
+            )}
+            {user && (
+              <Animated.View style={[styles.profileCard, animatedCardStyle]}>
+                <View style={styles.imageContainer}>
+                  <Text style={styles.imageLabel}>Profile Picture</Text>
+                  <TouchableOpacity onPress={pickImage}>
+                    <Image
+                      source={{ uri: image || user.image || "https://via.placeholder.com/150" }}
+                      style={styles.profileImage}
+                    />
+                  </TouchableOpacity>
+                  <Animated.View style={[styles.uploadIcon, animatedIconStyle]}>
+                    <TouchableOpacity onPress={pickImage}>
+                      <Ionicons name="camera" size={26} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  </Animated.View>
+                  <Text style={styles.uploadHint}>Tap to upload new image</Text>
+                </View>
 
-          <Text style={styles.profileId}>Profile ID: {user.user_id}</Text>
+                <Text style={styles.profileId}>Profile ID: {user.user_id}</Text>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>First Name</Text>
-            <Text style={styles.input}>{user.firstname}</Text>
-          </View>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>First Name</Text>
+                  <Text style={styles.input}>{user.firstname}</Text>
+                </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Last Name</Text>
-            <Text style={styles.input}>{user.lastname}</Text>
-          </View>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Last Name</Text>
+                  <Text style={styles.input}>{user.lastname}</Text>
+                </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email</Text>
-            <Text style={styles.input}>{user.email}</Text>
-          </View>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Email</Text>
+                  <Text style={styles.input}>{user.email}</Text>
+                </View>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Phone Number</Text>
+                  <TextInput
+                    style={[
+                      styles.inputField,
+                      focused === "phoneNo" && styles.inputFieldFocused,
+                    ]}
+                    value={phoneNo}
+                    onChangeText={setPhoneNo}
+                    keyboardType="phone-pad"
+                    placeholderTextColor="#6B7280"
+                    onFocus={() => handleFocus("phoneNo")}
+                    onBlur={() => handleBlur("phoneNo")}
+                    blurOnSubmit={true}
+                    onSubmitEditing={() => Keyboard.dismiss()}
+                  />
+                </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Confirm Email</Text>
-            <TextInput style={styles.inputField} placeholder="Enter verification code" keyboardType="number-pad" />
-          </View>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>Confirm Phone Number</Text>
+                  <TextInput
+                    style={[
+                      styles.inputField,
+                      focused === "confirmPhone" && styles.inputFieldFocused,
+                    ]}
+                    placeholder="Enter verification code"
+                    keyboardType="number-pad"
+                    placeholderTextColor="#6B7280"
+                    onFocus={() => handleFocus("confirmPhone")}
+                    onBlur={() => handleBlur("confirmPhone")}
+                    blurOnSubmit={true}
+                    onSubmitEditing={() => Keyboard.dismiss()}
+                  />
+                </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Phone Number</Text>
-            <TextInput 
-              style={styles.inputField} 
-              value={phoneNo} 
-              onChangeText={setPhoneNo} 
-              keyboardType="phone-pad" 
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Confirm Phone Number</Text>
-            <TextInput style={styles.inputField} placeholder="Enter verification code" keyboardType="number-pad" />
-          </View>
-
-          <Button title="Update Profile" onPress={handleUpdate} buttonStyle={styles.updateButton} />
-        </View>
-      </ScrollView>
-    </LinearGradient>
+                <Animated.View style={[styles.buttonContainer, animatedButtonStyle]}>
+                  <Button
+                    title="Update Profile"
+                    onPress={handleUpdate}
+                    onPressIn={handleButtonPressIn}
+                    onPressOut={handleButtonPressOut}
+                    buttonStyle={styles.updateButton}
+                    titleStyle={styles.updateButtonText}
+                  />
+                </Animated.View>
+              </Animated.View>
+            )}
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </LinearGradient>
+    </SafeAreaView>
   );
 };
 
@@ -224,106 +401,167 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 18,
-    backgroundColor: "rgba(255, 255, 255, 0.8)",
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    backgroundColor: "#3A7BD5",
+    borderBottomLeftRadius: 35,
+    borderBottomRightRadius: 35,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 6,
-    elevation: 5,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    backdropFilter: "blur(10px)", // Glass effect
+    elevation: 6,
   },
   backButton: {
-    marginRight: 10,
-    marginTop: 12,
+    padding: 8,
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: "bold",
-    textAlign: "center",
-    color: "#222",
+    color: "#FFFFFF",
     flex: 1,
+    textAlign: "center",
+  },
+  headerSpacer: {
+    width: 42,
   },
   scrollContainer: {
-    paddingVertical: 30,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
     alignItems: "center",
   },
   profileCard: {
-    width: "90%",
-    backgroundImage: "linear-gradient(rgba(255,255,255,0.6), rgba(240,240,240,0.4))",
-    padding: 22,
-    borderRadius: 20,
+    width: "100%",
+    backgroundColor: "white",
+    padding: 28,
+    borderRadius: 28,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
     shadowRadius: 10,
-    elevation: 8,
+    elevation: 5,
     alignItems: "center",
+    borderWidth: 0.5,
+    borderColor: "rgba(0, 0, 0, 0.03)",
   },
   imageContainer: {
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
+    marginBottom: 16,
+    backgroundColor: "#EFF6FF",
+    borderRadius: 16,
+    padding: 16,
+    width: "100%",
+  },
+  imageLabel: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 16,
   },
   profileImage: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    borderWidth: 3,
-    borderColor: "#4F73B6",
+    width: 170,
+    height: 170,
+    borderRadius: 85,
+    borderWidth: 4.5,
+    borderColor: "#3A7BD5",
   },
   uploadIcon: {
     position: "absolute",
-    bottom: 6,
-    right: 6,
-    backgroundColor: "#4F73B6",
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    bottom: 12,
+    right: 12,
+    backgroundColor: "#3A7BD5",
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
     borderColor: "white",
   },
+  uploadHint: {
+    fontSize: 15,
+    color: "#4B5563",
+    fontWeight: "500",
+    marginTop: 12,
+    textAlign: "center",
+  },
   profileId: {
     fontSize: 20,
-    fontWeight: "bold",
+    fontWeight: "700",
     textAlign: "center",
-    marginVertical: 12,
-    color: "#2D3748",
+    marginVertical: 16,
+    color: "#111827",
+    letterSpacing: 0.5,
   },
   inputGroup: {
     width: "100%",
-    marginBottom: 14,
+    marginBottom: 20,
   },
   label: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#4A5568",
-    marginBottom: 5,
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 10,
   },
   input: {
-    backgroundColor: "rgba(255, 255, 255, 0.8)", // Softer contrast
-    padding: 14,
-    borderRadius: 10,
-    fontSize: 16,
-    color: "#2D3748",
+    backgroundColor: "#F3F4F6",
+    padding: 18,
+    borderRadius: 14,
+    fontSize: 18,
+    color: "#111827",
   },
   inputField: {
-    backgroundColor: "white",
-    padding: 14,
-    borderRadius: 10,
-    fontSize: 16,
-    color: "#2D3748",
+    backgroundColor: "#F3F4F6",
+    padding: 18,
+    borderRadius: 14,
+    fontSize: 18,
+    color: "#111827",
+    borderWidth: 0.5,
+    borderColor: "transparent",
+  },
+  inputFieldFocused: {
+    borderColor: "rgba(0, 0, 0, 0.05)",
+  },
+  buttonContainer: {
+    width: "100%",
+    marginTop: 28,
   },
   updateButton: {
-    backgroundColor: "#4F73B6",
-    marginTop: 20,
-    borderRadius: 10,
-    paddingVertical: 12,
-    width: "100%",
+    backgroundColor: "#3A7BD5",
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    shadowColor: "#3A7BD5",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  updateButtonText: {
+    fontSize: 19,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    letterSpacing: 0.5,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F7FAFC",
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 18,
+    color: "#4B5563",
+    fontWeight: "500",
+  },
+  errorText: {
+    fontSize: 16,
+    color: "#f44336",
+    textAlign: "center",
+    marginVertical: 20,
   },
 });
 

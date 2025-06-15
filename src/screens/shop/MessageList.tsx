@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, memo } from "react";
+import React, { useEffect, useState, useCallback, useRef, memo } from "react";
 import {
   FlatList,
   Text,
@@ -11,25 +11,39 @@ import {
 } from "react-native";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useRouter, usePathname } from "expo-router";
-import { useFocusEffect } from "@react-navigation/native";
+import { useRouter, usePathname, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { storeData, getData } from "../../storage/storage";
 
 const MessageList = () => {
   const [messages, setMessages] = useState([]);
-  const [loading, setLoading] = useState(false); // Start false for cached data
+  const [filteredMessages, setFilteredMessages] = useState([]);
+  const [activeTab, setActiveTab] = useState("All");
+  const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState(null);
+  const isMountedRef = useRef(true);
+  const isFetchingRef = useRef(false);
+  const mountCountRef = useRef(0);
   const router = useRouter();
   const pathname = usePathname();
+
+  // Debug mount/unmount
+  useEffect(() => {
+    mountCountRef.current += 1;
+    console.log(`MessageList mounted (count: ${mountCountRef.current}, pathname: ${pathname})`);
+    return () => {
+      isMountedRef.current = false;
+      console.log(`MessageList unmounted (count: ${mountCountRef.current}, pathname: ${pathname})`);
+    };
+  }, [pathname]);
 
   // Fetch session ID
   const fetchSessionId = useCallback(async () => {
     try {
       const sessionIdString = await AsyncStorage.getItem("sessionToken");
-      console.log("Fetched session ID:", sessionIdString);
+      console.log("Fetched session ID");
       setSessionId(sessionIdString);
       return sessionIdString;
     } catch (error) {
@@ -39,118 +53,124 @@ const MessageList = () => {
   }, []);
 
   // Cache messages
-  const cacheMessages = useCallback(async (messagesToCache: any[]) => {
+  const cacheMessages = useCallback(async (messagesToCache) => {
     try {
-      console.log("Caching messages:", {
-        messageCount: messagesToCache.length,
-        messages: messagesToCache.map((msg) => ({
-          id: msg.id,
-          name: msg.name,
-          conversation_id: msg.conversation_id,
-        })),
-      });
       await storeData("message_list", JSON.stringify(messagesToCache));
-      console.log("Message list cached successfully");
+      console.log("Messages cached");
     } catch (error) {
       console.error("Error caching messages:", error);
     }
   }, []);
 
   // Load cached messages
-  const loadCachedMessages = useCallback(async (): Promise<any[]> => {
+  const loadCachedMessages = useCallback(async () => {
     try {
-      console.log("Loading cached messages...");
       const cached = await getData("message_list");
       if (cached) {
         const parsed = JSON.parse(cached);
-        console.log("Loaded cached messages:", {
-          messageCount: parsed.length,
-          messages: parsed.map((msg: any) => ({
-            id: msg.id,
-            name: msg.name,
-            conversation_id: msg.conversation_id,
-          })),
-        });
+        console.log("Loaded cached messages (count:", parsed.length, ")");
         return parsed;
-      } else {
-        console.log("No cached messages found");
       }
+      return [];
     } catch (error) {
       console.error("Error loading cached messages:", error);
+      return [];
     }
-    return [];
   }, []);
 
   // Fetch messages from backend
-  const fetchMessages = useCallback(async () => {
-    if (!sessionId) {
-      console.warn("Cannot fetch messages: sessionId is null");
-      return;
-    }
-
-    setLoading(true);
-    setFetchError(false);
-
-    try {
-      console.log("Fetching messages from API...");
-      const response = await axios.get(
-        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/message-list/",
-        {
-          headers: {
-            Authorization: sessionId,
-          },
-        }
-      );
-
-      const newMessages = response.data;
-      console.log("API response:", {
-        messageCount: newMessages.length,
-        messages: newMessages.map((msg: any) => ({
-          id: msg.id,
-          name: msg.name,
-          conversation_id: msg.conversation_id,
-        })),
-      });
-
-      setMessages(newMessages); // Update message list
-      await cacheMessages(newMessages); // Update cache
-    } catch (error) {
-      console.error("Error fetching messages:", error);
-      setFetchError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, [sessionId, cacheMessages]);
-
-  // Load cached messages on mount
-  useEffect(() => {
-    const initializeMessages = async () => {
-      try {
-        const cachedMessages = await loadCachedMessages();
-        setMessages(cachedMessages); // Display cached data immediately
-      } catch (error) {
-        console.error("Error initializing messages:", error);
+  const fetchMessages = useCallback(
+    async () => {
+      if (!sessionId) {
+        console.warn("Cannot fetch messages: sessionId is null");
+        return;
       }
-    };
+      if (isFetchingRef.current) {
+        console.log("Fetch in progress, skipping...");
+        return;
+      }
 
-    initializeMessages();
-  }, [loadCachedMessages]);
+      isFetchingRef.current = true;
+      setLoading(true);
+      setFetchError(false);
 
-  // Fetch sessionId and messages on every screen focus
+      try {
+        console.log("Sending request to backend...");
+        const response = await axios.get(
+          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/message-list/",
+          { headers: { Authorization: sessionId } }
+        );
+        const newMessages = response.data;
+        if (isMountedRef.current) {
+          console.log("Fetched messages (count:", newMessages.length, ")");
+          setMessages(newMessages);
+          await cacheMessages(newMessages);
+          filterMessages(newMessages, activeTab);
+        }
+      } catch (error) {
+        console.error("Error fetching messages:", error);
+        if (isMountedRef.current) setFetchError(true);
+      } finally {
+        if (isMountedRef.current) setLoading(false);
+        isFetchingRef.current = false;
+      }
+    },
+    [sessionId, cacheMessages, activeTab]
+  );
+
+  // Filter messages
+  const filterMessages = useCallback((messagesToFilter, tab) => {
+    if (!isMountedRef.current) return;
+    let filtered = messagesToFilter;
+    if (tab === "Space") {
+      filtered = messagesToFilter.filter((msg) => msg.role === "seller");
+    } else if (tab === "Customers") {
+      filtered = messagesToFilter.filter((msg) => msg.role === "buyer");
+    }
+    setFilteredMessages(filtered);
+    console.log(`Filtered messages for ${tab} (count: ${filtered.length})`);
+  }, []);
+
+  // Initialize messages on focus
   useFocusEffect(
     useCallback(() => {
-      const getSessionAndFetchMessages = async () => {
-        const session = await fetchSessionId();
-        if (session) {
-          await fetchMessages();
+      isMountedRef.current = true;
+      const initializeMessages = async () => {
+        setLoading(true);
+        try {
+          // Load cached messages first
+          const cachedMessages = await loadCachedMessages();
+          if (cachedMessages.length > 0 && isMountedRef.current) {
+            setMessages(cachedMessages);
+            filterMessages(cachedMessages, activeTab);
+          }
+          // Fetch fresh data from backend
+          const session = await fetchSessionId();
+          if (session && isMountedRef.current) {
+            await fetchMessages();
+          }
+        } catch (error) {
+          console.error("Error initializing messages:", error);
+          if (isMountedRef.current) setFetchError(true);
+        } finally {
+          if (isMountedRef.current) setLoading(false);
         }
       };
-
-      getSessionAndFetchMessages();
+      initializeMessages();
       return () => {
-        console.log("Screen unfocused");
+        isMountedRef.current = false;
       };
-    }, [fetchSessionId, fetchMessages])
+    }, [loadCachedMessages, fetchSessionId, fetchMessages])
+  );
+
+  // Handle tab change
+  const handleTabChange = useCallback(
+    (tab) => {
+      console.log("Switching to tab:", tab);
+      setActiveTab(tab);
+      filterMessages(messages, tab);
+    },
+    [messages, filterMessages]
   );
 
   // Handle pull-to-refresh
@@ -160,13 +180,13 @@ const MessageList = () => {
     setRefreshing(false);
   }, [fetchMessages]);
 
-  // Handle navigation to Conversation screen
+  // Handle navigation to Conversation
   const handleMessageClick = useCallback(
-    (message: any) => {
+    (message) => {
       console.log("Navigating to Conversation:", {
-        name: message.name,
         conversation_id: message.conversation_id,
-        shop_id: message.shop_id,
+        shopId: message.shopId,
+        role: message.role,
       });
       router.push({
         pathname: "shop/Conversation",
@@ -174,7 +194,10 @@ const MessageList = () => {
           name: message.name,
           conversation_id: message.conversation_id,
           shop_id: message.shop_id,
+          shop_is_active: message.shop_is_active.toString(),
+          role: message.role,
           prevRoute: pathname,
+          shopId: message.shopId
         },
       });
     },
@@ -183,8 +206,9 @@ const MessageList = () => {
 
   // Render message item
   const renderItem = useCallback(
-    ({ item }: { item: any }) => {
-      const isUnread = !item.status;
+    ({ item }) => {
+      const isUnread = item.is_unread_by_receiver;
+      const isDeleted = !item.shop_is_active;
       const formattedDate = new Date(item.date).toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
@@ -192,7 +216,11 @@ const MessageList = () => {
 
       return (
         <TouchableOpacity
-          style={[styles.messageItem, isUnread && styles.unreadMessage]}
+          style={[
+            styles.messageItem,
+            isUnread && styles.unreadMessage,
+            isDeleted && styles.deletedMessage,
+          ]}
           onPress={() => handleMessageClick(item)}
           activeOpacity={0.85}
         >
@@ -202,22 +230,46 @@ const MessageList = () => {
                 item.profile_image ||
                 "https://via.placeholder.com/58?text=Profile",
             }}
-            style={[styles.profileImage, isUnread && styles.unreadProfileImage]}
+            style={[
+              styles.profileImage,
+              isUnread && styles.unreadProfileImage,
+              isDeleted && styles.deletedProfileImage,
+            ]}
             onError={(e) =>
               console.log("Image Load Error:", e.nativeEvent.error)
             }
+            defaultSource={{ uri: "https://via.placeholder.com/58?text=Profile" }}
           />
           <View style={styles.textContainer}>
             <View style={styles.messageHeader}>
-              <Text style={[styles.name, isUnread && styles.unreadText]}>
+              <Text
+                style={[
+                  styles.name,
+                  isUnread && styles.unreadText,
+                  isDeleted && styles.deletedText,
+                ]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
                 {item.name || "Unknown"}
+                {isDeleted && " (Deleted)"}
               </Text>
-              <Text style={[styles.date, isUnread && styles.unreadText]}>
+              <Text
+                style={[
+                  styles.date,
+                  isUnread && styles.unreadText,
+                  isDeleted && styles.deletedText,
+                ]}
+              >
                 {formattedDate}
               </Text>
             </View>
             <Text
-              style={[styles.lastMessage, isUnread && styles.unreadText]}
+              style={[
+                styles.lastMessage,
+                isUnread && styles.unreadText,
+                isDeleted && styles.deletedText,
+              ]}
               numberOfLines={1}
               ellipsizeMode="tail"
             >
@@ -230,6 +282,35 @@ const MessageList = () => {
     [handleMessageClick]
   );
 
+  // Render navigation bar
+  const renderNavBar = () => {
+    const tabs = ["All", "Space", "Customers"];
+    return (
+      <View style={styles.navBar}>
+        {tabs.map((tab) => (
+          <TouchableOpacity
+            key={tab}
+            style={[
+              styles.navButton,
+              activeTab === tab && styles.activeNavButton,
+            ]}
+            onPress={() => handleTabChange(tab)}
+            accessibilityLabel={`${tab} Messages Tab`}
+          >
+            <Text
+              style={[
+                styles.navButtonText,
+                activeTab === tab && styles.activeNavButtonText,
+              ]}
+            >
+              {tab}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  };
+
   return (
     <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
       <LinearGradient
@@ -239,43 +320,46 @@ const MessageList = () => {
         <Text style={styles.header}>Messages</Text>
       </LinearGradient>
 
-      {(loading || fetchError) && (
-        <View style={[styles.statusBar, fetchError ? styles.errorBar : styles.loadingBar]}>
-          {loading && (
-            <View style={styles.statusContent}>
-              <ActivityIndicator size="small" color="#007AFF" />
-              <Text style={styles.statusText}>Updating Messages...</Text>
-            </View>
-          )}
-          {fetchError && (
-            <View style={styles.statusContent}>
-              <Text style={styles.statusText}>Failed to fetch messages</Text>
-              <TouchableOpacity
-                style={styles.retryButton}
-                onPress={fetchMessages}
-              >
-                <Text style={styles.retryButtonText}>Try Again</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-      )}
+      {renderNavBar()}
 
-      {messages.length === 0 && !loading ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.noMessages}>No messages found</Text>
-          {fetchError && (
+      {loading && !filteredMessages.length ? (
+        <View style={styles.statusBar}>
+          <View style={styles.statusContent}>
+            <ActivityIndicator size="small" color="#007AFF" />
+            <Text style={styles.statusText}>Loading Messages...</Text>
+          </View>
+        </View>
+      ) : fetchError && !filteredMessages.length ? (
+        <View style={[styles.statusBar, styles.errorBar]}>
+          <View style={styles.statusContent}>
+            <Text style={styles.statusText}>Failed to fetch messages</Text>
             <TouchableOpacity
-              style={styles.retryButtonLarge}
-              onPress={fetchMessages}
+              style={styles.retryButton}
+              onPress={() => fetchMessages()}
             >
               <Text style={styles.retryButtonText}>Try Again</Text>
             </TouchableOpacity>
-          )}
+          </View>
+        </View>
+      ) : filteredMessages.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.noMessages}>
+            {activeTab === "Space"
+              ? "No shop messages found"
+              : activeTab === "Customers"
+              ? "No customer messages found"
+              : "No messages found"}
+          </Text>
+          <TouchableOpacity
+            style={styles.retryButtonLarge}
+            onPress={() => fetchMessages()}
+          >
+            <Text style={styles.retryButtonText}>Refresh</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
-          data={messages}
+          data={filteredMessages}
           keyExtractor={(item, index) => `${item.id}-${index}`}
           renderItem={renderItem}
           contentContainerStyle={styles.messageList}
@@ -289,10 +373,7 @@ const MessageList = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F7FAFC",
-  },
+  container: { flex: 1, backgroundColor: "#F7FAFC" },
   headerContainer: {
     paddingVertical: 45,
     borderBottomLeftRadius: 35,
@@ -311,28 +392,54 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     textAlign: "center",
   },
+  navBar: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    paddingVertical: 10,
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E0E0E0",
+    marginHorizontal: 16,
+    marginTop: 8,
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  navButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: "center",
+    borderRadius: 8,
+  },
+  activeNavButton: { backgroundColor: "#3A7BD5" },
+  navButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#333",
+  },
+  activeNavButtonText: { color: "#FFFFFF" },
   statusBar: {
     padding: 10,
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.9)", // Glassmorphism translucent white
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
     borderRadius: 12,
     marginHorizontal: 16,
-    marginTop: 8, // Slight offset from header
+    marginTop: 8,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 6,
     elevation: 4,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)", // Subtle border for depth
-  },
-  loadingBar: {
-    backgroundColor: "transparent", // Gradient handled by LinearGradient
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   errorBar: {
-    backgroundColor: "rgba(211, 47, 47, 0.9)", // Translucent red for errors
+    backgroundColor: "rgba(211, 47, 47, 0.9)",
     borderColor: "rgba(211, 47, 47, 0.3)",
   },
   statusContent: {
@@ -342,7 +449,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   statusText: {
-    color: "#333", // Dark text for contrast
+    color: "#333",
     fontSize: 14,
     fontWeight: "700",
     marginLeft: 10,
@@ -386,11 +493,12 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: "#888",
     textAlign: "center",
+    marginBottom: 10,
   },
   messageList: {
     paddingHorizontal: 16,
     paddingBottom: 16,
-    paddingTop: 12, // Space for statusBar
+    paddingTop: 12,
   },
   messageItem: {
     backgroundColor: "#FFFFFF",
@@ -409,13 +517,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#007AFF",
   },
-  unreadProfileImage: {
-    borderColor: "#007AFF",
+  deletedMessage: {
+    backgroundColor: "#F5F5F5",
+    borderWidth: 1,
+    borderColor: "#D32F2F",
+  },
+  unreadProfileImage: { borderColor: "#007AFF" },
+  deletedProfileImage: {
+    borderColor: "#D32F2F",
+    opacity: 0.6,
   },
   unreadText: {
     fontWeight: "bold",
     color: "#007AFF",
     fontSize: 16,
+  },
+  deletedText: {
+    color: "#D32F2F",
+    fontStyle: "italic",
   },
   profileImage: {
     width: 58,
@@ -430,23 +549,25 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 3,
   },
-  textContainer: {
-    flex: 1,
-  },
+  textContainer: { flex: 1 },
   messageHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 4,
     alignItems: "center",
+    marginBottom: 4,
   },
   name: {
+    flex: 1,
     fontSize: 16,
     fontWeight: "600",
     color: "#333",
+    marginRight: 8,
   },
   date: {
     fontSize: 12,
     color: "#666",
+    minWidth: 60,
+    textAlign: "right",
   },
   lastMessage: {
     fontSize: 15,

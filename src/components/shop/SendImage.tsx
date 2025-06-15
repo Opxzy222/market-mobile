@@ -66,7 +66,7 @@ const SendImage = ({ onSend }) => {
 
       console.log("Launching image picker...");
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ImagePicker.MediaTypeOptions.Images, // Use MediaTypeOptions.Images
         allowsEditing: false,
         quality: 0.5, // Lower quality for old devices
       });
@@ -102,14 +102,23 @@ const SendImage = ({ onSend }) => {
     setIsLoading(false);
   };
 
-  const handleSend = () => {
-    if (selectedImage && imageValid) {
+  const handleSend = async () => {
+    if (selectedImage && imageValid && !isLoading) {
+      setIsLoading(true);
       console.log("Sending image:", selectedImage);
-      onSend(selectedImage);
-      setSelectedImage(null);
-      setImageValid(false);
-      setImageError(false);
-      setIsLoading(false);
+      try {
+        await onSend(selectedImage);
+        console.log("Image sent successfully");
+        Alert.alert("Success", "Image uploaded successfully!");
+        setSelectedImage(null);
+        setImageValid(false);
+        setImageError(false);
+      } catch (error) {
+        console.error("Error sending image:", error);
+        Alert.alert("Error", "Failed to upload file. Please try again.");
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -119,7 +128,9 @@ const SendImage = ({ onSend }) => {
     "imageValid:",
     imageValid,
     "imageError:",
-    imageError
+    imageError,
+    "isLoading:",
+    isLoading
   );
 
   return (
@@ -128,7 +139,7 @@ const SendImage = ({ onSend }) => {
         <Ionicons
           name="image-outline"
           size={24}
-          color="#e67e22" // Matches original; change to #9b59b6 if preferred
+          color="#e67e22"
           style={styles.optionIcon}
         />
         <Text style={styles.optionText}>Select Image</Text>
@@ -154,22 +165,27 @@ const SendImage = ({ onSend }) => {
             <Image
               source={{ uri: selectedImage.uri }}
               style={styles.previewImage}
-              resizeMode="cover" // Matches SendVideo
+              resizeMode="cover"
             />
           )}
           <View style={styles.actionButtons}>
             <TouchableOpacity
               onPress={handleRemoveImage}
               style={styles.removeButton}
+              disabled={isLoading}
             >
               <Ionicons name="trash" size={24} color="#ff4d4d" />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={handleSend}
-              style={[styles.sendButton, !imageValid && styles.sendButtonDisabled]}
-              disabled={!imageValid}
+              style={[styles.sendButton, (!imageValid || isLoading) && styles.sendButtonDisabled]}
+              disabled={!imageValid || isLoading}
             >
-              <Text style={styles.sendButtonText}>Send</Text>
+              {isLoading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.sendButtonText}>Send</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -211,7 +227,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   previewImage: {
-    width: 150, // Matches SendVideo
+    width: 150,
     height: 150,
     borderRadius: 10,
   },

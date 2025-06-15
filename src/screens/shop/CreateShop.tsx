@@ -474,7 +474,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
+    padding: 12,
     backgroundColor: "rgba(255, 255, 255, 0.3)",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },

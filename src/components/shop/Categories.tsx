@@ -23,7 +23,7 @@ const Categories = ({ categories }) => {
   };
 
   const handleCategoryClick = (categoryId, categoryName) => {
-    router.push({pathname: '/shop/SubcategoryList', params: { categoryId: categoryId,
+    router.push({pathname: '/shop/ChildCategoryList', params: { categoryId: categoryId,
        categoryName: categoryName, prevRoute: pathname }, });
   };
 
