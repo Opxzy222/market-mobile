@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
   Keyboard,
   Platform,
-  KeyboardAvoidingView,
+  KeyboardAvoidingView, StatusBar
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import axios from "axios";
@@ -283,6 +283,7 @@ const EditProfileScreen = () => {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <LinearGradient colors={["#F7FAFC", "#E5E7EB"]} style={styles.container}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}

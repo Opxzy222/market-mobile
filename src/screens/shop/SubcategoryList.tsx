@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StyleSheet,
-  Alert,
+  Alert, StatusBar
 } from 'react-native';
 import axios from 'axios';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -14,12 +14,16 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import * as Location from 'expo-location';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated'; // Optional for animations
+import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_BASE_URL = 'https://retail-alvinia-goza-f6a0e4f7.koyeb.app';
 
+// In-memory cache for subcategories
+const subcategoryCache = new Map();
+
 const SubcategoryList = () => {
-  const { categoryId, categoryName, prevRoute } = useLocalSearchParams();
+  const { categoryId, categoryName, prevRoute, parentCategoryId, parentCategoryName } = useLocalSearchParams();
   const router = useRouter();
 
   const [subcategories, setSubcategories] = useState([]);
@@ -32,10 +36,57 @@ const SubcategoryList = () => {
   const scaleCard = useSharedValue(1);
 
   useEffect(() => {
-    const fetchSubcategories = async () => {
+    const loadData = async () => {
+      if (!categoryId) {
+        if (__DEV__) {
+          console.log('No categoryId provided, navigating to shop');
+        }
+        router.replace('/(tabs)/shop');
+        return;
+      }
+
       try {
-        const response = await axios.get(`${API_BASE_URL}/shop-subcategories/${categoryId}/`);
-        setSubcategories(response.data);
+        if (__DEV__) {
+          console.log('Loading subcategories for categoryId:', categoryId);
+        }
+
+        // Check in-memory cache
+        if (subcategoryCache.has(categoryId)) {
+          const cachedData = subcategoryCache.get(categoryId);
+          setSubcategories(cachedData);
+          setLoading(false);
+          if (__DEV__) {
+            console.log('Loaded subcategories from in-memory cache');
+          }
+          return;
+        }
+
+        // Check AsyncStorage cache
+        const cacheKey = `subcategories_${categoryId}`;
+        const cachedData = await AsyncStorage.getItem(cacheKey);
+        if (cachedData) {
+          const parsedData = JSON.parse(cachedData);
+          setSubcategories(parsedData);
+          subcategoryCache.set(categoryId, parsedData);
+          setLoading(false);
+          if (__DEV__) {
+            console.log('Loaded subcategories from AsyncStorage');
+          }
+          return;
+        }
+
+        // Fetch from API
+        const sessionToken = await AsyncStorage.getItem('sessionToken');
+        const response = await axios.get(`${API_BASE_URL}/shop-subcategories/${categoryId}/`, {
+          headers: sessionToken ? { Authorization: sessionToken } : {},
+        });
+        const data = response.data;
+        setSubcategories(data);
+        subcategoryCache.set(categoryId, data);
+        await AsyncStorage.setItem(cacheKey, JSON.stringify(data));
+        if (__DEV__) {
+          console.log('Fetched subcategories:', data);
+        }
       } catch (error) {
         console.error('Error fetching subcategories:', error);
         Alert.alert('Error', 'Failed to load subcategories');
@@ -45,8 +96,8 @@ const SubcategoryList = () => {
       }
     };
 
-    fetchSubcategories();
-  }, [categoryId]);
+    loadData();
+  }, [categoryId, router]);
 
   const handleSubcategoryClick = useCallback(async (subcategoryId) => {
     setSelectedSubcategoryId(subcategoryId);
@@ -74,10 +125,14 @@ const SubcategoryList = () => {
       }
 
       const { coords } = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      console.log('Current location:', coords);
+      if (__DEV__) {
+        console.log('Current location:', coords);
+      }
 
+      const sessionToken = await AsyncStorage.getItem('sessionToken');
       const response = await axios.get(`${API_BASE_URL}/shop-subcategory-search/`, {
         params: { subcategory_id: subcategoryId, lat: coords.latitude, lon: coords.longitude },
+        headers: sessionToken ? { Authorization: sessionToken } : {},
       });
 
       router.push({
@@ -108,8 +163,17 @@ const SubcategoryList = () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await axios.get(`${API_BASE_URL}/shop-subcategories/${categoryId}/`);
-      setSubcategories(response.data);
+      const sessionToken = await AsyncStorage.getItem('sessionToken');
+      const response = await axios.get(`${API_BASE_URL}/shop-subcategories/${categoryId}/`, {
+        headers: sessionToken ? { Authorization: sessionToken } : {},
+      });
+      const data = response.data;
+      setSubcategories(data);
+      subcategoryCache.set(categoryId, data);
+      await AsyncStorage.setItem(`subcategories_${categoryId}`, JSON.stringify(data));
+      if (__DEV__) {
+        console.log('Fetched subcategories:', data);
+      }
     } catch (error) {
       console.error('Error fetching subcategories:', error);
       Alert.alert('Error', 'Failed to load subcategories');
@@ -124,13 +188,10 @@ const SubcategoryList = () => {
       <SafeAreaView style={styles.centeredContainer}>
         <LinearGradient colors={['#F7FAFC', '#E5E7EB']} style={styles.centeredContainer}>
           <View style={styles.header}>
-            <TouchableOpacity
-              onPress={() => router.back()}
-              style={styles.backButton}
-            >
+            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
               <MaterialIcons name="arrow-back" size={26} color="white" />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>{categoryName}</Text>
+            <Text style={styles.headerTitle}>{categoryName || 'Loading...'}</Text>
             <View style={styles.headerSpacer} />
           </View>
           <View style={styles.loaderContainer}>
@@ -142,26 +203,20 @@ const SubcategoryList = () => {
     );
   }
 
-  if (error) {
+  if (error && !subcategories.length) {
     return (
       <SafeAreaView style={styles.centeredContainer}>
         <LinearGradient colors={['#F7FAFC', '#E5E7EB']} style={styles.centeredContainer}>
           <View style={styles.header}>
-            <TouchableOpacity
-              onPress={() => router.back()}
-              style={styles.backButton}
-            >
+            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
               <MaterialIcons name="arrow-back" size={26} color="white" />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>{categoryName}</Text>
+            <Text style={styles.headerTitle}>{categoryName || 'Error'}</Text>
             <View style={styles.headerSpacer} />
           </View>
           <View style={styles.loaderContainer}>
             <Text style={styles.errorText}>Failed to load subcategories.</Text>
-            <TouchableOpacity
-              style={styles.retryButton}
-              onPress={fetchSubcategories}
-            >
+            <TouchableOpacity style={styles.retryButton} onPress={fetchSubcategories}>
               <Text style={styles.retryButtonText}>Retry</Text>
             </TouchableOpacity>
           </View>
@@ -172,10 +227,11 @@ const SubcategoryList = () => {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <LinearGradient colors={['#F7FAFC', '#E5E7EB']} style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity
-            onPress={() => router.replace(prevRoute || '/shop/ChildCategoryList')}
+            onPress={() => router.back()} // Changed to router.back
             style={styles.backButton}
           >
             <MaterialIcons name="arrow-back" size={26} color="white" />
@@ -229,7 +285,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 16,
     paddingHorizontal: 12,
-    backgroundColor: '#3A7BD5', // Preserved
+    backgroundColor: '#3A7BD5',
     borderBottomLeftRadius: 35,
     borderBottomRightRadius: 35,
     shadowColor: '#000',
@@ -255,19 +311,19 @@ const styles = StyleSheet.create({
   },
   contentWrapper: {
     flex: 1,
-    paddingHorizontal: 20, // Matches ChildCategoryList
+    paddingHorizontal: 20,
     paddingTop: 24,
   },
   listContent: {
     paddingVertical: 12,
-    paddingBottom: 80, // Matches ChildCategoryList
+    paddingBottom: 80,
   },
   subcategoryCard: {
     marginVertical: 8,
-    borderRadius: 16, // Softer corners
+    borderRadius: 16,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E5E7EB', // Subtle border
+    borderColor: '#E5E7EB',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.08,
@@ -282,17 +338,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   subcategoryCardSelected: {
-    backgroundColor: '#F5FAFF', // Light blue, matches ChildCategoryList
-    borderColor: '#3A7BD5', // Matches header
+    backgroundColor: '#F5FAFF',
+    borderColor: '#3A7BD5',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,
     shadowRadius: 8,
     elevation: 5,
   },
   subcategoryTitle: {
-    fontSize: 17, // Matches ChildCategoryList
-    fontWeight: '600', // Semi-bold
-    color: '#111827', // Darker for contrast
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#111827',
     fontFamily: 'System',
     letterSpacing: 0.2,
     lineHeight: 24,
@@ -307,9 +363,9 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: 16,
-    fontSize: 16, // Matches ChildCategoryList
+    fontSize: 16,
     fontWeight: '500',
-    color: '#1F2A44', // Darker, professional
+    color: '#1F2A44',
     fontFamily: 'System',
     letterSpacing: 0.3,
     lineHeight: 22,
@@ -317,7 +373,7 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#DC2626', // Red for errors
+    color: '#DC2626',
     fontFamily: 'System',
     letterSpacing: 0.3,
     lineHeight: 22,
@@ -329,7 +385,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 10,
-    backgroundColor: '#3A7BD5', // Matches header
+    backgroundColor: '#3A7BD5',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,

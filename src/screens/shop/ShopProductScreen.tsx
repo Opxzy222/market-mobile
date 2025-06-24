@@ -6,7 +6,7 @@ import {
   FlatList,
   ActivityIndicator,
   TouchableOpacity,
-  TextInput,
+  TextInput, StatusBar
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
@@ -112,7 +112,7 @@ const ShopProduct = () => {
         <LinearGradient colors={["#F7FAFC", "#E3F2FD"]} style={styles.container}>
           <View style={styles.header}>
             <TouchableOpacity
-              onPress={() => router.replace(prevRoute || "/(tabs)/shop")}
+              onPress={() => router.replace(prevRoute || "/(tabs)/myshop")}
               style={styles.backButton}
             >
               <MaterialIcons name="arrow-back" size={26} color="white" />
@@ -133,6 +133,7 @@ const ShopProduct = () => {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <LinearGradient colors={["#F7FAFC", "#E3F2FD"]} style={styles.container}>
         {/* Fixed Header */}
         <View style={styles.header}>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator,
   TouchableOpacity, TextInput, Button, KeyboardAvoidingView, FlatList,
-  Platform, Modal, TouchableWithoutFeedback, Alert, Keyboard
+  Platform, Modal, TouchableWithoutFeedback, Alert, Keyboard, StatusBar
 } from 'react-native';
 import axios from 'axios';
 import { Checkbox } from 'expo-checkbox';
@@ -532,6 +532,7 @@ const debouncedSetDropdownState = useCallback(
 
 return (
   <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
+    <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
     <View style={styles.header}>
               <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
                 <MaterialIcons name="arrow-back" size={26} color="white" />

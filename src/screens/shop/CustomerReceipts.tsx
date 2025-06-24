@@ -1,3 +1,4 @@
+// src/screens/CustomerReceipts.tsx
 import React, { useEffect, useState, useCallback } from "react";
 import {
   View,
@@ -8,30 +9,29 @@ import {
   TouchableOpacity,
   Image,
   StyleSheet,
-  Modal,
   Dimensions,
-  Platform,
+  Platform, Modal, StatusBar
 } from "react-native";
 import { Card, Divider, Chip } from "react-native-paper";
+import Animated, { FadeInUp, FadeOut } from "react-native-reanimated";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import MaterialIcons from "react-native-vector-icons/MaterialIcons";
-import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import ViewReceiptPDF from "../../components/shop/ViewReceipt";
+import { useRouter } from "expo-router";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const TABS = ["All", "Accepted", "Pending", "Rejected", "Voided"];
 
 const statusStyles = {
-  pending: { color: "#F59E0B", label: "Pending", icon: "time-outline" },
-  accepted: { color: "#10B981", label: "Accepted", icon: "checkmark-circle-outline" },
-  rejected: { color: "#EF4444", label: "Rejected", icon: "close-circle-outline" },
-  voided: { color: "#6B7280", label: "Voided", icon: "remove-circle-outline" },
+  pending: { color: "#FFA500", label: "Pending", icon: "time-outline" },
+  accepted: { color: "#4CAF50", label: "Accepted", icon: "checkmark-circle-outline" },
+  rejected: { color: "#F44336", label: "Rejected", icon: "close-circle-outline" },
+  voided: { color: "#9E9E9E", label: "Voided", icon: "remove-circle-outline" },
 };
 
 const CustomerReceipts = () => {
@@ -43,10 +43,11 @@ const CustomerReceipts = () => {
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
   const [pickerVisible, setPickerVisible] = useState(false);
-  const [pickerType, setPickerType] = useState(null); // "start" or "end"
+  const [pickerType, setPickerType] = useState(null);
   const [tempDate, setTempDate] = useState(new Date());
   const router = useRouter();
 
+  // Fetch session ID
   useEffect(() => {
     const fetchSessionId = async () => {
       try {
@@ -57,10 +58,10 @@ const CustomerReceipts = () => {
         console.error("Error fetching session ID:", error);
       }
     };
-
     fetchSessionId();
   }, []);
 
+  // Fetch receipts
   const fetchReceipts = useCallback(async () => {
     if (!sessionId) {
       console.warn("No session ID, skipping fetch");
@@ -78,12 +79,13 @@ const CustomerReceipts = () => {
           },
         }
       );
-
-      const fetchedReceipts = Array.isArray(response.data.receipts) ? response.data.receipts : [];
-      console.log("Receipts fetched:", fetchedReceipts.length);
+      const fetchedReceipts = Array.isArray(response.data.receipts)
+        ? response.data.receipts.filter((item) => item && typeof item === "object" && item.id)
+        : [];
+      console.log("Receipts fetched:", fetchedReceipts.length, "Data:", JSON.stringify(fetchedReceipts, null, 2));
       setReceipts(fetchedReceipts);
     } catch (error) {
-      console.error("Error fetching receipts:", error);
+      console.error("Error fetching receipts:", error.response?.data || error.message);
       Alert.alert("Error", "Failed to fetch receipts.");
       setReceipts([]);
     } finally {
@@ -107,6 +109,7 @@ const CustomerReceipts = () => {
     setPickerType(null);
   }, [activeTab]);
 
+  // Handle accept/reject actions
   const handleAction = async (receiptId, action) => {
     const actionTitle = action === "accept" ? "Accept" : "Reject";
     return new Promise((resolve) => {
@@ -135,7 +138,7 @@ const CustomerReceipts = () => {
                 );
                 resolve(true);
               } catch (error) {
-                console.error(`Error ${action}ing receipt:`, error);
+                console.error(`Error ${action}ing receipt:`, error.response?.data || error.message);
                 Alert.alert("Error", `Failed to ${action} receipt.`);
                 resolve(false);
               }
@@ -146,6 +149,7 @@ const CustomerReceipts = () => {
     });
   };
 
+  // Format date for display
   const formatDate = (dateStr) => {
     const date = new Date(dateStr);
     const today = new Date();
@@ -164,9 +168,10 @@ const CustomerReceipts = () => {
     });
   };
 
+  // Handle DateTimePicker change
   const handleDateChange = (event, selectedDate) => {
     console.log("DateTimePicker event:", event.type, "Date:", selectedDate);
-    setPickerVisible(Platform.OS === "ios"); // Keep open on iOS until confirmed
+    setPickerVisible(Platform.OS === "ios");
     if (event.type === "dismissed" || !selectedDate) {
       setPickerVisible(false);
       setPickerType(null);
@@ -191,6 +196,7 @@ const CustomerReceipts = () => {
     setPickerType(null);
   };
 
+  // Show DateTimePicker
   const showDatePicker = (type) => {
     console.log("Showing DateTimePicker for:", type, "Tab:", activeTab);
     setPickerType(type);
@@ -198,21 +204,20 @@ const CustomerReceipts = () => {
     setPickerVisible(true);
   };
 
+  // Filter receipts
   const filteredReceipts = useCallback(() => {
     console.log("Filtering receipts for tab:", activeTab);
-    console.log("Start Date:", startDate?.toISOString());
-    console.log("End Date:", endDate?.toISOString());
-    console.log("Total receipts:", receipts.length);
-
     const filtered = receipts.filter((receipt) => {
+      if (!receipt || typeof receipt !== "object" || !receipt.id) {
+        console.warn("Invalid receipt in filter:", receipt);
+        return false;
+      }
       const receiptDate = new Date(receipt.created_at);
       const receiptStatus = receipt.status?.toLowerCase() || "";
       const tabStatus = activeTab.toLowerCase();
 
-      // Status filter
       const matchesStatus = tabStatus === "all" || receiptStatus === tabStatus;
 
-      // Date filter
       let matchesDate = true;
       if (startDate) {
         matchesDate = matchesDate && receiptDate >= new Date(startDate.setHours(0, 0, 0, 0));
@@ -222,19 +227,13 @@ const CustomerReceipts = () => {
       }
 
       const matches = matchesStatus && matchesDate;
-      if (matches) {
-        console.log(`Receipt ${receipt.id} matches:`, {
-          status: receiptStatus,
-          date: receiptDate.toISOString(),
-        });
-      }
+      console.log(`Receipt ${receipt.id} matches:`, matches);
       return matches;
     });
-
-    console.log("Filtered receipts:", filtered.length);
     return filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   }, [receipts, activeTab, startDate, endDate]);
 
+  // Prepare data for FlatList with separators
   const flatData = [];
   let lastDate = null;
   filteredReceipts().forEach((receipt) => {
@@ -246,11 +245,7 @@ const CustomerReceipts = () => {
     flatData.push({ type: "receipt", data: receipt });
   });
 
-  const handleTabPress = (tab) => {
-    console.log("Switching to tab:", tab);
-    setActiveTab(tab);
-  };
-
+  // Render navigation bar
   const renderNavBar = () => (
     <View style={styles.navBar}>
       <View style={styles.navBarInner}>
@@ -258,7 +253,10 @@ const CustomerReceipts = () => {
           <TouchableOpacity
             key={tab}
             style={[styles.navButton, activeTab === tab && styles.activeNavButton]}
-            onPress={() => handleTabPress(tab)}
+            onPress={() => {
+              console.log("Switching to tab:", tab);
+              setActiveTab(tab);
+            }}
             accessibilityLabel={`${tab} Receipts Tab`}
           >
             <Text
@@ -267,6 +265,7 @@ const CustomerReceipts = () => {
                 activeTab === tab && styles.activeNavButtonText,
               ]}
               numberOfLines={1}
+              adjustsFontSizeToFit
             >
               {tab}
             </Text>
@@ -282,6 +281,7 @@ const CustomerReceipts = () => {
     </View>
   );
 
+  // Render filter modal
   const renderFilterModal = () => (
     <Modal
       visible={filterModalVisible}
@@ -360,6 +360,7 @@ const CustomerReceipts = () => {
     </Modal>
   );
 
+  // Render FlatList item
   const renderItem = ({ item }) => {
     if (item.type === "separator") {
       return (
@@ -376,8 +377,8 @@ const CustomerReceipts = () => {
     const receipt = item.data;
     const status = statusStyles[receipt.status] || {};
     return (
-      <Card style={styles.card}>
-        <View style={styles.cardContent}>
+      <Animated.View key={receipt.id} entering={FadeInUp} exiting={FadeOut}>
+        <Card mode="elevated" style={styles.card}>
           <View style={styles.cardHeader}>
             <Image
               source={{
@@ -385,31 +386,33 @@ const CustomerReceipts = () => {
               }}
               style={styles.image}
             />
-            <View style={styles.cardHeaderText}>
-              <Text style={styles.cardTitle}>{receipt.shop}</Text>
-              <Text style={styles.cardAmount}>Total: ₦{receipt.total_amount}</Text>
+            <View style={styles.cardDetails}>
+              <Text style={styles.receiptId}>{receipt.shop}</Text>
+              <Text style={styles.receiptText}>Total: ₦{receipt.total_amount}</Text>
+              <Text style={styles.receiptText}>Date: {formatDate(receipt.created_at)}</Text>
             </View>
           </View>
           <Divider style={styles.divider} />
           <View style={styles.statusContainer}>
-            <Chip style={[styles.chip, { backgroundColor: status.color }]}>
+            <Chip style={[styles.statusChip, { backgroundColor: status.color }]}>
               <Ionicons name={status.icon} size={16} color="white" />
-              <Text style={styles.chipText}>{status.label}</Text>
+              <Text style={styles.statusText}>{status.label}</Text>
             </Chip>
           </View>
-          <View style={styles.actionsContainer}>
-            <ViewReceiptPDF pdf_url={receipt.pdf_url} />
+          <Divider style={styles.divider} />
+          <View style={styles.buttonContainer}>
+            <ViewReceiptPDF receipt={receipt} />
             {receipt.status === "pending" && (
               <>
                 <TouchableOpacity
-                  style={styles.acceptButton}
+                  style={styles.actionButton}
                   onPress={() => handleAction(receipt.id, "accept")}
                 >
                   <Ionicons name="checkmark-outline" size={16} color="#FFFFFF" />
                   <Text style={styles.actionButtonText}>Accept</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={styles.rejectButton}
+                  style={[styles.actionButton, styles.rejectButton]}
                   onPress={() => handleAction(receipt.id, "reject")}
                 >
                   <Ionicons name="close-outline" size={16} color="#FFFFFF" />
@@ -418,17 +421,16 @@ const CustomerReceipts = () => {
               </>
             )}
           </View>
-        </View>
-      </Card>
+        </Card>
+      </Animated.View>
     );
   };
 
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#2563EB" />
-          <Text style={styles.loadingText}>Loading Receipts...</Text>
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color="#6200EE" />
         </View>
       </SafeAreaView>
     );
@@ -436,6 +438,7 @@ const CustomerReceipts = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <MaterialIcons name="arrow-back" size={26} color="#FFFFFF" />
@@ -466,7 +469,7 @@ const CustomerReceipts = () => {
         </View>
         {flatData.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <Ionicons name="receipt-outline" size={60} color="#6B7280" />
+            <Ionicons name="receipt-outline" size={60} color="#9E9E9E" />
             <Text style={styles.emptyText}>No Receipts Yet</Text>
             <Text style={styles.emptySubText}>Start shopping to see your receipts here!</Text>
           </View>
@@ -476,8 +479,8 @@ const CustomerReceipts = () => {
             keyExtractor={(item, index) =>
               item.type === "separator" ? `sep-${item.date}` : `rec-${item.data.id}`
             }
-            contentContainerStyle={styles.flatListContent}
             renderItem={renderItem}
+            contentContainerStyle={styles.flatListContent}
           />
         )}
         {renderFilterModal()}
@@ -491,7 +494,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#F7FAFC",
   },
-  loadingContainer: {
+  centered: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
@@ -502,13 +505,13 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 12,
     backgroundColor: "#3A7BD5",
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
+    borderBottomLeftRadius: 35,
+    borderBottomRightRadius: 35,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 6,
-    elevation: 3,
+    elevation: 6,
   },
   backButton: {
     padding: 5,
@@ -527,30 +530,34 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 16,
+    padding: 16,
+  },
+  flatListContent: {
+    paddingBottom: 100,
   },
   navBar: {
-    marginBottom: 16,
-    padding: 4,
+    flexDirection: "row",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     backgroundColor: "#FFFFFF",
-    borderRadius: 20,
+    borderRadius: 12,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-    alignSelf: "center",
-    width: SCREEN_WIDTH - 32,
+    elevation: 4,
+    marginBottom: 16,
   },
   navBarInner: {
     flexDirection: "row",
+    flex: 1,
   },
   navButton: {
     flex: 1,
-    paddingVertical: 8,
-    paddingHorizontal: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
     alignItems: "center",
+    borderRadius: 5,
+    marginHorizontal: 4,
   },
   activeNavButton: {
     backgroundColor: "rgba(37, 99, 235, 0.1)",
@@ -558,8 +565,7 @@ const styles = StyleSheet.create({
   navButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#6B7280",
-    textAlign: "center",
+    color: "#333",
   },
   activeNavButtonText: {
     color: "#2563EB",
@@ -601,9 +607,6 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: "#1F2A44",
   },
-  flatListContent: {
-    paddingBottom: 200,
-  },
   dateHeader: {
     paddingVertical: 8,
     paddingHorizontal: 12,
@@ -621,43 +624,44 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   card: {
-    borderRadius: 16,
-    backgroundColor: "#FFFFFF",
     marginBottom: 12,
+    borderRadius: 16,
+    padding: 10,
+    backgroundColor: "#FFFFFF",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
     elevation: 2,
-  },
-  cardContent: {
-    padding: 12,
   },
   cardHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 10,
   },
   image: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#2563EB",
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    borderWidth: 3,
+    borderColor: "#3A7BD5",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  cardHeaderText: {
-    marginLeft: 10,
+  cardDetails: {
+    marginLeft: 12,
     flex: 1,
   },
-  cardTitle: {
+  receiptId: {
     fontSize: 18,
-    fontWeight: "600",
-    color: "#111827",
+    fontWeight: "bold",
+    color: "#333",
   },
-  cardAmount: {
+  receiptText: {
     fontSize: 14,
-    fontWeight: "500",
-    color: "#6B7280",
+    color: "#666",
   },
   divider: {
     marginVertical: 8,
@@ -666,56 +670,35 @@ const styles = StyleSheet.create({
   statusContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
+    justifyContent: "space-between",
   },
-  chip: {
-    paddingVertical: 2,
-    paddingHorizontal: 8,
+  statusChip: {
+    padding: 6,
   },
-  chipText: {
-    color: "#FFFFFF",
+  statusText: {
+    color: "white",
+    fontWeight: "bold",
     fontSize: 13,
-    fontWeight: "600",
     marginLeft: 4,
   },
-  actionsContainer: {
+  buttonContainer: {
     flexDirection: "row",
-    justifyContent: "flex-end",
+    justifyContent: "space-between",
     alignItems: "center",
+    marginTop: 10,
     gap: 8,
     flexWrap: "wrap",
   },
-  viewButton: {
-    borderRadius: 8,
-    overflow: "hidden",
-  },
-  viewButtonGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  viewButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#FFFFFF",
-    marginLeft: 6,
-  },
-  acceptButton: {
+  actionButton: {
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
-    backgroundColor: "#10B981",
+    backgroundColor: "#4CAF50",
   },
   rejectButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: "#EF4444",
+    backgroundColor: "#F44336",
   },
   actionButtonText: {
     fontSize: 14,
@@ -804,12 +787,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     zIndex: 1002,
   },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#1F2A44",
-  },
   emptyContainer: {
     flex: 1,
     justifyContent: "center",
@@ -819,14 +796,14 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#6B7280",
+    color: "#9E9E9E",
     textAlign: "center",
     marginTop: 12,
   },
   emptySubText: {
     fontSize: 14,
     fontWeight: "500",
-    color: "#6B7280",
+    color: "#9E9E9E",
     textAlign: "center",
     marginTop: 4,
   },

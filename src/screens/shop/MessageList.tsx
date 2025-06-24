@@ -7,7 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
-  Image,
+  Image, StatusBar
 } from "react-native";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -313,6 +313,7 @@ const MessageList = () => {
 
   return (
     <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <LinearGradient
         colors={["#3A7BD5", "#3A6073"]}
         style={styles.headerContainer}

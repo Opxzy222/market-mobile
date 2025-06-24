@@ -12,7 +12,7 @@ import {
   StyleSheet,
   Alert,
   Platform,
-  Dimensions,
+  Dimensions, StatusBar
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import * as DocumentPicker from "expo-document-picker";
@@ -432,6 +432,7 @@ const StatusScreen = () => {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <View style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity

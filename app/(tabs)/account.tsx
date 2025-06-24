@@ -1,4 +1,4 @@
-import Account  from "../../src/screens/shop/Account";
+import Account  from "@/screens/shop/Account";
 
 
 export default function MyShopScreen() {

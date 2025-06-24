@@ -1,5 +1,5 @@
 import React from "react";
-import { View, TouchableOpacity, Text, StyleSheet } from "react-native";
+import { View, TouchableOpacity, Text, StyleSheet, StatusBar } from "react-native";
 import { useLocalSearchParams, useRouter, usePathname } from "expo-router";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -12,6 +12,7 @@ const Details = () => {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity

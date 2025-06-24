@@ -1,24 +1,19 @@
-import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { initializeSQLiteDatabase, getSQLiteDatabase } from './sqliteStorage.native';
 
 let isInitialized = false;
 
+// Initialize SQLite database
 const initializeDatabase = async (): Promise<void> => {
   if (isInitialized) {
     console.log('Database already initialized, skipping');
     return;
   }
 
-  if (Platform.OS === 'web') {
-    console.log('Platform is web, using AsyncStorage');
-    isInitialized = true;
-    return;
-  }
-
   try {
     await initializeSQLiteDatabase();
     isInitialized = true;
+    console.log('SQLite database initialized');
   } catch (error) {
     console.error('Database initialization failed:', error);
     isInitialized = false;
@@ -26,19 +21,9 @@ const initializeDatabase = async (): Promise<void> => {
   }
 };
 
+// Store data in SQLite or AsyncStorage
 const storeData = async (key: string, value: string): Promise<number> => {
   const encodedValue = btoa(encodeURIComponent(value));
-
-  if (Platform.OS === 'web') {
-    try {
-      await AsyncStorage.setItem(key, encodedValue);
-      console.log('Stored in AsyncStorage:', key);
-      return 1;
-    } catch (error) {
-      console.error('Error storing in AsyncStorage:', error);
-      throw error;
-    }
-  }
 
   const db = await getSQLiteDatabase();
 
@@ -48,27 +33,18 @@ const storeData = async (key: string, value: string): Promise<number> => {
       [key, encodedValue]
     );
     console.log('Stored in SQLite (secure_data):', result.lastInsertRowId, result.changes);
+    // Mirror in AsyncStorage for compatibility
+    await AsyncStorage.setItem(key, encodedValue);
+    console.log('Stored in AsyncStorage:', key);
     return result.lastInsertRowId ?? 0;
   } catch (error) {
-    console.error('SQLite store failed:', error);
+    console.error('Store failed:', error);
     throw error;
   }
 };
 
+// Retrieve data from SQLite or AsyncStorage
 const getData = async (key: string): Promise<string | null> => {
-  if (Platform.OS === 'web') {
-    try {
-      const value = await AsyncStorage.getItem(key);
-      if (value) {
-        return decodeURIComponent(atob(value));
-      }
-      return null;
-    } catch (error) {
-      console.error('Error retrieving from AsyncStorage:', error);
-      throw error;
-    }
-  }
-
   const db = await getSQLiteDatabase();
 
   try {
@@ -79,63 +55,50 @@ const getData = async (key: string): Promise<string | null> => {
     if (row) {
       return decodeURIComponent(atob(row.value));
     }
+    // Fallback to AsyncStorage
+    const asyncValue = await AsyncStorage.getItem(key);
+    if (asyncValue) {
+      return decodeURIComponent(atob(asyncValue));
+    }
     return null;
   } catch (error) {
-    console.error('SQLite retrieval failed:', error);
+    console.error('Retrieval failed:', error);
     throw error;
   }
 };
 
+// Clear stale data by prefix in SQLite and AsyncStorage
 const clearStaleData = async (prefix: string): Promise<void> => {
-  if (Platform.OS === 'web') {
-    try {
-      const keys = await AsyncStorage.getAllKeys();
-      for (const key of keys) {
-        if (key.startsWith(prefix)) {
-          await AsyncStorage.removeItem(key);
-          console.log('Removed stale key from AsyncStorage:', key);
-        }
-      }
-    } catch (error) {
-      console.error('Error clearing stale AsyncStorage:', error);
-    }
-    return;
-  }
-
   let db;
   try {
     db = await getSQLiteDatabase();
   } catch (error) {
     console.error('Failed to get database for clearStaleData:', error);
-    return;
+    throw error;
   }
 
   try {
+    // Clear SQLite secure_data with prefix
     await db.runAsync('DELETE FROM secure_data WHERE key LIKE ?;', [`${prefix}%`]);
-    console.log('Cleared stale secure_data');
+    console.log('Cleared stale secure_data in SQLite');
+
+    // Clear AsyncStorage with prefix
+    const keys = await AsyncStorage.getAllKeys();
+    for (const key of keys) {
+      if (key.startsWith(prefix)) {
+        await AsyncStorage.removeItem(key);
+        console.log('Removed stale key from AsyncStorage:', key);
+      }
+    }
+    console.log('Cleared stale data with prefix:', prefix);
   } catch (error) {
-    console.error('Error clearing stale secure_data:', error);
+    console.error('Error clearing stale data:', error);
     throw error;
   }
 };
 
+// Fetch suggestions from SQLite
 const getSuggestions = async (query: string, limit: number = 20, offset: number = 0): Promise<string[]> => {
-  if (Platform.OS === 'web') {
-    try {
-      const cached = await AsyncStorage.getItem('suggestions');
-      if (!cached) return [];
-      const suggestions = JSON.parse(cached);
-      const filtered = suggestions
-        .filter((name: string) => name.toLowerCase().startsWith(query.toLowerCase()))
-        .slice(offset, offset + limit);
-      console.log(`Fetched ${filtered.length} suggestions from AsyncStorage`);
-      return filtered;
-    } catch (error) {
-      console.error('Error fetching suggestions from AsyncStorage:', error);
-      return [];
-    }
-  }
-
   let db;
   try {
     db = await getSQLiteDatabase();
@@ -160,34 +123,22 @@ const getSuggestions = async (query: string, limit: number = 20, offset: number 
   }
 };
 
+// Cache suggestions in SQLite
 const cacheSuggestions = async (suggestions: string[]): Promise<void> => {
-  if (Platform.OS === 'web') {
-    try {
-      await AsyncStorage.setItem('suggestions', JSON.stringify(suggestions));
-      console.log('Cached suggestions in AsyncStorage');
-    } catch (error) {
-      console.error('Error caching suggestions in AsyncStorage:', error);
-      throw error;
-    }
-    return;
-  }
-
   let db;
   try {
     db = await getSQLiteDatabase();
   } catch (error) {
     console.error('Failed to get database for cacheSuggestions:', error);
-    return;
+    throw error;
   }
 
   try {
-    // Validate and sanitize suggestions
     const validSuggestions = suggestions
       .map(s => (typeof s === 'string' && s.trim().length > 0 ? s.trim() : null))
       .filter((s): s is string => s !== null);
     console.log('Valid suggestions to cache:', validSuggestions.length);
 
-    // Log invalid suggestions for debugging
     const invalidSuggestions = suggestions.filter(s => !(typeof s === 'string' && s.trim().length > 0));
     if (invalidSuggestions.length > 0) {
       console.log('Invalid suggestions detected:', invalidSuggestions.slice(0, 10));
@@ -201,7 +152,6 @@ const cacheSuggestions = async (suggestions: string[]): Promise<void> => {
     const batchSize = 100;
     const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-    // Cache in suggestions table with retry logic
     let attempt = 0;
     const maxAttempts = 3;
     while (attempt < maxAttempts) {
@@ -215,7 +165,7 @@ const cacheSuggestions = async (suggestions: string[]): Promise<void> => {
             `INSERT OR IGNORE INTO suggestions (name) VALUES ${placeholders};`,
             safeBatch
           );
-          console.log(`Cached ${i + safeBatch.length} of ${validSuggestions.length} suggestions in SQLite table`);
+          console.log(`Cached ${i + safeBatch.length} of ${validSuggestions.length} suggestions in SQLite`);
           await delay(10);
         }
         await db.execAsync('COMMIT;');
@@ -226,9 +176,8 @@ const cacheSuggestions = async (suggestions: string[]): Promise<void> => {
         await db.execAsync('ROLLBACK;').catch(err => console.error('Rollback failed:', err));
         attempt++;
         if (attempt < maxAttempts) {
-          console.log(`Retrying cacheSuggestions in ${RETRY_DELAY}ms`);
-          await delay(RETRY_DELAY);
-          // Reinitialize database
+          console.log(`Retrying cacheSuggestions in 500ms`);
+          await delay(500);
           await initializeSQLiteDatabase();
           db = await getSQLiteDatabase();
         } else {
@@ -242,19 +191,8 @@ const cacheSuggestions = async (suggestions: string[]): Promise<void> => {
   }
 };
 
+// Count suggestions in SQLite
 const getSuggestionsCount = async (): Promise<number> => {
-  if (Platform.OS === 'web') {
-    try {
-      const cached = await AsyncStorage.getItem('suggestions');
-      if (!cached) return 0;
-      const suggestions = JSON.parse(cached);
-      return suggestions.length;
-    } catch (error) {
-      console.error('Error counting suggestions in AsyncStorage:', error);
-      return 0;
-    }
-  }
-
   let db;
   try {
     db = await getSQLiteDatabase();
@@ -272,6 +210,45 @@ const getSuggestionsCount = async (): Promise<number> => {
   }
 };
 
+// Clear all non-suggestion data in SQLite and AsyncStorage
+const clearNonSuggestionData = async (): Promise<void> => {
+  let db;
+  try {
+    db = await getSQLiteDatabase();
+  } catch (error) {
+    console.error('Failed to get database for clearNonSuggestionData:', error);
+    throw error;
+  }
+
+  try {
+    // Clear all SQLite tables except suggestions
+    await db.runAsync('DELETE FROM secure_data;');
+    console.log('Cleared secure_data table in SQLite');
+
+    // Clear all AsyncStorage keys, including suggestions
+    const asyncKeys = await AsyncStorage.getAllKeys();
+    console.log('AsyncStorage keys before clearing:', asyncKeys);
+    for (const key of asyncKeys) {
+      await AsyncStorage.removeItem(key);
+      console.log('Removed AsyncStorage key:', key);
+    }
+    console.log('Cleared all AsyncStorage data');
+
+    // Verify remaining SQLite tables
+    const tables = await db.getAllAsync<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';"
+    );
+    console.log('Remaining SQLite tables:', tables.map(t => t.name));
+
+    // Verify remaining AsyncStorage keys
+    const remainingAsyncKeys = await AsyncStorage.getAllKeys();
+    console.log('Remaining AsyncStorage keys after clearing:', remainingAsyncKeys);
+  } catch (error) {
+    console.error('Error clearing non-suggestion data:', error);
+    throw error;
+  }
+};
+
 export {
   initializeDatabase,
   storeData,
@@ -280,4 +257,5 @@ export {
   getSuggestions,
   cacheSuggestions,
   getSuggestionsCount,
+  clearNonSuggestionData,
 };

@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView, Pressable, FlatList,
-  Alert, KeyboardAvoidingView, Platform,
+  Alert, KeyboardAvoidingView, Platform, StatusBar
 } from "react-native";
 import { SelectList } from "react-native-dropdown-select-list";
 import MultiSelect from 'react-native-multiple-select';
@@ -281,6 +281,7 @@ export default function CreateShopScreen({ navigation }) {
       keyboardVerticalOffset={100}
     >
       <View style={{ flex: 1 }}>
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <MaterialIcons name="arrow-back" size={24} color="#007BFF" />

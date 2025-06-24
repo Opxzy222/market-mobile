@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import {
+  View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert,
+  StatusBar
+ } from 'react-native';
 import { useLocalSearchParams, useRouter } from "expo-router";
 
 const EnterOTPScreen = () => {
@@ -60,6 +63,7 @@ const EnterOTPScreen = () => {
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <Text style={styles.title}>Enter OTP</Text>
       <Text style={styles.subtitle}>
         A 6-digit code was sent to {email}

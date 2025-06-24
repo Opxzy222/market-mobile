@@ -192,7 +192,7 @@ const SearchResults = () => {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <LinearGradient colors={["#F5F5F5", "#E0E0E0"]} style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>

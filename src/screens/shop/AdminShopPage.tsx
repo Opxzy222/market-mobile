@@ -11,7 +11,7 @@ import {
   Clipboard,
   ToastAndroid,
   Platform,
-  KeyboardAvoidingView,
+  KeyboardAvoidingView, StatusBar
 } from "react-native";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -277,6 +277,7 @@ const AdminShopPage = () => {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}

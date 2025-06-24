@@ -6,7 +6,7 @@ import {
   FlatList,
   Image,
   TouchableOpacity,
-  ActivityIndicator,
+  ActivityIndicator, StatusBar
 } from "react-native";
 import axios from "axios";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -161,6 +161,7 @@ const AllFollowedShops = () => {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <LinearGradient colors={["#F7FAFC", "#E5E7EB"]} style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity

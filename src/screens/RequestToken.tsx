@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, StatusBar } from 'react-native';
 import axios from 'axios';
 import { useRouter, usePathname } from 'expo-router';
 
@@ -56,6 +56,9 @@ const RequestTokenScreen = () => {
 };
 
   return (
+    <View>
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
+    
     <View style={{ padding: 20 }}>
       <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 10 }}>Enter Your Email</Text>
       <TextInput
@@ -95,6 +98,7 @@ const RequestTokenScreen = () => {
       </TouchableOpacity>
 
       
+    </View>
     </View>
   );
 };

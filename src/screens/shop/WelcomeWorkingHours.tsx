@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, Modal } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, StatusBar } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router"; 
 import axios from "axios";
 import { Provider, Button, Switch } from "react-native-paper";
@@ -88,12 +88,13 @@ export default function WelcomeWorkingHours() {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
-    <Provider>
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.label}>24/7 Open</Text>
-          <Switch value={is24_7} onValueChange={() => setIs24_7(!is24_7)} />
-        </View>
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
+      <Provider>
+        <View style={styles.container}>
+          <View style={styles.header}>
+            <Text style={styles.label}>24/7 Open</Text>
+            <Switch value={is24_7} onValueChange={() => setIs24_7(!is24_7)} />
+          </View>
 
         {!is24_7 && (
           <>

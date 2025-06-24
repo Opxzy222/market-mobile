@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
-  StyleSheet,
+  StyleSheet, StatusBar
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -84,11 +84,13 @@ const ChangePassword = () => {
 
   return (
     <LinearGradient colors={["#F5F5F5", "#E0E0E0"]} style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.replace(prevRoute || '/(tabs)/profile')}>
-          <MaterialIcons name="arrow-back" size={26} color="#6B4226" />
+      <TouchableOpacity onPress={() => router.replace(prevRoute || '/(tabs)/profile')}>
+          <MaterialIcons name="arrow-back" size={26} color="white" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Change Password</Text>
+        <View style={styles.headerSpacer} />
       </View>
       <View style={styles.card}>
 

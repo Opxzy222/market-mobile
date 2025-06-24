@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, Component } from "react";
+import React, { useState, useEffect, useCallback, Component, useRef } from "react";
 import {
   View,
   Text,
@@ -9,7 +9,7 @@ import {
   ScrollView,
   Dimensions,
   KeyboardAvoidingView,
-  Platform,
+  Platform, StatusBar
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -338,9 +338,10 @@ const ShopProfileScreen: React.FC = () => {
   const [originalDescription, setOriginalDescription] = useState<string>("");
   const [originalAddress, setOriginalAddress] = useState<string>("");
   const [originalParentCategory, setOriginalParentCategory] = useState<number | null>(null);
-  const [originalImage, setOriginalImage] = useState<string | null>("");
+  const [originalImage, setOriginalImage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [initialSubcategoryIds, setInitialSubcategoryIds] = useState<number[]>([]); // Store initial IDs
+  const [initialSubcategoryIds, setInitialSubcategoryIds] = useState<number[]>([]);
+  const preselectionDone = useRef<boolean>(false); // Track preselection
 
   const params = useLocalSearchParams<{ shopId: string }>();
   const { shopId } = params;
@@ -355,7 +356,6 @@ const ShopProfileScreen: React.FC = () => {
         console.error("Error fetching session ID:", error);
       }
     };
-
     fetchSessionId();
   }, []);
 
@@ -370,18 +370,18 @@ const ShopProfileScreen: React.FC = () => {
             },
           }
         );
-
         setName(response.data.name);
         setDescription(response.data.description);
         setAddress(response.data.address);
         setImage(response.data.image);
-        setSelectedParentCategory(response.data.parent_category_id);
-        setOriginalParentCategory(response.data.parent_category_id);
         setOriginalName(response.data.name);
         setOriginalDescription(response.data.description);
         setOriginalAddress(response.data.address);
         setOriginalImage(response.data.image);
-        setInitialSubcategoryIds(response.data.category_ids); // Store initial subcategory IDs
+        setOriginalParentCategory(response.data.parent_category_id);
+        setSelectedParentCategory(response.data.parent_category_id);
+        setInitialSubcategoryIds(response.data.category_ids);
+        preselectionDone.current = false; // Reset preselection flag
       } catch (error) {
         console.error("Error fetching shop details:", error);
       }
@@ -418,22 +418,14 @@ const ShopProfileScreen: React.FC = () => {
       try {
         const formData = new FormData();
         formData.append("parent_id", selectedParentCategory.toString());
-
         const response = await axios.post<{ subcategories: { id: number; name: string }[] }>(
           "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/category/subcategories/",
           formData,
-          {
-            headers: { "Content-Type": "multipart/form-data" },
-          }
+          { headers: { "Content-Type": "multipart/form-data" } }
         );
-
         const formattedSubcategories: Subcategory[] = response.data.subcategories.map(
-          (subcat) => ({
-            key: subcat.id,
-            value: subcat.name,
-          })
+          (subcat) => ({ key: subcat.id, value: subcat.name })
         );
-
         console.log(
           "Fetched subcategories for parent",
           selectedParentCategory,
@@ -442,22 +434,19 @@ const ShopProfileScreen: React.FC = () => {
         );
         setSubcategories(formattedSubcategories);
 
-        // Preselect subcategories only if parent matches initial parent
-        if (selectedParentCategory === originalParentCategory && initialSubcategoryIds.length > 0) {
+        // Only preselect if not already done
+        if (!preselectionDone.current && initialSubcategoryIds.length > 0) {
           const preselected = initialSubcategoryIds
             .map((id) => {
               const subcategory = formattedSubcategories.find((sub) => sub.key === id);
-              return subcategory
-                ? { label: subcategory.value, value: subcategory.key }
-                : null;
+              return subcategory ? { label: subcategory.value, value: subcategory.key } : null;
             })
             .filter((item): item is MultiSelectItem => item !== null);
           console.log("Preselecting subcategories:", preselected);
-          setSelectedChildCategories(preselected);
-          setInitialSubcategoryIds([]); // Clear initial IDs after preselection
-        } else {
-          // Clear selected child categories for non-initial parent changes
-          setSelectedChildCategories([]);
+          if (preselected.length > 0) {
+            setSelectedChildCategories(preselected);
+            preselectionDone.current = true; // Mark preselection as complete
+          }
         }
       } catch (error) {
         console.error("Error fetching child categories:", error);
@@ -465,7 +454,7 @@ const ShopProfileScreen: React.FC = () => {
     };
 
     fetchChildCategories();
-  }, [selectedParentCategory, originalParentCategory, initialSubcategoryIds]);
+  }, [selectedParentCategory]); // Removed initialSubcategoryIds from dependencies
 
   const pickImage = useCallback(async () => {
     try {
@@ -488,61 +477,89 @@ const ShopProfileScreen: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      const formData = new FormData();
+      // Validate category consistency
+      if (selectedChildCategories.length > 0 && !selectedParentCategory) {
+        alert("Error", "Please select a parent category for the selected child categories.");
+        setIsSubmitting(false);
+        return;
+      }
 
+      const formData = new FormData();
+      let hasChanges = false;
+
+      // Append non-category fields only if they have changed
       if (name !== originalName) {
         formData.append("shop_name", name);
+        hasChanges = true;
       }
       if (description !== originalDescription) {
         formData.append("description", description);
+        hasChanges = true;
       }
       if (address !== originalAddress) {
         formData.append("address", address);
+        hasChanges = true;
       }
-      if (selectedParentCategory !== originalParentCategory && selectedParentCategory !== null) {
-        formData.append("category_id", selectedParentCategory.toString());
-      }
-
       if (image && image !== originalImage) {
         formData.append("image", {
           uri: image,
           type: "image/jpeg",
           name: "profile.jpg",
-        } as any); // TypeScript workaround for FormData
+        } as any);
+        hasChanges = true;
       }
 
-      // Only send current selected child categories
-      const currentSubIds = selectedChildCategories
-        .map((item, index) => {
-          console.log(`Mapping subcategory[${index}]:`, item);
-          const value = typeof item.value === "number" ? item.value : null;
-          if (value === null) {
-            console.warn(`Invalid subcategory ID at index ${index}:`, item.value);
-          }
-          return value;
-        })
-        .filter((id): id is number => id !== null);
+      // Always include category_id and subcategory_ids to preserve them
+      if (selectedParentCategory !== null) {
+        formData.append("category_id", selectedParentCategory.toString());
+        if (selectedParentCategory !== originalParentCategory) {
+          hasChanges = true;
+        }
+      }
 
-      console.log("Current subcategory IDs:", currentSubIds);
+      const currentSubIds = selectedChildCategories
+        .map((item) => item.value)
+        .filter((id): id is number => id !== null)
+        .sort();
+      const originalSubIds = initialSubcategoryIds.slice().sort();
+      const subcategoriesChanged = JSON.stringify(currentSubIds) !== JSON.stringify(originalSubIds);
 
       if (currentSubIds.length > 0) {
-        currentSubIds.forEach((id, index) => {
-          console.log(`Appending subcategory_id[${index}]:`, id);
+        currentSubIds.forEach((id) => {
           formData.append("subcategory_ids", id.toString());
         });
+        if (subcategoriesChanged) {
+          hasChanges = true;
+        }
       }
 
+      console.log("Original state:", {
+        originalName,
+        originalDescription,
+        originalAddress,
+        originalParentCategory,
+        originalSubIds: initialSubcategoryIds,
+      });
+      console.log("Current state:", {
+        name,
+        description,
+        address,
+        selectedParentCategory,
+        currentSubIds,
+      });
       console.log("FormData contents:");
       for (const [key, value] of formData.entries()) {
         console.log(`${key}: ${value}`);
       }
 
-      if (formData.entries().next().done) {
+      // Prevent request if no changes are made
+      if (!hasChanges) {
         alert("No Changes", "No changes detected.");
         setIsSubmitting(false);
         return;
       }
 
+      // Append shop_id for valid updates
       formData.append("shop_id", shopId);
 
       const response = await axios.post(
@@ -557,6 +574,15 @@ const ShopProfileScreen: React.FC = () => {
       );
 
       console.log("Backend response:", response.data);
+
+      // Update original values to reflect the new state
+      setOriginalName(name);
+      setOriginalDescription(description);
+      setOriginalAddress(address);
+      setOriginalImage(image);
+      setOriginalParentCategory(selectedParentCategory);
+      setInitialSubcategoryIds(currentSubIds);
+
       alert("Success", "Shop profile updated successfully!");
       router.back();
     } catch (error) {
@@ -576,8 +602,9 @@ const ShopProfileScreen: React.FC = () => {
     originalName,
     originalDescription,
     originalAddress,
-    originalParentCategory,
     originalImage,
+    originalParentCategory,
+    initialSubcategoryIds,
     shopId,
     sessionId,
     router,
@@ -590,6 +617,7 @@ const ShopProfileScreen: React.FC = () => {
   return (
     <ErrorBoundary>
       <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
+        <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
         <LinearGradient colors={["#F5F5F5", "#E0E0E0"]} style={styles.container}>
           <KeyboardAvoidingView
             style={{ flex: 1 }}
@@ -600,7 +628,7 @@ const ShopProfileScreen: React.FC = () => {
               <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
                 <MaterialIcons name="arrow-back" size={26} color="white" />
               </TouchableOpacity>
-              <Text style={styles.headerTitle}>Search Results</Text>
+              <Text style={styles.headerTitle}>Shop Profile</Text>
               <View style={styles.headerSpacer} />
             </View>
 
@@ -728,7 +756,7 @@ const styles = StyleSheet.create({
   backButton: {
     padding: 5,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
   },
   headerTitle: {
     fontSize: 20,

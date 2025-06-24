@@ -1,10 +1,33 @@
-import { View } from "react-native";
-import Homepage from "@/screens/homepage"; // Update the path to match your alias or relative path.
+import { View, Text } from "react-native";
+import Homepage from "@/screens/homepage";
+import React from "react";
 
-export default function HomeScreen() {
+class ErrorBoundary extends React.Component {
+  state = { hasError: false, error: null };
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+          <Text>Error: {this.state.error?.toString()}</Text>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export default function Index() {
+  console.log("Rendering Index");
   return (
     <View style={{ flex: 1 }}>
-      <Homepage />
+      <ErrorBoundary>
+        <Homepage />
+      </ErrorBoundary>
     </View>
   );
 }

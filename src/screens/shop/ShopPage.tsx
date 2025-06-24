@@ -11,7 +11,7 @@ import {
   Alert,
   Clipboard,
   ToastAndroid,
-  Platform,
+  Platform, StatusBar
 } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -137,6 +137,7 @@ const ShopPage = () => {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.container}>
         {/* Back Button Header */}
         <View style={styles.header}>

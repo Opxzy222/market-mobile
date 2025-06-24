@@ -10,7 +10,7 @@ import {
   Image,
   Modal,
   Dimensions,
-  Platform,
+  Platform, StatusBar
 } from "react-native";
 import { Card, Button, Divider, Chip } from "react-native-paper";
 import Animated, { FadeInUp, FadeOut } from "react-native-reanimated";
@@ -42,7 +42,7 @@ const ShopReceipts = () => {
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
   const [pickerVisible, setPickerVisible] = useState(false);
-  const [pickerType, setPickerType] = useState(null); // "start" or "end"
+  const [pickerType, setPickerType] = useState(null);
   const [tempDate, setTempDate] = useState(new Date());
 
   const params = useLocalSearchParams();
@@ -83,9 +83,11 @@ const ShopReceipts = () => {
         }
       );
 
-      console.log("API response:", response.data);
-      const fetchedReceipts = Array.isArray(response.data.receipts) ? response.data.receipts : [];
-      console.log("Receipts fetched:", fetchedReceipts.length, "Data:", fetchedReceipts);
+      console.log("API response:", JSON.stringify(response.data, null, 2));
+      const fetchedReceipts = Array.isArray(response.data.receipts)
+        ? response.data.receipts.filter((item) => item && typeof item === "object" && item.id)
+        : [];
+      console.log("Filtered receipts:", fetchedReceipts.length, "Data:", JSON.stringify(fetchedReceipts, null, 2));
       setReceipts(fetchedReceipts);
     } catch (error) {
       console.error("Error fetching receipts:", error.response?.data || error.message);
@@ -190,15 +192,17 @@ const ShopReceipts = () => {
 
   // Filter receipts based on active tab and date range
   const filteredReceipts = receipts.filter((receipt) => {
+    if (!receipt || typeof receipt !== "object" || !receipt.id) {
+      console.warn("Invalid receipt in filter:", receipt);
+      return false;
+    }
     console.log("Filtering receipt:", receipt.id, { status: receipt.status, created_at: receipt.created_at });
     const receiptDate = new Date(receipt.created_at);
     const receiptStatus = receipt.status?.toLowerCase() || "";
     const tabStatus = activeTab.toLowerCase();
 
-    // Status filter
     const matchesStatus = tabStatus === "all" || receiptStatus === tabStatus;
 
-    // Date filter
     let matchesDate = true;
     if (startDate) {
       matchesDate = matchesDate && receiptDate >= new Date(startDate.setHours(0, 0, 0, 0));
@@ -341,6 +345,7 @@ const ShopReceipts = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => router.back()}
@@ -410,7 +415,7 @@ const ShopReceipts = () => {
                   <Divider style={styles.divider} />
 
                   <View style={styles.buttonContainer}>
-                    <ViewReceiptPDF pdf_url={item.pdf_url} />
+                    <ViewReceiptPDF receipt={item} />
                     {item.status === "pending" && (
                       <Button
                         mode="contained"

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { 
-  View, Text, FlatList, ActivityIndicator, TouchableOpacity, StyleSheet 
+  View, Text, FlatList, ActivityIndicator, TouchableOpacity, StyleSheet,
+  StatusBar
 } from "react-native";
 import axios from "axios";
 import StatusViewer from "../../components/shop/StatusViewer";
@@ -89,6 +90,7 @@ const FollowedShopStatusScreen = () => {
 
   return (
   <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
+    <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
     <Text style={styles.header}>Followed Shop Status</Text>
     
     {loading ? (

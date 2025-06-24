@@ -4,9 +4,15 @@ import axios from 'axios';
 import { useRouter, usePathname } from 'expo-router';
 
 const Categories = ({ categories }) => {
-  console.log(categories, 'categories')
   const router = useRouter();
-  const pathname = usePathname()
+  const pathname = usePathname();
+
+  // Log categories only when they change and in development mode
+  useEffect(() => {
+    if (__DEV__) {
+      console.log(categories, 'categories');
+    }
+  }, [categories]);
 
   const categoryIconMap = {
     vehicles: require('../../../assets/Image/car-icon.svg'),
@@ -23,8 +29,10 @@ const Categories = ({ categories }) => {
   };
 
   const handleCategoryClick = (categoryId, categoryName) => {
-    router.push({pathname: '/shop/ChildCategoryList', params: { categoryId: categoryId,
-       categoryName: categoryName, prevRoute: pathname }, });
+    router.push({
+      pathname: '/shop/ChildCategoryList',
+      params: { categoryId, categoryName, prevRoute: pathname },
+    });
   };
 
   const renderCategory = ({ item }) => (
@@ -46,8 +54,10 @@ const Categories = ({ categories }) => {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Categories</Text>
-        <TouchableOpacity style={styles.seeAllContainer}
-          onPress={() => router.push({ pathname: '/shop/AllCategories', params: { prevRoute: pathname } })}>
+        <TouchableOpacity
+          style={styles.seeAllContainer}
+          onPress={() => router.push({ pathname: '/shop/AllCategories', params: { prevRoute: pathname } })}
+        >
           <Text style={styles.seeAll}>See All</Text>
         </TouchableOpacity>
       </View>

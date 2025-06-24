@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, StatusBar } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams, usePathname } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -15,6 +15,7 @@ const ReceiptActions = () => {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <LinearGradient colors={["#F7FAFC", "#E3F2FD"]} style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity

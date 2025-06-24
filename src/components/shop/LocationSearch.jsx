@@ -177,7 +177,11 @@ const LocationSearch = ({ onSearch, onFocusChange, onSuggestionsStateChange }) =
             onStartShouldSetResponder={() => {}}
             onResponderRelease={() => console.log('AutocompleteInput touch captured')}
           >
-            <AutocompleteInput
+            
+          </View>
+            </>
+          )}
+          <AutocompleteInput
               value={searchTerm}
               onChangeText={setSearchTerm}
               onSubmit={handleSearch}
@@ -186,9 +190,6 @@ const LocationSearch = ({ onSearch, onFocusChange, onSuggestionsStateChange }) =
               inputRef={inputRef}
               onSuggestionsStateChange={onSuggestionsStateChange}
             />
-          </View>
-            </>
-          )}
           <TouchableOpacity
             style={[styles.searchButton, loading && styles.searchButtonDisabled]}
             onPress={() => handleSearch(searchTerm)}

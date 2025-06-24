@@ -1,510 +1,239 @@
-// src/AutocompleteInput.js
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  TextInput,
-  FlatList,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  Keyboard,
-} from 'react-native';
-import { debounce } from 'lodash';
-import { LinearGradient } from 'expo-linear-gradient';
-import axios from 'axios';
-import { initializeDatabase, getSuggestions, cacheSuggestions, getSuggestionsCount } from '../storage';
+// app/_layout.tsx
+import React, { useState, useEffect, useCallback, useMemo, memo, useRef } from "react";
+import { Tabs } from "expo-router";
+import { Ionicons, MaterialIcons, FontAwesome5 } from "@expo/vector-icons";
+import SubscriptionProvider from "@/components/SubscriptionProvider";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Linking from "expo-linking";
+import { SelectProvider } from "@mobile-reality/react-native-select-pro";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import { Platform, StyleSheet } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 
-const AutocompleteInput = ({
-  value,
-  onChangeText,
-  onSubmit,
-  style,
-  onFocusChange,
-}) => {
-  const [suggestions, setSuggestions] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isFocused, setIsFocused] = useState(false);
+console.log("Skipping database initialization in layout");
+
+const linking = {
+  prefixes: [Linking.createURL("/")],
+  config: {
+    screens: {
+      "(tabs)": {
+        path: "",
+        screens: {
+          shop: "home",
+          placeholder: "messages",
+          status: "status",
+          myshop: "myshop",
+          account: "account",
+          profile: "profile",
+        },
+      },
+      "shop/Conversation": "shop/conversation",
+      login: "login",
+      signup: "signup",
+      ChangePassword: "change-password",
+      notFound: "*",
+    },
+  },
+};
+
+const MemoizedTabs = memo(Tabs);
+
+const RootLayout = () => {
+  const [userId, setUserId] = useState<number | null>(null);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+  const [socket, setSocket] = useState<WebSocket | null>(null);
+  const insets = useSafeAreaInsets();
+  const reconnectAttemptsRef = useRef(0);
+  const maxReconnectAttempts = 5;
+  const lastUnreadCountRef = useRef(0);
+
+  console.log("RootLayout rendered");
 
   useEffect(() => {
-    initializeDatabase().then(() => {
-      populateInitialSuggestions();
-    });
-  }, []);
-
-  const populateInitialSuggestions = async (retryCount = 0, maxRetries = 3) => {
-    try {
-      const count = await getSuggestionsCount();
-      console.log('Suggestions count:', count);
-      if (count >= 2000) {
-        console.log('Suggestions table sufficiently populated, skipping fetch');
-        return;
-      }
-
-      setIsLoading(true);
-      let response;
+    const fetchUserId = async () => {
       try {
-        response = await axios.get('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/all-suggestions/', {
-          timeout: 60000, // Increased to 60s
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'User-Agent': 'market-mobile/1.0.0',
-          },
-          validateStatus: status => status >= 200 && status < 300,
-        });
-      } catch (axiosError) {
-        console.error('Axios fetch failed:', axiosError);
-        console.log('Falling back to fetch');
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 60000);
-        response = await fetch('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/all-suggestions/', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'User-Agent': 'market-mobile/1.0.0',
-          },
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        response.data = await response.json();
-      }
-
-      console.log('Response status:', response.status || response.data);
-      console.log('Response headers:', response.headers);
-
-      const rawSuggestions = response.data.suggestions
-        .map(item => (typeof item.name === 'string' ? item.name.trim() : null))
-        .filter(name => name);
-      console.log('Raw API suggestions:', rawSuggestions.length);
-
-      // Process in chunks and limit to 50,000
-      const maxSuggestions = 50000;
-      const chunkSize = 10000;
-      const uniqueSuggestions = [];
-      const seen = new Set();
-
-      for (let i = 0; i < rawSuggestions.length && uniqueSuggestions.length < maxSuggestions; i += chunkSize) {
-        const chunk = rawSuggestions.slice(i, i + chunkSize);
-        for (const s of chunk) {
-          const lower = s.toLowerCase();
-          if (!seen.has(lower)) {
-            seen.add(lower);
-            uniqueSuggestions.push(s);
-            if (uniqueSuggestions.length >= maxSuggestions) break;
+        const userIdString = await AsyncStorage.getItem("user_id");
+        if (userIdString) {
+          const parsedId = parseInt(userIdString, 10);
+          if (!isNaN(parsedId)) {
+            setUserId(parsedId);
           }
         }
-      }
-      console.log('Unique suggestions:', uniqueSuggestions.length);
-
-      await cacheSuggestions(uniqueSuggestions);
-    } catch (error) {
-      console.error('Error populating suggestions:', error);
-      if (axios.isAxiosError(error)) {
-        console.error('Axios error details:', {
-          message: error.message,
-          code: error.code,
-          response: error.response ? {
-            status: error.response.status,
-            data: error.response.data,
-            headers: error.response.headers,
-          } : null,
-          request: error.request ? {
-            method: error.request.method,
-            url: error.request.url,
-            headers: error.request.headers,
-          } : null,
-        });
-      }
-      if (retryCount < maxRetries) {
-        const count = await getSuggestionsCount();
-        if (count < 2000) {
-          console.log(`Retrying fetch, attempt ${retryCount + 1}`);
-          setTimeout(() => populateInitialSuggestions(retryCount + 1, maxRetries), 5000);
-        }
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const fetchSuggestions = useCallback(
-    debounce(async (input) => {
-      if (!input || input.length < 2) {
-        setSuggestions([]);
-        return;
-      }
-      setIsLoading(true);
-      try {
-        const results = await getSuggestions(input, 50, 0);
-        console.log('Filtered suggestions:', results);
-        setSuggestions(results);
       } catch (error) {
-        console.error('Error fetching suggestions:', error);
-        setSuggestions([]);
-      } finally {
-        setIsLoading(false);
+        console.error("Error fetching user ID:", error);
       }
-    }, 300),
-    []
+    };
+    fetchUserId();
+  }, []);
+
+  const setupWebSocket = useCallback(() => {
+    if (!userId || reconnectAttemptsRef.current >= maxReconnectAttempts) {
+      console.log("Skipping WebSocket: no userId or max reconnects reached");
+      return;
+    }
+
+    const ws = new WebSocket(
+      `wss://retail-alvinia-goza-f6a0e4f7.koyeb.app/ws/unread-messages/?userId=${userId}`
+    );
+
+    ws.onopen = () => {
+      console.log("WebSocket connected");
+      reconnectAttemptsRef.current = 0;
+      ws.send(JSON.stringify({ action: "get_unread_count" }));
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.unread_count !== undefined && data.unread_count !== lastUnreadCountRef.current) {
+        lastUnreadCountRef.current = data.unread_count;
+        console.log("Updating unread count:", data.unread_count);
+        setUnreadCount(data.unread_count);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error("WebSocket error:", error);
+    };
+
+    ws.onclose = () => {
+      console.log("WebSocket closed");
+      if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+        reconnectAttemptsRef.current += 1;
+        console.log(`Reconnecting WebSocket (attempt ${reconnectAttemptsRef.current})`);
+        setTimeout(setupWebSocket, 10000);
+      } else {
+        console.log("Max WebSocket reconnect attempts reached");
+      }
+    };
+
+    setSocket(ws);
+
+    return () => {
+      ws.close();
+    };
+  }, [userId]);
+
+  useEffect(() => {
+    if (userId) {
+      return setupWebSocket();
+    }
+  }, [userId, setupWebSocket]);
+
+  const tabOptions = useMemo(
+    () => ({
+      headerShown: false,
+      tabBarShowLabel: true,
+      tabBarStyle: {
+        backgroundColor: "#E3F2FD",
+        borderTopWidth: 0,
+        elevation: 10,
+        height: 60 + (Platform.OS === "android" ? insets.bottom : 0),
+        paddingBottom: Platform.OS === "android" ? insets.bottom : 0,
+      },
+      tabBarLabelStyle: {
+        fontSize: 12,
+        fontWeight: "600",
+        marginBottom: 5,
+        width: 70,
+      },
+      tabBarItemStyle: {
+        justifyContent: "center",
+        alignItems: "center",
+      },
+      tabBarActiveTintColor: "#007AFF",
+      tabBarInactiveTintColor: "#000000",
+      tabBarLabelPosition: "below-icon",
+    }),
+    [insets.bottom]
   );
 
-  const handleInput = (text) => {
-    onChangeText(text);
-    fetchSuggestions(text);
-  };
-
-  const handleSelectSuggestion = (suggestion) => {
-    console.log('Selected suggestion:', suggestion);
-    onChangeText(suggestion);
-    setSuggestions([]);
-    setIsFocused(false);
-    onSubmit(suggestion);
-    onFocusChange?.(false);
-    Keyboard.dismiss();
-  };
-
-  const handleSubmitEditing = () => {
-    if (value) {
-      console.log('Submitted value:', value);
-      setSuggestions([]);
-      setIsFocused(false);
-      onSubmit(value);
-      onFocusChange?.(false);
-    }
-  };
-
-  const handleFocus = () => {
-    console.log('Input focused');
-    setIsFocused(true);
-    onFocusChange?.(true);
-  };
-
-  const handleBlur = () => {
-    console.log('Input blurred');
-    setIsFocused(false);
-    onFocusChange?.(false);
-  };
-
   return (
-    <View style={[styles.container, style]}>
-      <LinearGradient
-        colors={['#F8FAFC', '#E5E7EB']}
-        style={[styles.inputWrapper, isFocused && styles.inputWrapperFocused]}
-      >
-        <TextInput
-          style={styles.input}
-          value={value}
-          onChangeText={handleInput}
-          onFocus={handleFocus}
-          onBlur={handleBlur}
-          onSubmitEditing={handleSubmitEditing}
-          placeholder="What are you looking for?"
-          placeholderTextColor="#777"
-          returnKeyType="search"
-        />
-        {isLoading && <ActivityIndicator size="small" color="#007bff" style={styles.loader} />}
-      </LinearGradient>
-
-      {suggestions.length > 0 && isFocused && (
-        <LinearGradient
-          colors={['#FFFFFF', '#F8FAFC']}
-          style={styles.suggestionsContainer}
-        >
-          <FlatList
-            data={suggestions}
-            keyExtractor={(item, index) => index.toString()}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.suggestionItem}
-                onPress={() => handleSelectSuggestion(item)}
-              >
-                <Text style={styles.suggestionText}>{item}</Text>
-              </TouchableOpacity>
-            )}
-            keyboardShouldPersistTaps="handled"
-            initialNumToRender={10}
-            maxToRenderPerBatch={10}
-            windowSize={5}
-          />
-        </LinearGradient>
-      )}
-    </View>
+    <GestureHandlerRootView style={styles.container}>
+      <SafeAreaProvider>
+        <SelectProvider>
+          <SubscriptionProvider userId={userId}>
+            <MemoizedTabs linking={linking} screenOptions={tabOptions}>
+              <Tabs.Screen
+                name="(tabs)/shop"
+                options={{
+                  title: "Home",
+                  tabBarIcon: ({ color }) => (
+                    <Ionicons name="home" color={color} size={22} />
+                  ),
+                }}
+              />
+              <Tabs.Screen
+                name="(tabs)/placeholder"
+                options={{
+                  title: "Messages",
+                  tabBarIcon: ({ color }) => (
+                    <MaterialIcons name="message" color={color} size={22} />
+                  ),
+                  tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
+                }}
+              />
+              <Tabs.Screen
+                name="(tabs)/status"
+                options={{
+                  title: "Status",
+                  tabBarIcon: ({ color }) => (
+                    <Ionicons name="time-outline" color={color} size={22} />
+                  ),
+                }}
+              />
+              <Tabs.Screen
+                name="(tabs)/myshop"
+                options={{
+                  title: "My Space",
+                  tabBarIcon: ({ color }) => (
+                    <FontAwesome5 name="store" color={color} size={22} />
+                  ),
+                }}
+              />
+              <Tabs.Screen
+                name="(tabs)/account"
+                options={{
+                  title: "Account",
+                  tabBarIcon: ({ color }) => (
+                    <Ionicons name="card-outline" color={color} size={22} />
+                  ),
+                }}
+              />
+              <Tabs.Screen
+                name="(tabs)/profile"
+                options={{
+                  title: "Profile",
+                  tabBarIcon: ({ color }) => (
+                    <Ionicons name="person-circle" color={color} size={22} />
+                  ),
+                }}
+              />
+              <Tabs.Screen name="shop/Conversation" options={{ href: null }} />
+              <Tabs.Screen name="homepage" options={{ href: null }} />
+              <Tabs.Screen name="+not-found" options={{ href: null }} />
+              <Tabs.Screen name="index" options={{ href: null }} />
+              <Tabs.Screen name="login" options={{ href: null }} />
+              <Tabs.Screen name="signup" options={{ href: null }} />
+              <Tabs.Screen name="ChangePassword" options={{ href: null }} />
+              <Tabs.Screen name="RequestToken" options={{ href: null }} />
+              <Tabs.Screen name="ResetPassword" options={{ href: null }} />
+              <Tabs.Screen name="VerifyEmail" options={{ href: null }} />
+              <Tabs.Screen name="ForgotPassword" options={{ href: null }} />
+              <Tabs.Screen name="EnterOtp" options={{ href: null }} />
+              <Tabs.Screen name="shop" options={{ href: null }} />
+            </MemoizedTabs>
+          </SubscriptionProvider>
+        </SelectProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    width: '100%',
-    position: 'relative',
-  },
-  inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 4,
-  },
-  inputWrapperFocused: {
-    borderColor: '#007bff',
-    shadowOpacity: 0.2,
-  },
-  input: {
     flex: 1,
-    height: 48,
-    fontSize: 16,
-    color: '#333',
-    backgroundColor: 'transparent',
-  },
-  loader: {
-    marginLeft: 10,
-  },
-  suggestionsContainer: {
-    marginTop: 4,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 4,
-  },
-  suggestionItem: {
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-  },
-  suggestionText: {
-    fontSize: 16,
-    color: '#333',
   },
 });
 
-export default React.memo(AutocompleteInput);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// src/storage.ts
-import { Platform } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-let isInitialized = false;
-
-const initializeDatabase = async (): Promise<void> => {
-  if (isInitialized) {
-    console.log('Database already initialized, skipping');
-    return;
-  }
-
-  if (Platform.OS === 'web') {
-    console.log('Platform is web, using AsyncStorage');
-    isInitialized = true;
-    return;
-  }
-
-  const { initializeSQLiteDatabase } = await import('./sqliteStorage.native');
-  await initializeSQLiteDatabase();
-  isInitialized = true;
-};
-
-const storeData = async (key: string, value: string): Promise<number> => {
-  const encodedValue = btoa(encodeURIComponent(value));
-
-  if (Platform.OS === 'web') {
-    try {
-      await AsyncStorage.setItem(key, encodedValue);
-      console.log('Stored in AsyncStorage:', key);
-      return 1;
-    } catch (error) {
-      console.error('Error storing in AsyncStorage:', error);
-      throw error;
-    }
-  }
-
-  const { getSQLiteDatabase } = await import('./sqliteStorage.native');
-  const db = getSQLiteDatabase();
-
-  try {
-    const result = await db.runAsync(
-      'INSERT OR REPLACE INTO secure_data (key, value) VALUES (?, ?);',
-      [key, encodedValue]
-    );
-    console.log('Stored in SQLite (secure_data):', result.lastInsertRowId, result.changes);
-    return result.lastInsertRowId ?? 0;
-  } catch (error) {
-    console.error('SQLite store failed:', error);
-    throw error;
-  }
-};
-
-const getData = async (key: string): Promise<string | null> => {
-  if (Platform.OS === 'web') {
-    try {
-      const value = await AsyncStorage.getItem(key);
-      if (value) {
-        return decodeURIComponent(atob(value));
-      }
-      return null;
-    } catch (error) {
-      console.error('Error retrieving from AsyncStorage:', error);
-      throw error;
-    }
-  }
-
-  const { getSQLiteDatabase } = await import('./sqliteStorage.native');
-  const db = getSQLiteDatabase();
-
-  try {
-    const row = await db.getFirstAsync<{ value: string }>(
-      'SELECT value FROM secure_data WHERE key = ?;',
-      [key]
-    );
-    if (row) {
-      return decodeURIComponent(atob(row.value));
-    }
-    return null;
-  } catch (error) {
-    console.error('SQLite retrieval failed:', error);
-    throw error;
-  }
-};
-
-const clearStaleData = async (prefix: string): Promise<void> => {
-  if (Platform.OS === 'web') {
-    try {
-      const keys = await AsyncStorage.getAllKeys();
-      for (const key of keys) {
-        if (key.startsWith(prefix)) {
-          await AsyncStorage.removeItem(key);
-          console.log('Removed stale key from AsyncStorage:', key);
-        }
-      }
-    } catch (error) {
-      console.error('Error clearing stale AsyncStorage:', error);
-    }
-    return;
-  }
-
-  const { getSQLiteDatabase } = await import('./sqliteStorage.native');
-  const db = getSQLiteDatabase();
-
-  try {
-    await db.runAsync('DELETE FROM secure_data WHERE key LIKE ?;', [`${prefix}%`]);
-    console.log('Cleared stale secure_data');
-  } catch (error) {
-    console.error('Error clearing stale secure_data:', error);
-    throw error;
-  }
-};
-
-const getSuggestions = async (query: string, limit: number = 50, offset: number = 0): Promise<string[]> => {
-  if (Platform.OS === 'web') {
-    try {
-      const cached = await AsyncStorage.getItem('suggestions');
-      if (!cached) return [];
-      const suggestions = JSON.parse(cached);
-      const filtered = suggestions
-        .filter((name: string) => name.toLowerCase().includes(query.toLowerCase()))
-        .slice(offset, offset + limit);
-      console.log(`Fetched ${filtered.length} suggestions from AsyncStorage`);
-      return filtered;
-    } catch (error) {
-      console.error('Error fetching suggestions from AsyncStorage:', error);
-      throw error;
-    }
-  }
-
-  const { getSQLiteDatabase } = await import('./sqliteStorage.native');
-  const db = getSQLiteDatabase();
-
-  try {
-    const results = await db.getAllAsync(
-      `SELECT name FROM suggestions WHERE name MATCH ? LIMIT ? OFFSET ?`,
-      [`${query}*`, limit, offset]
-    );
-    console.log(`Fetched ${results.length} suggestions from SQLite`);
-    return results.map((row: any) => row.name);
-  } catch (error) {
-    console.error('SQLite suggestions fetch failed:', error);
-    throw error;
-  }
-};
-
-const cacheSuggestions = async (suggestions: string[]): Promise<void> => {
-  if (Platform.OS === 'web') {
-    try {
-      await AsyncStorage.setItem('suggestions', JSON.stringify(suggestions));
-      console.log('Cached suggestions in AsyncStorage');
-    } catch (error) {
-      console.error('Error caching suggestions in AsyncStorage:', error);
-      throw error;
-    }
-    return;
-  }
-
-  const { getSQLiteDatabase } = await import('./sqliteStorage.native');
-  const db = getSQLiteDatabase();
-
-  try {
-    const batchSize = 1000; // Increased to 1000
-    for (let i = 0; i < suggestions.length; i += batchSize) {
-      const batch = suggestions.slice(i, i + batchSize);
-      await db.execAsync(`
-        INSERT INTO suggestions (name)
-        VALUES ${batch.map(() => '(?)').join(', ')};
-      `, batch);
-      console.log(`Cached ${i + batch.length} suggestions in SQLite`);
-    }
-  } catch (error) {
-    console.error('Error caching suggestions in SQLite:', error);
-    throw error;
-  }
-};
-
-const getSuggestionsCount = async (): Promise<number> => {
-  if (Platform.OS === 'web') {
-    try {
-      const cached = await AsyncStorage.getItem('suggestions');
-      if (!cached) return 0;
-      const suggestions = JSON.parse(cached);
-      return suggestions.length;
-    } catch (error) {
-      console.error('Error counting suggestions in AsyncStorage:', error);
-      return 0;
-    }
-  }
-
-  const { getSQLiteDatabase } = await import('./sqliteStorage.native');
-  const db = getSQLiteDatabase();
-
-  try {
-    const row = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM suggestions');
-    return row?.count ?? 0;
-  } catch (error) {
-    console.error('Error counting suggestions in SQLite:', error);
-    return 0;
-  }
-};
-
-export { initializeDatabase, storeData, getData, clearStaleData, getSuggestions, cacheSuggestions, getSuggestionsCount };
+export default memo(RootLayout);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,16 +6,20 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StyleSheet,
-  Alert,
+  Alert, StatusBar
 } from 'react-native';
 import axios from 'axios';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated'; // Optional for animations
+import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_BASE_URL = 'https://retail-alvinia-goza-f6a0e4f7.koyeb.app';
+
+// In-memory cache for child categories
+const categoryCache = new Map();
 
 const ChildCategoryList = () => {
   const { categoryId, categoryName, prevRoute } = useLocalSearchParams();
@@ -25,34 +29,98 @@ const ChildCategoryList = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
+  const lastFetchedDataRef = useRef(null); // Store last fetched data
 
   // Animation state for cards
   const scaleCard = useSharedValue(1);
 
   useEffect(() => {
-    const fetchChildCategories = async () => {
+    const loadData = async () => {
+      if (!categoryId) {
+        if (__DEV__) {
+          console.log('No categoryId provided, navigating to shop');
+        }
+        router.replace('/(tabs)/shop');
+        return;
+      }
+
       try {
-        const response = await axios.get(`${API_BASE_URL}/shop-childcategories/${categoryId}/`);
-        setChildCategories(response.data);
+        if (__DEV__) {
+          console.log('Loading child categories for categoryId:', categoryId);
+        }
+
+        // Check in-memory cache
+        if (categoryCache.has(categoryId)) {
+          const cachedData = categoryCache.get(categoryId);
+          setChildCategories(cachedData);
+          lastFetchedDataRef.current = cachedData;
+          setLoading(false);
+          if (__DEV__) {
+            console.log('Loaded child categories from in-memory cache');
+          }
+          return;
+        }
+
+        // Check AsyncStorage cache
+        const cacheKey = `childCategories_${categoryId}`;
+        const cachedData = await AsyncStorage.getItem(cacheKey);
+        if (cachedData) {
+          const parsedData = JSON.parse(cachedData);
+          setChildCategories(parsedData);
+          lastFetchedDataRef.current = parsedData;
+          categoryCache.set(categoryId, parsedData);
+          setLoading(false);
+          if (__DEV__) {
+            console.log('Loaded child categories from AsyncStorage');
+          }
+          return;
+        }
+
+        // Fetch from API
+        const sessionToken = await AsyncStorage.getItem('sessionToken');
+        const response = await axios.get(`${API_BASE_URL}/shop-childcategories/${categoryId}/`, {
+          headers: sessionToken ? { Authorization: sessionToken } : {},
+        });
+        const data = response.data;
+        setChildCategories(data);
+        lastFetchedDataRef.current = data;
+        categoryCache.set(categoryId, data);
+        await AsyncStorage.setItem(cacheKey, JSON.stringify(data));
+        if (__DEV__) {
+          console.log('Fetched child categories:', data);
+        }
       } catch (error) {
         console.error('Error fetching child categories:', error);
         Alert.alert('Error', 'Failed to load child categories');
         setError(error);
+        // Fallback to last fetched data if available
+        if (lastFetchedDataRef.current) {
+          setChildCategories(lastFetchedDataRef.current);
+          if (__DEV__) {
+            console.log('Using last fetched data due to error');
+          }
+        }
       } finally {
         setLoading(false);
       }
     };
 
-    fetchChildCategories();
-  }, [categoryId]);
+    loadData();
+  }, [categoryId, router]);
 
-  const handleCategoryClick = useCallback((categoryId, categoryName) => {
-    setSelectedCategoryId(categoryId);
+  const handleCategoryClick = useCallback((childCategoryId, childCategoryName) => {
+    setSelectedCategoryId(childCategoryId);
     router.push({
       pathname: '/shop/SubcategoryList',
-      params: { categoryId: categoryId, categoryName: categoryName, prevRoute: '/shop/ChildCategoryList' },
+      params: {
+        categoryId: childCategoryId,
+        categoryName: childCategoryName,
+        prevRoute: '/shop/ChildCategoryList',
+        parentCategoryId: categoryId, // Original parent categoryId
+        parentCategoryName: categoryName, // Original parent categoryName
+      },
     });
-  }, [router]);
+  }, [router, categoryId, categoryName]);
 
   // Animation handlers
   const handlePressIn = () => {
@@ -71,13 +139,10 @@ const ChildCategoryList = () => {
       <SafeAreaView style={styles.centeredContainer}>
         <LinearGradient colors={['#F7FAFC', '#E5E7EB']} style={styles.centeredContainer}>
           <View style={styles.header}>
-            <TouchableOpacity
-              onPress={() => router.replace(prevRoute || '/(tabs)/shop')}
-              style={styles.backButton}
-            >
+            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
               <MaterialIcons name="arrow-back" size={26} color="white" />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>{categoryName}</Text>
+            <Text style={styles.headerTitle}>{categoryName || 'Loading...'}</Text>
             <View style={styles.headerSpacer} />
           </View>
           <View style={styles.loaderContainer}>
@@ -89,18 +154,15 @@ const ChildCategoryList = () => {
     );
   }
 
-  if (error) {
+  if (error && !childCategories.length) {
     return (
       <SafeAreaView style={styles.centeredContainer}>
         <LinearGradient colors={['#F7FAFC', '#E5E7EB']} style={styles.centeredContainer}>
           <View style={styles.header}>
-            <TouchableOpacity
-              onPress={() => router.back()}
-              style={styles.backButton}
-            >
+            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
               <MaterialIcons name="arrow-back" size={26} color="white" />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>{categoryName}</Text>
+            <Text style={styles.headerTitle}>{categoryName || 'Error'}</Text>
             <View style={styles.headerSpacer} />
           </View>
           <View style={styles.loaderContainer}>
@@ -110,7 +172,7 @@ const ChildCategoryList = () => {
               onPress={() => {
                 setLoading(true);
                 setError(null);
-                fetchChildCategories();
+                loadData();
               }}
             >
               <Text style={styles.retryButtonText}>Retry</Text>
@@ -123,12 +185,10 @@ const ChildCategoryList = () => {
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <LinearGradient colors={['#F7FAFC', '#E5E7EB']} style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => router.replace(prevRoute || '/(tabs)/shop')}
-            style={styles.backButton}
-          >
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <MaterialIcons name="arrow-back" size={26} color="white" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{categoryName}</Text>
@@ -175,7 +235,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 16,
     paddingHorizontal: 12,
-    backgroundColor: '#3A7BD5', // Preserved
+    backgroundColor: '#3A7BD5',
     borderBottomLeftRadius: 35,
     borderBottomRightRadius: 35,
     shadowColor: '#000',
@@ -201,19 +261,19 @@ const styles = StyleSheet.create({
   },
   contentWrapper: {
     flex: 1,
-    paddingHorizontal: 20, // Reduced for balance
-    paddingTop: 24, // Increased for spacing
+    paddingHorizontal: 20,
+    paddingTop: 24,
   },
   listContent: {
     paddingVertical: 12,
-    paddingBottom: 80, // More padding for scroll comfort
+    paddingBottom: 80,
   },
   subcategoryCard: {
     marginVertical: 8,
-    borderRadius: 16, // Softer corners
+    borderRadius: 16,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E5E7EB', // Subtle border
+    borderColor: '#E5E7EB',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.08,
@@ -224,21 +284,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 16, // Taller cards
+    paddingVertical: 16,
     paddingHorizontal: 20,
   },
   subcategoryCardSelected: {
-    backgroundColor: '#F5FAFF', // Light blue for selected state
-    borderColor: '#3A7BD5', // Match header
+    backgroundColor: '#F5FAFF',
+    borderColor: '#3A7BD5',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.12,
     shadowRadius: 8,
     elevation: 5,
   },
   subcategoryTitle: {
-    fontSize: 17, // Slightly smaller for balance
-    fontWeight: '600', // Semi-bold for elegance
-    color: '#111827', // Darker for contrast
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#111827',
     fontFamily: 'System',
     letterSpacing: 0.2,
     lineHeight: 24,
@@ -253,9 +313,9 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: 16,
-    fontSize: 16, // Smaller for subtlety
-    fontWeight: '500', // Medium weight
-    color: '#1F2A44', // Darker for professionalism
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#1F2A44',
     fontFamily: 'System',
     letterSpacing: 0.3,
     lineHeight: 22,
@@ -263,7 +323,7 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#DC2626', // Red for error
+    color: '#DC2626',
     fontFamily: 'System',
     letterSpacing: 0.3,
     lineHeight: 22,
@@ -275,7 +335,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 10,
-    backgroundColor: '#3A7BD5', // Match header
+    backgroundColor: '#3A7BD5',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,

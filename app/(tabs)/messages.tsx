@@ -1,4 +1,4 @@
-import MessageList from "../../src/screens/shop/MessageList";
+import MessageList from "@/screens/shop/MessageList";
 
 
 export default function ShopScreen() {

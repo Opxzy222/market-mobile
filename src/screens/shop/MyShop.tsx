@@ -6,7 +6,7 @@ import {
   FlatList,
   TouchableOpacity,
   Alert,
-  ActivityIndicator,
+  ActivityIndicator, StatusBar
 } from "react-native";
 import axios from "axios";
 import { useRouter, usePathname, useFocusEffect } from "expo-router";
@@ -217,6 +217,7 @@ const MyShop = () => {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
         {loading && (
           <View style={styles.loadingContainer}>

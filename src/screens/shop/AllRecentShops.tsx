@@ -6,7 +6,7 @@ import {
   FlatList,
   Image,
   TouchableOpacity,
-  ActivityIndicator,
+  ActivityIndicator, StatusBar
 } from "react-native";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -122,6 +122,7 @@ const AllRecentlyVisitedShops = () => {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <LinearGradient
         colors={["#F7FAFC", "#E3F2FD"]}
         style={styles.container}

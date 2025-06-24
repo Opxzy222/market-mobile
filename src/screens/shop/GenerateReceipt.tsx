@@ -11,7 +11,7 @@ import {
   Platform,
   KeyboardAvoidingView,
   TouchableWithoutFeedback,
-  Keyboard,
+  Keyboard, StatusBar
 } from "react-native";
 import axios from "axios";
 import * as FileSystem from "expo-file-system";
@@ -419,6 +419,7 @@ const GenerateReceipt = () => {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={{ flex: 1 }}>
           <View style={styles.header}>

@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  ScrollView,
+  ScrollView, StatusBar
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -96,6 +96,7 @@ const Account = () => {
 
   return (
     <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Account Details Card */}
         <View style={styles.accountCard}>
