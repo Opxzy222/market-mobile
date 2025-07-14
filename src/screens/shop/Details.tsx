@@ -16,7 +16,7 @@ const Details = () => {
       <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity
-            onPress={() => router.replace(prevRoute || "((tabs)/myshop)")}
+            onPress={() => router.navigate("(tabs)/myshop")}
             style={styles.backButton}
           >
             <MaterialIcons name="arrow-back" size={26} color="white" />
@@ -68,7 +68,7 @@ const Details = () => {
             />
           </TouchableOpacity>
 
-          <TouchableOpacity
+          {/*<TouchableOpacity
             style={styles.option}
             onPress={() =>
               router.push({
@@ -87,7 +87,7 @@ const Details = () => {
               color="#A0A0A0"
               style={styles.chevron}
             />
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </View>
       </LinearGradient>
     </SafeAreaView>

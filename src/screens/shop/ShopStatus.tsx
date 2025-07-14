@@ -12,7 +12,8 @@ import {
   StyleSheet,
   Alert,
   Platform,
-  Dimensions, StatusBar
+  Dimensions,
+  StatusBar,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import * as DocumentPicker from "expo-document-picker";
@@ -29,15 +30,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 
-console.log("StatusViewer:", StatusViewer);
-
 const { width } = Dimensions.get("window");
 const BACKEND_URL = "https://retail-alvinia-goza-f6a0e4f7.koyeb.app";
 const FALLBACK_IMAGE = "https://randomuser.me/api/portraits/lego/1.jpg";
 
 const StatusItem = ({ item, index, onPress, onDelete }) => {
-  const player = item.media && item.media_type === "video"
-    ? useVideoPlayer(item.media, (player) => {
+  const player = item.media && item.media_type === "video" && item.thumbnail_url
+    ? useVideoPlayer(item.thumbnail_url, (player) => {
         player.loop = true;
         player.pause();
       })
@@ -68,13 +67,21 @@ const StatusItem = ({ item, index, onPress, onDelete }) => {
             onError={() => console.error(`Failed to load status media: ${item.media}`)}
           />
         )}
-        {item.media && item.media_type === "video" && player && (
-          <VideoView
-            player={player}
-            style={[styles.avatar, styles.unreadBorder]}
-            contentFit="cover"
-            nativeControls={true}
-          />
+        {item.media && item.media_type === "video" && (
+          <View style={[styles.avatar, styles.unreadBorder]}>
+            <Image
+              source={{ uri: item.thumbnail_url || item.media }}
+              style={styles.avatar}
+              onError={() => console.error(`Failed to load video thumbnail: ${item.thumbnail_url}`)}
+            />
+            <View style={styles.playIconContainer}>
+              <Ionicons
+                name="play-circle"
+                size={24}
+                color="rgba(255, 255, 255, 0.8)"
+              />
+            </View>
+          </View>
         )}
         {!item.media && (
           <Image
@@ -106,8 +113,7 @@ const StatusScreen = () => {
   const [loading, setLoading] = useState(false);
   const { subscriptionStatus } = useContext(SubscriptionContext);
   const fileInputRef = useRef(null);
-  const params = useLocalSearchParams();
-  const { shopId, prevRoute } = params;
+  const { shopId, prevRoute } = useLocalSearchParams();
   const router = useRouter();
   const [sessionId, setSessionId] = useState<string | null>(null);
 
@@ -216,6 +222,7 @@ const StatusScreen = () => {
               uri,
               name: name || `media_${Date.now()}.${isVideo ? "mp4" : "jpg"}`,
               type: isVideo ? "video" : "image",
+              thumbnail: isVideo ? uri : null, // Use video URI as fallback thumbnail
               valid: true,
             };
           } catch (error) {
@@ -263,6 +270,7 @@ const StatusScreen = () => {
           uri: URL.createObjectURL(file),
           name: file.name,
           type: mediaType,
+          thumbnail: mediaType === "video" ? URL.createObjectURL(file) : null, // Fallback thumbnail
           file,
           valid: true,
         };
@@ -317,6 +325,9 @@ const StatusScreen = () => {
           try {
             if (Platform.OS === "web" && file.file) {
               formData.append("media", file.file);
+              if (file.type === "video" && file.thumbnail) {
+                formData.append("thumbnail", file.file); // Note: Backend needs to handle thumbnail separately
+              }
               validMedia.push(file);
             } else {
               const info = await FileSystem.getInfoAsync(file.uri);
@@ -333,6 +344,7 @@ const StatusScreen = () => {
                 name: file.name,
               };
               formData.append("media", newFile);
+              // Note: Thumbnail upload requires backend support
               validMedia.push(file);
             }
           } catch (error) {
@@ -396,14 +408,14 @@ const StatusScreen = () => {
             ) : (
               <View style={styles.mediaPreview}>
                 <Image
-                  source={{ uri: item.uri }}
+                  source={{ uri: item.thumbnail || item.uri }}
                   style={styles.mediaPreview}
                   resizeMode="cover"
                 />
                 <View style={styles.playIconContainer}>
                   <Ionicons
                     name="play-circle"
-                    size={30}
+                      size={30}
                     color="rgba(255, 255, 255, 0.8)"
                   />
                 </View>
@@ -432,11 +444,11 @@ const StatusScreen = () => {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
-      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
+      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
       <View style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity
-            onPress={() => router.replace(prevRoute || "((tabs)/shop)")}
+            onPress={() => router.navigate("(tabs)/shop")}
             style={styles.backButton}
           >
             <MaterialIcons name="arrow-back" size={24} color="#fff" />
@@ -504,56 +516,46 @@ const StatusScreen = () => {
           )}
 
           <Modal visible={isTextPosting} animationType="slide" transparent>
-            {subscriptionStatus === "standard" || subscriptionStatus === "premium" ? (
-              <View style={styles.modalContainer}>
-                <View style={styles.modalCard}>
-                  <View style={styles.modalHeaderRow}>
-                    <Ionicons name="chatbubble-ellipses-outline" size={24} color="#333" />
-                    <Text style={styles.modalHeaderText}>Post a Text Status</Text>
-                  </View>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="What's on your mind?"
-                    placeholderTextColor="#888"
-                    value={statusText}
-                    onChangeText={setStatusText}
-                    multiline
-                    numberOfLines={4}
-                  />
-                  <View style={styles.actionRow}>
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={() => setIsTextPosting(false)}
-                    >
-                      <Ionicons name="close-circle-outline" size={24} color="#FF3B30" />
-                      <Text style={styles.actionButtonText}>Cancel</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={handlePostTextStatus}
-                      disabled={loading}
-                    >
-                      {loading ? (
-                        <ActivityIndicator size="small" color="#34C759" />
-                      ) : (
-                        <>
-                          <Ionicons name="checkmark-circle-outline" size={24} color="#34C759" />
-                          <Text style={styles.actionButtonText}>Post</Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
-                  </View>
+            <View style={styles.modalContainer}>
+              <View style={styles.modalCard}>
+                <View style={styles.modalHeaderRow}>
+                  <Ionicons name="chatbubble-ellipses-outline" size={24} color="#333" />
+                  <Text style={styles.modalHeaderText}>Post a Text Status</Text>
+                </View>
+                <TextInput
+                  style={styles.input}
+                  placeholder="What's on your mind?"
+                  placeholderTextColor="#888"
+                  value={statusText}
+                  onChangeText={setStatusText}
+                  multiline
+                  numberOfLines={4}
+                />
+                <View style={styles.actionRow}>
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => setIsTextPosting(false)}
+                  >
+                    <Ionicons name="close-circle-outline" size={24} color="#FF3B30" />
+                    <Text style={styles.actionButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={handlePostTextStatus}
+                    disabled={loading}
+                  >
+                    {loading ? (
+                      <ActivityIndicator size="small" color="#34C759" />
+                    ) : (
+                      <>
+                        <Ionicons name="checkmark-circle-outline" size={24} color="#34C759" />
+                        <Text style={styles.actionButtonText}>Post</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
                 </View>
               </View>
-            ) : (
-              <TouchableOpacity
-                style={styles.modalOverlay}
-                activeOpacity={1}
-                onPress={() => setIsTextPosting(false)}
-              >
-                <SubscriptionRequired />
-              </TouchableOpacity>
-            )}
+            </View>
           </Modal>
 
           <Modal visible={isMediaPosting} animationType="slide" transparent>

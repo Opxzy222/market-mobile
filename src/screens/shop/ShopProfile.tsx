@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, Component, useRef } from "react";
+import React, { useState, useEffect, useCallback, Component } from "react";
 import {
   View,
   Text,
@@ -9,7 +9,8 @@ import {
   ScrollView,
   Dimensions,
   KeyboardAvoidingView,
-  Platform, StatusBar
+  Platform,
+  StatusBar,
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -97,24 +98,30 @@ const SimpleMultiSelect: React.FC<MultiSelectProps> = ({
 }) => {
   const [tempSelected, setTempSelected] = useState<number[]>(selectedItems);
 
+  // Sync tempSelected with selectedItems prop
+  useEffect(() => {
+    console.log("SimpleMultiSelect syncing selectedItems:", selectedItems);
+    setTempSelected(selectedItems);
+  }, [selectedItems]);
+
   const toggleItem = useCallback(
     (id: number) => {
-      setTimeout(() => {
-        setTempSelected((prev) => {
-          const isSelected = prev.includes(id);
-          const newSelected = isSelected
-            ? prev.filter((selected) => selected !== id)
-            : [...prev, id];
-          console.log("SimpleMultiSelect toggled:", newSelected);
-          const selectedItems = newSelected.map((id) => ({
+      setTempSelected((prev) => {
+        const isSelected = prev.includes(id);
+        const newSelected = isSelected
+          ? prev.filter((selected) => selected !== id)
+          : [...prev, id];
+        console.log("SimpleMultiSelect toggled:", newSelected);
+        const selectedItemsData = newSelected
+          .map((id) => ({
             label: items.find((item) => item.id === id)?.name || "",
             value: id,
-          }));
-          console.log("SimpleMultiSelect onSelectedItemsChange:", selectedItems);
-          onSelectedItemsChange(selectedItems);
-          return newSelected;
-        });
-      }, 0);
+          }))
+          .filter((item): item is MultiSelectItem => item.label !== "");
+        console.log("SimpleMultiSelect onSelectedItemsChange:", selectedItemsData);
+        onSelectedItemsChange(selectedItemsData);
+        return newSelected;
+      });
     },
     [onSelectedItemsChange, items]
   );
@@ -299,7 +306,7 @@ const CustomMultiSelect = React.memo<MultiSelectProps>(
                       tempSelected.some((selected) => selected.id === item.id) &&
                         styles.selectedModalItemText,
                     ]}
-                  >
+                    >
                     {item.name}
                   </Text>
                   {tempSelected.some((selected) => selected.id === item.id) && (
@@ -341,7 +348,6 @@ const ShopProfileScreen: React.FC = () => {
   const [originalImage, setOriginalImage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [initialSubcategoryIds, setInitialSubcategoryIds] = useState<number[]>([]);
-  const preselectionDone = useRef<boolean>(false); // Track preselection
 
   const params = useLocalSearchParams<{ shopId: string }>();
   const { shopId } = params;
@@ -381,7 +387,7 @@ const ShopProfileScreen: React.FC = () => {
         setOriginalParentCategory(response.data.parent_category_id);
         setSelectedParentCategory(response.data.parent_category_id);
         setInitialSubcategoryIds(response.data.category_ids);
-        preselectionDone.current = false; // Reset preselection flag
+        setSelectedChildCategories([]); // Reset child categories on initial fetch
       } catch (error) {
         console.error("Error fetching shop details:", error);
       }
@@ -409,6 +415,7 @@ const ShopProfileScreen: React.FC = () => {
 
   useEffect(() => {
     if (!selectedParentCategory) {
+      console.log("No parent category selected, clearing subcategories and selected child categories");
       setSubcategories([]);
       setSelectedChildCategories([]);
       return;
@@ -416,6 +423,7 @@ const ShopProfileScreen: React.FC = () => {
 
     const fetchChildCategories = async () => {
       try {
+        console.log("Fetching subcategories for parent category:", selectedParentCategory);
         const formData = new FormData();
         formData.append("parent_id", selectedParentCategory.toString());
         const response = await axios.post<{ subcategories: { id: number; name: string }[] }>(
@@ -434,27 +442,25 @@ const ShopProfileScreen: React.FC = () => {
         );
         setSubcategories(formattedSubcategories);
 
-        // Only preselect if not already done
-        if (!preselectionDone.current && initialSubcategoryIds.length > 0) {
-          const preselected = initialSubcategoryIds
-            .map((id) => {
-              const subcategory = formattedSubcategories.find((sub) => sub.key === id);
-              return subcategory ? { label: subcategory.value, value: subcategory.key } : null;
-            })
-            .filter((item): item is MultiSelectItem => item !== null);
-          console.log("Preselecting subcategories:", preselected);
-          if (preselected.length > 0) {
-            setSelectedChildCategories(preselected);
-            preselectionDone.current = true; // Mark preselection as complete
-          }
-        }
+        // Preselect subcategories that match initialSubcategoryIds and belong to the current parent
+        const preselected = initialSubcategoryIds
+          .map((id) => {
+            const subcategory = formattedSubcategories.find((sub) => sub.key === id);
+            return subcategory ? { label: subcategory.value, value: subcategory.key } : null;
+          })
+          .filter((item): item is MultiSelectItem => item !== null);
+        console.log("Preselecting subcategories:", preselected);
+        setSelectedChildCategories(preselected);
       } catch (error) {
         console.error("Error fetching child categories:", error);
       }
     };
 
+    // Clear selected child categories before fetching new subcategories
+    console.log("Clearing selected child categories due to parent category change");
+    setSelectedChildCategories([]);
     fetchChildCategories();
-  }, [selectedParentCategory]); // Removed initialSubcategoryIds from dependencies
+  }, [selectedParentCategory, initialSubcategoryIds]);
 
   const pickImage = useCallback(async () => {
     try {
@@ -479,7 +485,26 @@ const ShopProfileScreen: React.FC = () => {
     try {
       // Validate category consistency
       if (selectedChildCategories.length > 0 && !selectedParentCategory) {
+        console.warn("Validation failed: Child categories selected without a parent category");
         alert("Error", "Please select a parent category for the selected child categories.");
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Validate that selectedChildCategories belong to the current selectedParentCategory
+      const validSubcategoryIds = subcategories.map((sub) => sub.key);
+      const currentSubIds = selectedChildCategories
+        .map((item) => item.value)
+        .filter((id): id is number => id !== null);
+      const invalidSubcategories = currentSubIds.filter(
+        (id) => !validSubcategoryIds.includes(id)
+      );
+      if (invalidSubcategories.length > 0) {
+        console.warn("Invalid subcategories detected:", invalidSubcategories);
+        alert(
+          "Error",
+          "Selected child categories do not belong to the current parent category. Please reselect."
+        );
         setIsSubmitting(false);
         return;
       }
@@ -517,15 +542,13 @@ const ShopProfileScreen: React.FC = () => {
         }
       }
 
-      const currentSubIds = selectedChildCategories
-        .map((item) => item.value)
-        .filter((id): id is number => id !== null)
-        .sort();
-      const originalSubIds = initialSubcategoryIds.slice().sort();
-      const subcategoriesChanged = JSON.stringify(currentSubIds) !== JSON.stringify(originalSubIds);
+      const sortedCurrentSubIds = currentSubIds.sort();
+      const sortedOriginalSubIds = initialSubcategoryIds.slice().sort();
+      const subcategoriesChanged =
+        JSON.stringify(sortedCurrentSubIds) !== JSON.stringify(sortedOriginalSubIds);
 
-      if (currentSubIds.length > 0) {
-        currentSubIds.forEach((id) => {
+      if (sortedCurrentSubIds.length > 0) {
+        sortedCurrentSubIds.forEach((id) => {
           formData.append("subcategory_ids", id.toString());
         });
         if (subcategoriesChanged) {
@@ -545,15 +568,16 @@ const ShopProfileScreen: React.FC = () => {
         description,
         address,
         selectedParentCategory,
-        currentSubIds,
+        currentSubIds: sortedCurrentSubIds,
       });
       console.log("FormData contents:");
-      for (const [key, value] of formData.entries()) {
+      for (const [key, value] of formData) {
         console.log(`${key}: ${value}`);
       }
 
       // Prevent request if no changes are made
       if (!hasChanges) {
+        console.log("No changes detected, aborting update");
         alert("No Changes", "No changes detected.");
         setIsSubmitting(false);
         return;
@@ -581,7 +605,7 @@ const ShopProfileScreen: React.FC = () => {
       setOriginalAddress(address);
       setOriginalImage(image);
       setOriginalParentCategory(selectedParentCategory);
-      setInitialSubcategoryIds(currentSubIds);
+      setInitialSubcategoryIds(sortedCurrentSubIds);
 
       alert("Success", "Shop profile updated successfully!");
       router.back();
@@ -608,6 +632,7 @@ const ShopProfileScreen: React.FC = () => {
     shopId,
     sessionId,
     router,
+    subcategories,
   ]);
 
   const handleNameChange = useCallback((text: string) => setName(text), []);
@@ -617,7 +642,7 @@ const ShopProfileScreen: React.FC = () => {
   return (
     <ErrorBoundary>
       <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
-        <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
+        <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
         <LinearGradient colors={["#F5F5F5", "#E0E0E0"]} style={styles.container}>
           <KeyboardAvoidingView
             style={{ flex: 1 }}
@@ -687,7 +712,10 @@ const ShopProfileScreen: React.FC = () => {
                 <View style={styles.pickerContainer}>
                   <Picker
                     selectedValue={selectedParentCategory}
-                    onValueChange={(value: number | null) => setSelectedParentCategory(value)}
+                    onValueChange={(value: number | null) => {
+                      console.log("Parent category changed to:", value);
+                      setSelectedParentCategory(value);
+                    }}
                     style={styles.picker}
                   >
                     <Picker.Item label="Select Parent Category" value={null} />

@@ -1028,7 +1028,6 @@ const StartConversation = () => {
     [userId, sessionId]
   );
 
-
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#E3F2FD", }} edges={["top", "left", "right"]}>
       <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
@@ -1296,6 +1295,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: 16,
     paddingBottom: 16,
+    marginTop: 12,
   },
   messageWrapper: {
     marginBottom: 12,

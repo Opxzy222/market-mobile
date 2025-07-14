@@ -1,22 +1,27 @@
-import React, { useState } from "react";
+import React, { useState, useContext } from "react";
 import {
   View,
   TouchableOpacity,
   Text,
   Alert,
   StyleSheet,
+  Modal,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { Ionicons } from "@expo/vector-icons";
+import { SubscriptionContext } from "../../components/SubscriptionProvider"; // Import SubscriptionContext
+import SubscriptionRequired from "@/components/RequiredSubscription"; // Import SubscriptionRequired
 
 const SendPDF = ({ onSend }) => {
   const [selectedPDF, setSelectedPDF] = useState(null);
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false); // State for subscription modal
+  const { subscriptionStatus } = useContext(SubscriptionContext); // Access subscription status
 
   const pickPDF = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: "application/pdf",
-        copyToCacheDirectory: true, // Ensure file is accessible
+        copyToCacheDirectory: true,
       });
 
       if (!result.canceled && result.assets?.length > 0) {
@@ -37,9 +42,15 @@ const SendPDF = ({ onSend }) => {
   };
 
   const handleSend = () => {
+    // Check subscription status
+    if (subscriptionStatus !== "standard" && subscriptionStatus !== "premium") {
+      setShowSubscriptionModal(true); // Show subscription modal
+      return;
+    }
+
     if (selectedPDF) {
       onSend(selectedPDF);
-      setSelectedPDF(null); // Clear selection after sending
+      setSelectedPDF(null);
     }
   };
 
@@ -73,6 +84,16 @@ const SendPDF = ({ onSend }) => {
           </View>
         </View>
       )}
+
+      <Modal visible={showSubscriptionModal} animationType="slide" transparent>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowSubscriptionModal(false)}
+        >
+          <SubscriptionRequired />
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 };
@@ -114,7 +135,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#333",
     marginBottom: 10,
-    maxWidth: 200, // Prevent overflow
+    maxWidth: 200,
   },
   actionButtons: {
     flexDirection: "row",
@@ -139,6 +160,12 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "bold",
     fontSize: 16,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.5)",
   },
 });
 

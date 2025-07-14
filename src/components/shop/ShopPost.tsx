@@ -10,11 +10,13 @@ import {
   StyleSheet,
   ActivityIndicator,
   Dimensions,
+  SafeAreaView,
 } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import ImageViewer from 'react-native-image-zoom-viewer';
 import { Ionicons } from '@expo/vector-icons';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const getFullUrl = (url) => {
   const BASE_URL = 'https://retail-alvinia-goza-f6a0e4f7.koyeb.app';
@@ -26,14 +28,13 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isVideoLoading, setIsVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState(null);
+  const [isFullscreen, setIsFullscreen] = useState(true); // Default to fullscreen
 
   const playerRef = useRef(null);
   const player = useVideoPlayer(null, (p) => {
     playerRef.current = p;
     p.loop = false;
   });
-
-  console.log('ShopPosts Posts:', JSON.stringify(posts, null, 2));
 
   const isVideoFile = (media) => {
     if (!media || !media.url) return false;
@@ -51,15 +52,13 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
       if (isVideo && playerRef.current) {
         const loadVideo = async () => {
           try {
-            console.log('Loading video:', fullUrl);
             setIsVideoLoading(true);
             setVideoError(null);
             await playerRef.current.replaceAsync({ uri: fullUrl });
             setIsVideoLoading(false);
             playerRef.current.play();
-            console.log('Video loaded and playing:', fullUrl);
           } catch (error) {
-            console.error('Video load error:', fullUrl, error.message, error.stack);
+            console.error('Video load error:', fullUrl, error.message);
             setIsVideoLoading(false);
             setVideoError('Failed to load video');
           }
@@ -71,13 +70,12 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
 
   const pausePlayer = () => {
     if (playerRef.current && typeof playerRef.current.pause === 'function') {
-      try {
-        playerRef.current.pause();
-        console.log('Player paused');
-      } catch (error) {
-        console.error('Pause error:', error.message);
-      }
+      playerRef.current.pause();
     }
+  };
+
+  const toggleFullscreen = () => {
+    setIsFullscreen(!isFullscreen);
   };
 
   const renderThumbnail = (media) => {
@@ -114,42 +112,63 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
     const fullUrl = getFullUrl(media.url);
     const isVideo = isVideoFile(media);
 
+    if (isVideo) {
+      return (
+        <View style={[styles.mediaContainer, isFullscreen && styles.fullscreenMedia]}>
+          {isVideoLoading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#fff" />
+              <Text style={styles.loadingText}>Loading video...</Text>
+            </View>
+          ) : videoError ? (
+            <View style={styles.fallbackContainer}>
+              <Text style={styles.errorText}>{videoError}</Text>
+            </View>
+          ) : (
+            <VideoView
+              style={[styles.videoView, isFullscreen && styles.fullscreenVideo]}
+              player={player}
+              contentFit="cover"
+              allowsFullscreen={true}
+              allowsPictureInPicture={false}
+              nativeControls={true}
+              onError={(error) => {
+                console.error('VideoView error:', fullUrl, error);
+                setVideoError('Video playback failed');
+              }}
+            />
+          )}
+        </View>
+      );
+    }
+
+    const imageItems = selectedPost.items.filter((item) => !isVideoFile(item));
+    const imageUrls = imageItems.map((item) => ({
+      url: getFullUrl(item.url),
+    }));
+    const currentImageIndex = imageItems.findIndex((item) => getFullUrl(item.url) === fullUrl);
+
+    if (imageUrls.length === 0) {
+      return (
+        <View style={styles.fallbackContainer}>
+          <Text style={styles.errorText}>No images available</Text>
+        </View>
+      );
+    }
+
     return (
-      <View style={styles.mediaContainer}>
-        {isVideo ? (
-          <>
-            {isVideoLoading ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#fff" />
-                <Text style={styles.loadingText}>Loading video...</Text>
-              </View>
-            ) : videoError ? (
-              <View style={styles.fallbackContainer}>
-                <Text style={styles.errorText}>{videoError}</Text>
-              </View>
-            ) : (
-              <VideoView
-                style={styles.videoView}
-                player={player}
-                contentFit="cover"
-                allowsFullscreen={true}
-                allowsPictureInPicture={false}
-                nativeControls={true}
-                onError={(error) => {
-                  console.error('VideoView error:', fullUrl, error);
-                  setVideoError('Video playback failed');
-                }}
-              />
-            )}
-          </>
-        ) : (
-          <Image
-            source={{ uri: fullUrl }}
-            style={styles.media}
-            resizeMode="contain"
-            onError={(e) => console.error('Image load error:', fullUrl, e.nativeEvent.error)}
-          />
-        )}
+      <View style={[styles.imageViewerContainer, isFullscreen && styles.fullscreenImage]}>
+        <ImageViewer
+          imageUrls={imageUrls}
+          index={currentImageIndex >= 0 ? currentImageIndex : 0}
+          onChange={(index) => {
+            setCurrentIndex(selectedPost.items.indexOf(imageItems[index]));
+          }}
+          saveToLocalByLongPress={true}
+          backgroundColor="transparent"
+          renderIndicator={() => null}
+          style={[styles.imageViewer, isFullscreen && styles.fullscreenImageViewer]}
+        />
       </View>
     );
   };
@@ -158,6 +177,7 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
     if (post && post.media && post.media.length > 0) {
       setSelectedPost({ items: post.media, description: post.description });
       setCurrentIndex(0);
+      setIsFullscreen(true); // Start in fullscreen
     }
   };
 
@@ -167,12 +187,20 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
     setCurrentIndex(0);
     setIsVideoLoading(false);
     setVideoError(null);
+    setIsFullscreen(true);
   };
 
   const handleNextMedia = () => {
     if (selectedPost && selectedPost.items) {
       const nextIndex = (currentIndex + 1) % selectedPost.items.length;
       setCurrentIndex(nextIndex);
+    }
+  };
+
+  const handlePrevMedia = () => {
+    if (selectedPost && selectedPost.items) {
+      const prevIndex = (currentIndex - 1 + selectedPost.items.length) % selectedPost.items.length;
+      setCurrentIndex(prevIndex);
     }
   };
 
@@ -189,10 +217,7 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
             const isVideo = firstMedia ? isVideoFile(firstMedia) : false;
 
             return (
-              <TouchableOpacity
-                style={styles.postItem}
-                onPress={() => handleMediaClick(item)}
-              >
+              <TouchableOpacity style={styles.postItem} onPress={() => handleMediaClick(item)}>
                 {firstMedia ? (
                   isVideo ? (
                     <View>
@@ -225,27 +250,40 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
 
       {selectedPost && (
         <Modal visible={true} transparent={true} animationType="fade">
-          <View style={styles.modalContainer}>
-            <TouchableOpacity style={styles.modalClose} onPress={handleCloseModal}>
-              <Text style={styles.closeText}>×</Text>
-            </TouchableOpacity>
-
-            {renderMediaItem()}
-            <Text style={styles.descriptionText}>{selectedPost.description}</Text>
-
-            <View style={styles.slideControls}>
-              <Text style={styles.slideIndicator}>
-                {`${currentIndex + 1} / ${selectedPost.items.length}`}
-              </Text>
-              <TouchableOpacity style={styles.slideButton} onPress={handleNextMedia}>
-                <Text style={styles.slideText}>Next</Text>
+          <SafeAreaView style={[styles.modalContainer, isFullscreen && styles.fullscreenModal]}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity style={styles.modalClose} onPress={handleCloseModal}>
+                <Ionicons name="close" size={28} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.fullscreenButton} onPress={toggleFullscreen}>
+                <Ionicons
+                  name={isFullscreen ? 'contract-outline' : 'expand-outline'}
+                  size={24}
+                  color="#fff"
+                />
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity style={styles.closeViewButton} onPress={handleCloseModal}>
-              <Text style={styles.closeViewText}>Close View</Text>
-            </TouchableOpacity>
-          </View>
+            {renderMediaItem()}
+
+            <View style={styles.controlsContainer}>
+              <Text style={styles.descriptionText}>{selectedPost.description}</Text>
+
+              {selectedPost.items && selectedPost.items.length > 1 && (
+                <View style={styles.slideControls}>
+                  <TouchableOpacity style={styles.navButton} onPress={handlePrevMedia}>
+                    <Ionicons name="chevron-back" size={24} color="#fff" />
+                  </TouchableOpacity>
+                  <Text style={styles.slideIndicator}>
+                    {`${currentIndex + 1} / ${selectedPost.items.length}`}
+                  </Text>
+                  <TouchableOpacity style={styles.navButton} onPress={handleNextMedia}>
+                    <Ionicons name="chevron-forward" size={24} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          </SafeAreaView>
         </Modal>
       )}
     </View>
@@ -272,72 +310,102 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  modalClose: {
+  fullscreenModal: {
+    padding: 0,
+    margin: 0,
+  },
+  modalHeader: {
     position: 'absolute',
-    top: 40,
-    right: 20,
+    top: 20,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
     zIndex: 10,
   },
-  closeText: {
-    fontSize: 30,
-    color: '#fff',
+  modalClose: {
+    padding: 10,
+  },
+  fullscreenButton: {
+    padding: 10,
   },
   mediaContainer: {
-    position: 'relative',
-    width: 300,
-    height: 400,
+    width: SCREEN_WIDTH * 0.95,
+    height: SCREEN_HEIGHT * 0.7,
     borderRadius: 10,
+    overflow: 'hidden',
   },
-  media: {
+  fullscreenMedia: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+    borderRadius: 0,
+  },
+  imageViewerContainer: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT * 0.75,
+    flex: 1,
+  },
+  fullscreenImage: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+  },
+  imageViewer: {
     width: '100%',
     height: '100%',
-    borderRadius: 10,
+  },
+  fullscreenImageViewer: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
   },
   videoView: {
     width: '100%',
     height: '100%',
     borderRadius: 10,
   },
+  fullscreenVideo: {
+    borderRadius: 0,
+  },
+  controlsContainer: {
+    position: 'absolute',
+    bottom: 20,
+    width: '100%',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    zIndex: 10,
+  },
   slideControls: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginTop: 10,
+  },
+  navButton: {
+    padding: 8,
   },
   slideIndicator: {
     color: '#fff',
     fontSize: 16,
-    marginRight: 10,
-  },
-  slideButton: {
-    padding: 10,
-    backgroundColor: '#007bff',
-    borderRadius: 5,
-  },
-  slideText: {
-    color: '#fff',
-    fontSize: 16,
-  },
-  closeViewButton: {
-    marginTop: 10,
-    padding: 10,
-    backgroundColor: '#6c757d',
-    borderRadius: 5,
-  },
-  closeViewText: {
-    color: '#fff',
-    fontSize: 16,
+    fontWeight: '600',
+    marginHorizontal: 12,
   },
   descriptionText: {
     color: '#fff',
     fontSize: 16,
-    marginTop: 20,
     textAlign: 'center',
     paddingHorizontal: 20,
+    marginBottom: 10,
+    fontWeight: '500',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 8,
+    paddingVertical: 8,
   },
   noPostsText: {
     textAlign: 'center',

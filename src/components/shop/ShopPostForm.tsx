@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback, useEffect, useContext } from "react";
 import {
   View,
   Text,
@@ -11,19 +11,26 @@ import {
   ActivityIndicator,
   Keyboard,
   Platform,
+  KeyboardAvoidingView,
+  ScrollView,
+  Modal,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import { Ionicons } from "@expo/vector-icons";
 import axios from "axios";
+import { SubscriptionContext } from "../../components/SubscriptionProvider";
+import SubscriptionRequired from "@/components/RequiredSubscription";
 
-const ShopPostForm = ({ shopId }) => {
+const ShopPostForm = ({ shopId, onPostCreated }) => {
   const [description, setDescription] = useState("");
   const [media, setMedia] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const textInputRef = useRef(null);
   const renderCountRef = useRef(0);
+  const { subscriptionStatus } = useContext(SubscriptionContext);
 
   useEffect(() => {
     renderCountRef.current += 1;
@@ -71,7 +78,7 @@ const ShopPostForm = ({ shopId }) => {
             }
 
             if (info.size > 10 * 1024 * 1024) {
-              Alert.alert("Warning", `File "${name}" is too large (max 10 MB).`);
+              strategiWarning("Warning", `File "${name}" is too large (max 10 MB).`);
               return null;
             }
 
@@ -107,13 +114,40 @@ const ShopPostForm = ({ shopId }) => {
   const handleSubmit = useCallback(async () => {
     console.log("Submitting post");
     Keyboard.dismiss();
-    if (textInputRef.current) {
+    if (textIstrategiWarningnputRef.current) {
       textInputRef.current.blur();
       setIsFocused(false);
     }
 
-    if (!description.trim() && media.length === 0) {
-      Alert.alert("Error", "Please add a description or at least one media file.");
+    // Check subscription status
+    if (subscriptionStatus !== "standard" && subscriptionStatus !== "premium") {
+      setShowSubscriptionModal(true);
+      return;
+    }
+
+    if (!description.trim()) {
+      Alert.alert(
+        "Missing Description",
+        "Please add a description to your post.",
+        [
+          {
+            text: "OK",
+            style: "default",
+            onPress: () => {
+              if (textInputRef.current) {
+                textInputRef.current.focus();
+                setIsFocused(true);
+              }
+            },
+          },
+        ],
+        { cancelable: true }
+      );
+      return;
+    }
+
+    if (media.length === 0) {
+      Alert.alert("Error", "Please add at least one media file to your post.");
       return;
     }
 
@@ -144,9 +178,9 @@ const ShopPostForm = ({ shopId }) => {
       }
     }
 
-    if (validMedia.length === 0 && !description.trim()) {
+    if (validMedia.length === 0) {
       setLoading(false);
-      Alert.alert("Error", "No valid media files or description to submit.");
+      Alert.alert("Error", "No valid media files to submit.");
       setMedia([]);
       return;
     }
@@ -168,6 +202,11 @@ const ShopPostForm = ({ shopId }) => {
         successMessage += `\nWarning: ${failedMedia.length} file(s) failed to upload: ${failedMedia.join(", ")}.`;
       }
       Alert.alert("Success", successMessage);
+
+      if (response.data && onPostCreated) {
+        onPostCreated(response.data);
+      }
+
       setDescription("");
       setMedia([]);
     } catch (error) {
@@ -175,7 +214,7 @@ const ShopPostForm = ({ shopId }) => {
       if (error.code === "ECONNABORTED") {
         errorMessage = "Request timed out. Please check your network.";
       } else if (error.response) {
-        errorMessage = `Server error: ${error.response.data?.message || error.response.status}`;
+        errorMessage = `Server error: ${error.response.data?.error || error.response.status}`;
       } else if (error.message.includes("Network Error")) {
         errorMessage = "Network error. Please check your connection.";
       }
@@ -183,7 +222,7 @@ const ShopPostForm = ({ shopId }) => {
     } finally {
       setLoading(false);
     }
-  }, [description, media, shopId]);
+  }, [description, media, shopId, onPostCreated, subscriptionStatus]);
 
   const handleFocus = useCallback(() => {
     console.log("Description input focused");
@@ -242,79 +281,104 @@ const ShopPostForm = ({ shopId }) => {
   );
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Create a Post</Text>
-
-      <Text style={styles.subtitle}>Select Media (Images or Videos)</Text>
-      <TouchableOpacity
-        onPress={pickMedia}
-        style={styles.optionCard}
-        activeOpacity={0.7}
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 120 : 20}
+    >
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        <Ionicons
-          name="image-outline"
-          size={24}
-          color="#e67e22"
-          style={styles.optionIcon}
+        <Text style={styles.title}>Create a Post</Text>
+
+        <Text style={styles.subtitle}>Select Media (Images or Videos)</Text>
+        <TouchableOpacity
+          onPress={pickMedia}
+          style={styles.optionCard}
+          activeOpacity={0.7}
+        >
+          <Ionicons
+            name="image-outline"
+            size={24}
+            color="#e67e22"
+            style={styles.optionIcon}
+          />
+          <Text style={styles.optionText}>Add Images or Videos</Text>
+        </TouchableOpacity>
+
+        <FlatList
+          data={media}
+          renderItem={renderMediaItem}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.mediaPreviewContainer}
+          numColumns={3}
+          scrollEnabled={false}
+          keyboardShouldPersistTaps="always"
         />
-        <Text style={styles.optionText}>Add Images or Videos</Text>
-      </TouchableOpacity>
 
-      <FlatList
-        data={media}
-        renderItem={renderMediaItem}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.mediaPreviewContainer}
-        numColumns={3}
-        scrollEnabled={false}
-        keyboardShouldPersistTaps="always"
-      />
+        <TextInput
+          ref={textInputRef}
+          style={[styles.input, isFocused && styles.inputFocused]}
+          placeholder="Enter post description"
+          value={description}
+          onChangeText={setDescription}
+          multiline
+          numberOfLines={4}
+          returnKeyType="done"
+          blurOnSubmit={true}
+          onSubmitEditing={() => {
+            console.log("Description input submitted");
+            Keyboard.dismiss();
+            if (textInputRef.current) {
+              textInputRef.current.blur();
+              setIsFocused(false);
+            }
+          }}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          accessible={true}
+          accessibilityLabel="Post description input"
+        />
 
-      <TextInput
-        ref={textInputRef}
-        style={styles.input}
-        placeholder="Enter post description"
-        value={description}
-        onChangeText={setDescription}
-        multiline={false} // Temporarily disable multiline
-        returnKeyType="done"
-        blurOnSubmit={true}
-        onSubmitEditing={() => {
-          console.log("Description input submitted");
-          Keyboard.dismiss();
-          if (textInputRef.current) {
-            textInputRef.current.blur();
-            setIsFocused(false);
-          }
-        }}
-        onFocus={handleFocus}
-        onBlur={handleBlur}
-        accessible={true}
-        accessibilityLabel="Post description input"
-      />
+        <TouchableOpacity
+          onPress={handleSubmit}
+          disabled={loading}
+          activeOpacity={0.7}
+          style={[styles.button, loading && styles.buttonDisabled]}
+          accessible={true}
+          accessibilityLabel="Submit post"
+        >
+          {loading ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>Post</Text>
+          )}
+        </TouchableOpacity>
+      </ScrollView>
 
-      <TouchableOpacity
-        onPress={handleSubmit}
-        disabled={loading}
-        activeOpacity={0.7}
-        style={[styles.button, loading && styles.buttonDisabled]}
-        accessible={true}
-        accessibilityLabel="Submit post"
-      >
-        {loading ? (
-          <ActivityIndicator size="small" color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>Post</Text>
-        )}
-      </TouchableOpacity>
-    </View>
+      <Modal visible={showSubscriptionModal} animationType="slide" transparent>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowSubscriptionModal(false)}
+        >
+          <SubscriptionRequired />
+        </TouchableOpacity>
+      </Modal>
+    </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     backgroundColor: "#f9f9f9",
+    flex: 1,
+  },
+  scrollContent: {
     padding: 20,
+    paddingBottom: 40, // Extra padding to ensure content is not cut off
   },
   title: {
     fontSize: 24,
@@ -399,8 +463,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: "#fff",
     marginBottom: 15,
-    minHeight: 40,
-    zIndex: 1,
+    minHeight: 60, // Increased minHeight for better visibility
+  },
+  inputFocused: {
+    borderColor: "#28a745",
+    shadowColor: "#28a745",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
   },
   button: {
     backgroundColor: "#28a745",
@@ -415,6 +485,12 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.5)",
   },
 });
 

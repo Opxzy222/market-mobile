@@ -221,28 +221,35 @@ const clearNonSuggestionData = async (): Promise<void> => {
   }
 
   try {
-    // Clear all SQLite tables except suggestions
+    // Clear SQLite secure_data
     await db.runAsync('DELETE FROM secure_data;');
     console.log('Cleared secure_data table in SQLite');
 
-    // Clear all AsyncStorage keys, including suggestions
-    const asyncKeys = await AsyncStorage.getAllKeys();
-    console.log('AsyncStorage keys before clearing:', asyncKeys);
-    for (const key of asyncKeys) {
-      await AsyncStorage.removeItem(key);
-      console.log('Removed AsyncStorage key:', key);
-    }
+    // Clear all AsyncStorage
+    await AsyncStorage.clear();
     console.log('Cleared all AsyncStorage data');
 
-    // Verify remaining SQLite tables
+    // Verify AsyncStorage is empty
+    const remainingAsyncKeys = await AsyncStorage.getAllKeys();
+    if (remainingAsyncKeys.length > 0) {
+      console.warn('AsyncStorage keys persist after clearing:', remainingAsyncKeys);
+    } else {
+      console.log('AsyncStorage is empty after clearing');
+    }
+
+    // Verify SQLite secure_data is empty
+    const secureData = await db.getAllAsync('SELECT * FROM secure_data;');
+    if (secureData.length > 0) {
+      console.warn('Secure data persists in SQLite:', secureData);
+    } else {
+      console.log('SQLite secure_data table is empty');
+    }
+
+    // Verify SQLite tables
     const tables = await db.getAllAsync<{ name: string }>(
       "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';"
     );
     console.log('Remaining SQLite tables:', tables.map(t => t.name));
-
-    // Verify remaining AsyncStorage keys
-    const remainingAsyncKeys = await AsyncStorage.getAllKeys();
-    console.log('Remaining AsyncStorage keys after clearing:', remainingAsyncKeys);
   } catch (error) {
     console.error('Error clearing non-suggestion data:', error);
     throw error;

@@ -6,7 +6,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StyleSheet,
-  Alert, StatusBar
+  Alert,
+  StatusBar,
 } from 'react-native';
 import axios from 'axios';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -104,6 +105,12 @@ const SubcategoryList = () => {
     setIsFetchingResults(true);
 
     try {
+      // Increment search count
+      let count = parseInt(await AsyncStorage.getItem('searchCount') || '0', 10);
+      count += 1;
+      await AsyncStorage.setItem('searchCount', count.toString());
+      console.log('Search count incremented:', count);
+
       const locationServicesEnabled = await Location.hasServicesEnabledAsync();
       if (!locationServicesEnabled) {
         Alert.alert(
@@ -231,7 +238,7 @@ const SubcategoryList = () => {
       <LinearGradient colors={['#F7FAFC', '#E5E7EB']} style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity
-            onPress={() => router.back()} // Changed to router.back
+            onPress={() => router.back()}
             style={styles.backButton}
           >
             <MaterialIcons name="arrow-back" size={26} color="white" />

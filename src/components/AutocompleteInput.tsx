@@ -7,33 +7,10 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Keyboard,
 } from 'react-native';
 import debounce from 'lodash.debounce';
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-let initializeDatabase = async () => {
-  console.log('Fallback: Skipping database initialization');
-};
-let getSuggestions = async () => [];
-let cacheSuggestions = async () => {
-  console.error('Fallback failed: Storage module not loaded');
-  throw new Error('Storage module not loaded');
-};
-let getSuggestionsCount = async () => 0;
-
-try {
-  const storage = require('../storage/storage');
-  if (storage && typeof storage === 'object' && storage.initializeDatabase) {
-    initializeDatabase = storage.initializeDatabase;
-    getSuggestions = storage.getSuggestions || getSuggestions;
-    cacheSuggestions = storage.cacheSuggestions || cacheSuggestions;
-    getSuggestionsCount = storage.getSuggestionsCount || getSuggestionsCount;
-  }
-} catch (error) {
-  console.error('Failed to load storage module:', error);
-}
+import { initializeDatabase, getSuggestions, cacheSuggestions, getSuggestionsCount } from '../storage/storage';
 
 const AutocompleteInput = ({
   value,
@@ -44,92 +21,57 @@ const AutocompleteInput = ({
   inputRef,
   onSuggestionsStateChange,
 }) => {
-  const [suggestions, setSuggestions] = useState([]);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [loading, setIsLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const [suggestionsHeight, setSuggestionsHeight] = useState(0);
-  const scrollViewRef = useRef(null);
-  const textInputRef = useRef(null);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const textInputRef = useRef<TextInput>(null);
 
   useEffect(() => {
     const init = async () => {
-      const initialized = await AsyncStorage.getItem('suggestions_initialized');
-      if (initialized === 'true') {
-        console.log('Suggestions already initialized, skipping');
-        return;
-      }
-
       try {
         await initializeDatabase();
-        console.log('Database initialized, populating suggestions');
-        await populateInitialSuggestions();
-        await AsyncStorage.setItem('suggestions_initialized', 'true');
+        console.log('Database initialized, checking suggestions');
+        const count = await getSuggestionsCount();
+        if (count < 1000) {
+          console.log('Populating initial suggestions');
+          await populateInitialSuggestions();
+        } else {
+          console.log('Suggestions sufficiently populated, count:', count);
+        }
       } catch (err) {
         console.error('Initialization failed:', err);
-        setError('Failed to initialize suggestions');
-        await populateInitialSuggestions(true); // Fallback to AsyncStorage
+        setError('Failed to initialize database');
+        await populateInitialSuggestions(true); // Retry with backend fetch
       }
     };
     init();
   }, []);
 
-  const populateInitialSuggestions = async (useAsyncStorage = false, retryCount = 0, maxRetries = 3) => {
+  const populateInitialSuggestions = async (forceFetch = false) => {
     try {
-      let count = 0;
-      if (!useAsyncStorage) {
-        count = await getSuggestionsCount();
-        console.log('Suggestions count:', count);
-      } else {
-        const cached = await AsyncStorage.getItem('suggestions');
-        count = cached ? JSON.parse(cached).length : 0;
-        console.log('AsyncStorage suggestions count:', count);
-      }
-      if (count >= 1000) {
+      const count = await getSuggestionsCount();
+      console.log('Suggestions count:', count);
+      if (!forceFetch && count >= 160000) {
         console.log('Suggestions sufficiently populated, skipping fetch');
         return;
       }
 
       setIsLoading(true);
-      let response;
-      try {
-        response = await axios.get('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/all-suggestions/', {
-          timeout: 60000,
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'User-Agent': 'market-mobile/1.0.0',
-          },
-          validateStatus: status => status >= 200 && status < 300,
-        });
-      } catch (axiosError) {
-        console.error('Axios fetch failed:', axiosError);
-        console.log('Falling back to fetch');
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 60000);
-        const fetchResponse = await fetch('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/all-suggestions/', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'User-Agent': 'market-mobile/1.0.0',
-          },
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
+      const response = await axios.get('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/all-suggestions/', {
+        timeout: 60000,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'market-mobile/1.0.0',
+        },
+        validateStatus: status => status >= 200 && status < 300,
+      });
 
-        const contentType = fetchResponse.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-          const text = await fetchResponse.text();
-          console.error('Non-JSON response:', text.slice(0, 100));
-          throw new Error('Invalid response: Expected JSON, received ' + contentType);
-        }
-
-        response = { data: await fetchResponse.json() };
-      }
-
-      console.log('Response status:', response.status || fetchResponse?.status || 'unknown');
-      console.log('Response headers:', response.headers || fetchResponse?.headers);
+      console.log('Response status:', response.status);
+      console.log('Response headers:', response.headers);
 
       const rawSuggestions = response.data.suggestions
         .map((item: any, index: number) => {
@@ -141,6 +83,7 @@ const AutocompleteInput = ({
           return null;
         })
         .filter((name: string | null) => name) as string[];
+
       console.log('Raw API suggestions:', rawSuggestions.length);
 
       const maxSuggestions = 180000;
@@ -157,14 +100,8 @@ const AutocompleteInput = ({
       }
       console.log('Unique suggestions:', uniqueSuggestions.length);
 
-      console.log('Attempting to cache suggestions');
-      if (useAsyncStorage) {
-        await AsyncStorage.setItem('suggestions', JSON.stringify(uniqueSuggestions));
-        console.log('Cached suggestions in AsyncStorage');
-      } else {
-        await cacheSuggestions(uniqueSuggestions);
-        console.log('Suggestions cached successfully in SQLite');
-      }
+      await cacheSuggestions(uniqueSuggestions);
+      console.log('Suggestions cached successfully in SQLite');
     } catch (error) {
       console.error('Error populating suggestions:', error);
       if (axios.isAxiosError(error)) {
@@ -176,30 +113,10 @@ const AutocompleteInput = ({
             data: error.response.data,
             headers: error.response.headers,
           } : null,
-          request: error.request ? {
-            method: error.request.method,
-            url: error.request.url,
-            headers: error.request.headers,
-          } : null,
         });
         setError(`Failed to load suggestions: ${error.response?.status || 'Network error'}`);
-      }
-      if (
-        error.message.includes('NOT NULL constraint failed') ||
-        error.message.includes('Cannot convert') ||
-        error.message.includes('cannot start a transaction') ||
-        error.message.includes('NativeDatabase')
-      ) {
-        console.log('Aborting retries due to SQLite or transaction error');
-        setError('Database error, using fallback storage');
-        if (!useAsyncStorage) {
-          await populateInitialSuggestions(true, 0, maxRetries);
-        }
-        return;
-      }
-      if (retryCount < maxRetries) {
-        console.log(`Retrying fetch, attempt ${retryCount + 1}`);
-        setTimeout(() => populateInitialSuggestions(useAsyncStorage, retryCount + 1, maxRetries), Math.pow(2, retryCount) * 5000);
+      } else {
+        setError('Database or network error');
       }
     } finally {
       setIsLoading(false);
@@ -216,14 +133,29 @@ const AutocompleteInput = ({
       setIsLoading(true);
       try {
         let results = await getSuggestions(input, 20, 0);
-        if (results.length === 0 && Platform.OS !== 'web') {
-          console.log('No SQLite suggestions, trying AsyncStorage fallback');
-          const cached = await AsyncStorage.getItem('suggestions');
-          if (cached) {
-            const allSuggestions = JSON.parse(cached);
-            results = allSuggestions
-              .filter((name: string) => name.toLowerCase().startsWith(input.toLowerCase()))
-              .slice(0, 20);
+        if (results.length === 0) {
+          console.log('No SQLite suggestions, fetching from backend');
+          const response = await axios.get('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/all-suggestions/', {
+            timeout: 60000,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'User-Agent': 'market-mobile/1.0.0',
+            },
+            validateStatus: status => status >= 200 && status < 300,
+          });
+
+          const rawSuggestions = response.data.suggestions
+            .map((item: any) => (item && typeof item.name === 'string' && item.name.trim().length > 0 ? item.name.trim() : null))
+            .filter((name: string | null) => name) as string[];
+
+          results = rawSuggestions
+            .filter(name => name.toLowerCase().startsWith(input.toLowerCase()))
+            .slice(0, 20);
+
+          if (results.length > 0) {
+            await cacheSuggestions(results);
+            console.log('Cached backend suggestions in SQLite');
           }
         }
         console.log('Fetched suggestions:', results.slice(0, 20));
@@ -243,14 +175,14 @@ const AutocompleteInput = ({
     []
   );
 
-  const handleInput = (text) => {
+  const handleInput = (text: string) => {
     console.log('Input changed:', text);
     onChangeText(text);
     fetchSuggestions(text);
   };
 
   const handleSelectSuggestion = useCallback(
-    (suggestion) => {
+    (suggestion: string) => {
       console.log('Suggestion selected:', suggestion);
       onChangeText(suggestion);
       setSuggestions([]);
@@ -323,7 +255,7 @@ const AutocompleteInput = ({
           onBlur={handleBlur}
           onSubmitEditing={handleSubmitEditing}
           placeholder="What are you looking for?"
-          placeholderTextColor='#5A5A5A'
+          placeholderTextColor="#5A5A5A"
           returnKeyType="search"
           autoFocus={false}
           blurOnSubmit={true}

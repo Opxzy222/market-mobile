@@ -86,7 +86,7 @@ const ChangePassword = () => {
     <LinearGradient colors={["#F5F5F5", "#E0E0E0"]} style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <View style={styles.header}>
-      <TouchableOpacity onPress={() => router.replace(prevRoute || '/(tabs)/profile')}>
+      <TouchableOpacity onPress={() => router.navigate('(tabs)/profile')}>
           <MaterialIcons name="arrow-back" size={26} color="white" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Change Password</Text>

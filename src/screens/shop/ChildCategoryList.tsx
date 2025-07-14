@@ -159,7 +159,10 @@ const ChildCategoryList = () => {
       <SafeAreaView style={styles.centeredContainer}>
         <LinearGradient colors={['#F7FAFC', '#E5E7EB']} style={styles.centeredContainer}>
           <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <TouchableOpacity
+              onPress={() => router.navigate('(tabs)/shop')}
+              style={styles.backButton}
+            >
               <MaterialIcons name="arrow-back" size={26} color="white" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>{categoryName || 'Error'}</Text>

@@ -129,7 +129,7 @@ const AllRecentlyVisitedShops = () => {
       >
         <View style={styles.header}>
           <TouchableOpacity
-            onPress={() => router.replace(prevRoute || "/(tabs)/shop")}
+            onPress={() => router.navigate("(tabs)/shop")}
             style={styles.backButton}
           >
             <MaterialIcons name="arrow-back" size={26} color="white" />

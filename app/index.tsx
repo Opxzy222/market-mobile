@@ -1,6 +1,7 @@
-import { View, Text } from "react-native";
-import Homepage from "@/screens/homepage";
-import React from "react";
+import { View, Text } from 'react-native';
+import Homepage from '@/screens/homepage';
+import React, { useEffect } from 'react';
+import Toast from 'react-native-toast-message';
 
 class ErrorBoundary extends React.Component {
   state = { hasError: false, error: null };
@@ -12,7 +13,7 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <Text>Error: {this.state.error?.toString()}</Text>
         </View>
       );
@@ -22,12 +23,14 @@ class ErrorBoundary extends React.Component {
 }
 
 export default function Index() {
-  console.log("Rendering Index");
+  console.log('Rendering Index');
+
   return (
     <View style={{ flex: 1 }}>
       <ErrorBoundary>
         <Homepage />
       </ErrorBoundary>
+      <Toast />
     </View>
   );
 }

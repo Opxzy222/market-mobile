@@ -11,11 +11,10 @@ import {
   Platform,
   KeyboardAvoidingView,
   TouchableWithoutFeedback,
-  Keyboard, StatusBar
+  Keyboard,
+  StatusBar,
 } from "react-native";
 import axios from "axios";
-import * as FileSystem from "expo-file-system";
-import * as Sharing from "expo-sharing";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import SubscriptionProvider, { SubscriptionContext } from "../../components/SubscriptionProvider";
 import { MaterialIcons } from "@expo/vector-icons";
@@ -30,6 +29,7 @@ const GenerateReceipt = () => {
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [shopProducts, setShopProducts] = useState([]);
   const [NameLoading, setNameLoading] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false); // State for loading
   const [editIndex, setEditIndex] = useState(null);
 
   const params = useLocalSearchParams();
@@ -162,14 +162,17 @@ const GenerateReceipt = () => {
       return;
     }
 
-    const formData = new FormData();
-    formData.append("shop_id", shopId);
-    formData.append("customer_name", customerName);
-    formData.append("items", JSON.stringify(items));
-    formData.append("total_amount", totalAmount.toString());
-    formData.append("customer_id", customerId);
+    if (isGenerating) return; // Prevent multiple clicks
 
+    setIsGenerating(true); // Start loading
     try {
+      const formData = new FormData();
+      formData.append("shop_id", shopId);
+      formData.append("customer_name", customerName);
+      formData.append("items", JSON.stringify(items));
+      formData.append("total_amount", totalAmount.toString());
+      formData.append("customer_id", customerId);
+
       const response = await axios.post(
         "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/generate-receipt/",
         formData,
@@ -179,58 +182,13 @@ const GenerateReceipt = () => {
       if (response.data.template_url) {
         setReceiptUrl(response.data.template_url);
       } else {
-        Alert.alert("Success", "Receipt generated! Downloading...");
-        downloadReceipt(response.data);
+        Alert.alert("Success", "Receipt Generated");
       }
     } catch (error) {
       console.error("Error generating receipt:", error);
       Alert.alert("Error", "Could not generate receipt");
-    }
-  };
-
-  const downloadReceipt = async (receiptData) => {
-    console.log("Downloading receipt");
-    if (!receiptData || !receiptData.pdf_content) {
-      Alert.alert("Error", "Receipt file is missing or corrupted.");
-      return;
-    }
-
-    const fileName = `receipt_${receiptData.id}.pdf`;
-
-    if (Platform.OS === "web") {
-      try {
-        const byteCharacters = atob(receiptData.pdf_content.replace(/\s/g, ""));
-        const byteNumbers = new Array(byteCharacters.length)
-          .fill(0)
-          .map((_, i) => byteCharacters.charCodeAt(i));
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: "application/pdf" });
-        const url = URL.createObjectURL(blob);
-
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      } catch (error) {
-        Alert.alert("Error", "Failed to download receipt.");
-      }
-    } else {
-      const receiptUri = FileSystem.documentDirectory + fileName;
-      try {
-        await FileSystem.writeAsStringAsync(receiptUri, receiptData.pdf_content, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(receiptUri);
-        } else {
-          Alert.alert("Receipt saved!", `Saved at: ${receiptUri}`);
-        }
-      } catch (error) {
-        console.error("Error saving receipt:", error);
-      }
+    } finally {
+      setIsGenerating(false); // Stop loading
     }
   };
 
@@ -245,181 +203,195 @@ const GenerateReceipt = () => {
   }, [newItem.name, shopProducts]);
 
   // Memoize renderHeader
-  const renderHeader = useMemo(() => (
-    <View style={styles.card}>
-      <View>
-        <View style={styles.inputContainer}>
-          <TextInput
-            ref={customerIdRef}
-            style={styles.input}
-            placeholder="Customer Profile ID"
-            value={customerId}
-            keyboardType="numeric"
-            maxLength={8}
-            onChangeText={setCustomerId}
-            onFocus={() => console.log("Customer ID input focused")}
-            onBlur={() => console.log("Customer ID input blurred")}
-            returnKeyType="next"
-            onSubmitEditing={() => itemNameRef.current?.focus()}
-          />
-          {NameLoading && <ActivityIndicator size="small" color="#007BFF" />}
-        </View>
+  const renderHeader = useMemo(
+    () => (
+      <View style={styles.card}>
+        <View>
+          <View style={styles.inputContainer}>
+            <TextInput
+              ref={customerIdRef}
+              style={styles.input}
+              placeholder="Customer Profile ID"
+              value={customerId}
+              keyboardType="numeric"
+              maxLength={8}
+              onChangeText={setCustomerId}
+              onFocus={() => console.log("Customer ID input focused")}
+              onBlur={() => console.log("Customer ID input blurred")}
+              returnKeyType="next"
+              onSubmitEditing={() => itemNameRef.current?.focus()}
+            />
+            {NameLoading && <ActivityIndicator size="small" color="#007BFF" />}
+          </View>
 
-        <TextInput
-          style={styles.disabledInput}
-          placeholder="Customer Name"
-          value={customerName}
-          editable={false}
-        />
+          <TextInput
+            style={styles.disabledInput}
+            placeholder="Customer Name"
+            value={customerName}
+            editable={false}
+          />
 
-        {/* Item Input Fields */}
-        <View style={styles.itemInputRow}>
-          <TextInput
-            ref={itemNameRef}
-            style={[styles.itemInput, styles.itemsInput]}
-            placeholder="Item Name"
-            value={newItem.name}
-            onChangeText={(text) => {
-              setNewItem({ ...newItem, name: text });
-              handleSearch(text);
-            }}
-            onFocus={() => console.log("Item Name input focused")}
-            onBlur={() => console.log("Item Name input blurred")}
-            returnKeyType="next"
-            onSubmitEditing={() => qtyRef.current?.focus()}
-          />
-          <TextInput
-            ref={qtyRef}
-            style={[styles.itemInput, styles.qtyInput]}
-            placeholder="Qty"
-            keyboardType="numeric"
-            value={newItem.qty}
-            onChangeText={(text) => setNewItem({ ...newItem, qty: text })}
-            onFocus={() => console.log("Qty input focused")}
-            onBlur={() => console.log("Qty input blurred")}
-            returnKeyType="next"
-            onSubmitEditing={() => priceRef.current?.focus()}
-          />
-          <TextInput
-            ref={priceRef}
-            style={[styles.itemInput, styles.priceInput]}
-            placeholder="Price"
-            keyboardType="numeric"
-            value={newItem.price}
-            onChangeText={(text) => setNewItem({ ...newItem, price: text })}
-            onFocus={() => console.log("Price input focused")}
-            onBlur={() => console.log("Price input blurred")}
-            returnKeyType="done"
-            onSubmitEditing={addItem}
-          />
-        </View>
-
-        {/* Product Suggestions */}
-        {filteredProductsMemo.length > 0 && (
-          <View style={styles.suggestionContainer}>
-            <FlatList
-              data={filteredProductsMemo}
-              style={styles.suggestionsList}
-              keyExtractor={(item, index) => index.toString()}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.suggestion}
-                  onPress={() => selectProduct(item)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.suggestionText}>{item || "N/A"}</Text>
-                </TouchableOpacity>
-              )}
-              keyboardShouldPersistTaps="always"
-              nestedScrollEnabled
+          {/* Item Input Fields */}
+          <View style={styles.itemInputRow}>
+            <TextInput
+              ref={itemNameRef}
+              style={[styles.itemInput, styles.itemsInput]}
+              placeholder="Item Name"
+              value={newItem.name}
+              onChangeText={(text) => {
+                setNewItem({ ...newItem, name: text });
+                handleSearch(text);
+              }}
+              onFocus={() => console.log("Item Name input focused")}
+              onBlur={() => console.log("Item Name input blurred")}
+              returnKeyType="next"
+              onSubmitEditing={() => qtyRef.current?.focus()}
+            />
+            <TextInput
+              ref={qtyRef}
+              style={[styles.itemInput, styles.qtyInput]}
+              placeholder="Qty"
+              keyboardType="numeric"
+              value={newItem.qty}
+              onChangeText={(text) => setNewItem({ ...newItem, qty: text })}
+              onFocus={() => console.log("Qty input focused")}
+              onBlur={() => console.log("Qty input blurred")}
+              returnKeyType="next"
+              onSubmitEditing={() => priceRef.current?.focus()}
+            />
+            <TextInput
+              ref={priceRef}
+              style={[styles.itemInput, styles.priceInput]}
+              placeholder="Price"
+              keyboardType="numeric"
+              value={newItem.price}
+              onChangeText={(text) => setNewItem({ ...newItem, price: text })}
+              onFocus={() => console.log("Price input focused")}
+              onBlur={() => console.log("Price input blurred")}
+              returnKeyType="done"
+              onSubmitEditing={addItem}
             />
           </View>
-        )}
 
-        <TouchableOpacity
-          style={styles.button}
-          onPress={addItem}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.buttonText}>Add Item</Text>
-        </TouchableOpacity>
+          {/* Product Suggestions */}
+          {filteredProductsMemo.length > 0 && (
+            <View style={styles.suggestionContainer}>
+              <FlatList
+                data={filteredProductsMemo}
+                style={styles.suggestionsList}
+                keyExtractor={(item, index) => index.toString()}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={styles.suggestion}
+                    onPress={() => selectProduct(item)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.suggestionText}>{item || "N/A"}</Text>
+                  </TouchableOpacity>
+                )}
+                keyboardShouldPersistTaps="always"
+                nestedScrollEnabled
+              />
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={styles.button}
+            onPress={addItem}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.buttonText}>Add Item</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-    </View>
-  ), [customerId, customerName, newItem, filteredProductsMemo, NameLoading]);
+    ),
+    [customerId, customerName, newItem, filteredProductsMemo, NameLoading]
+  );
 
   // Memoize renderContent
-  const renderContent = useMemo(() => (
-    <View style={styles.card}>
-      <FlatList
-        data={items}
-        keyExtractor={(item, index) => index.toString()}
-        ListHeaderComponent={() => (
-          <View style={styles.tableHeader}>
-            <Text style={[styles.tableHeaderText, styles.tableRowItem]}>Item</Text>
-            <Text style={[styles.tableHeaderText, styles.tableRowQtyy]}>Qty</Text>
-            <Text style={[styles.tableHeaderText, styles.tableRowPrice]}>Price</Text>
-            <Text style={[styles.tableHeaderText, styles.tableRowTotal]}>Total</Text>
-            <View style={styles.removeButton} />
-          </View>
-        )}
-        renderItem={({ item, index }) => (
-          <View style={styles.tableRow}>
-            <Text style={[styles.tableRowText, styles.tableRowItem]}>
-              {item.name || "N/A"}
-            </Text>
-            <Text style={[styles.tableRowText, styles.tableRowQty]}>
-              {item.qty || "0"}
-            </Text>
-            <Text style={[styles.tableRowText, styles.tableRowPrice]}>
-              ₦{item.price || "0"}
-            </Text>
-            <Text style={[styles.tableRowText, styles.tableRowTotal]}>
-              ₦{Number(item.total || 0).toLocaleString(undefined, {
-                minimumFractionDigits: Number(item.total || 0) % 1 === 0 ? 0 : 2,
-                maximumFractionDigits: 2,
-              })}
-            </Text>
-            <TouchableOpacity
-              onPress={() => removeItem(index)}
-              style={styles.removeButton}
-              activeOpacity={0.7}
-            >
-              <MaterialIcons name="delete" size={18} color="red" />
-            </TouchableOpacity>
-          </View>
-        )}
-        nestedScrollEnabled
-        keyboardShouldPersistTaps="always"
-      />
-      <View style={styles.totalContainer}>
-        <Text style={styles.totalText}>
-          Total: ₦{Number(totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-        </Text>
-      </View>
+  const renderContent = useMemo(
+    () => (
+      <View style={styles.card}>
+        <FlatList
+          data={items}
+          keyExtractor={(item, index) => index.toString()}
+          ListHeaderComponent={() => (
+            <View style={styles.tableHeader}>
+              <Text style={[styles.tableHeaderText, styles.tableRowItem]}>Item</Text>
+              <Text style={[styles.tableHeaderText, styles.tableRowQtyy]}>Qty</Text>
+              <Text style={[styles.tableHeaderText, styles.tableRowPrice]}>Price</Text>
+              <Text style={[styles.tableHeaderText, styles.tableRowTotal]}>Total</Text>
+              <View style={styles.removeButton} />
+            </View>
+          )}
+          renderItem={({ item, index }) => (
+            <View style={styles.tableRow}>
+              <Text style={[styles.tableRowText, styles.tableRowItem]}>
+                {item.name || "N/A"}
+              </Text>
+              <Text style={[styles.tableRowText, styles.tableRowQty]}>
+                {item.qty || "0"}
+              </Text>
+              <Text style={[styles.tableRowText, styles.tableRowPrice]}>
+                ₦{item.price || "0"}
+              </Text>
+              <Text style={[styles.tableRowText, styles.tableRowTotal]}>
+                ₦{Number(item.total || 0).toLocaleString(undefined, {
+                  minimumFractionDigits: Number(item.total || 0) % 1 === 0 ? 0 : 2,
+                  maximumFractionDigits: 2,
+                })}
+              </Text>
+              <TouchableOpacity
+                onPress={() => removeItem(index)}
+                style={styles.removeButton}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="delete" size={18} color="red" />
+              </TouchableOpacity>
+            </View>
+          )}
+          nestedScrollEnabled
+          keyboardShouldPersistTaps="always"
+        />
+        <View style={styles.totalContainer}>
+          <Text style={styles.totalText}>
+            Total: ₦{Number(totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+          </Text>
+        </View>
 
-      <TouchableOpacity
-        onPress={generateReceipt}
-        style={styles.primaryButton}
-        activeOpacity={0.7}
-      >
-        <Text style={styles.primaryButtonText}>Generate Receipt</Text>
-      </TouchableOpacity>
-
-      {receiptUrl && (
         <TouchableOpacity
-          onPress={() => Alert.alert("Download", "Opening Receipt...")}
-          style={styles.button}
+          onPress={generateReceipt}
+          style={[styles.primaryButton, isGenerating && styles.disabledButton]}
+          disabled={isGenerating}
           activeOpacity={0.7}
         >
-          <Text style={{ color: "white" }}>Download Receipt</Text>
+          {isGenerating ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color="#fff" />
+              <Text style={[styles.primaryButtonText, styles.loadingText]}>Generating...</Text>
+            </View>
+          ) : (
+            <Text style={styles.primaryButtonText}>Generate Receipt</Text>
+          )}
         </TouchableOpacity>
-      )}
-    </View>
-  ), [items, totalAmount, receiptUrl]);
+
+        {receiptUrl && (
+          <TouchableOpacity
+            onPress={() => Alert.alert("Download", "Opening Receipt...")}
+            style={styles.button}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.buttonText}>Download Receipt</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    ),
+    [items, totalAmount, receiptUrl, isGenerating]
+  );
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
-      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
+      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={{ flex: 1 }}>
           <View style={styles.header}>
@@ -456,7 +428,7 @@ const GenerateReceipt = () => {
   );
 };
 
-// Styles remain unchanged
+// Styles (unchanged from previous, included for completeness)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -478,7 +450,7 @@ const styles = StyleSheet.create({
   backButton: {
     padding: 5,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
   },
   headerTitle: {
     fontSize: 20,
@@ -670,6 +642,18 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "bold",
+  },
+  disabledButton: {
+    backgroundColor: "#6c757d",
+    opacity: 0.7,
+  },
+  loadingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loadingText: {
+    marginLeft: 8,
   },
   suggestionContainer: {
     marginTop: 5,

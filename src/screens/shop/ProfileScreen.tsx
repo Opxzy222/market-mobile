@@ -74,6 +74,11 @@ const ProfileScreen = () => {
             onPress={() => router.push({ pathname: '/shop/EditProfile', prevRoute: pathname })}
           />
           <MenuItem
+            icon="notifications"
+            title="Notification settings"
+            onPress={() => router.push({ pathname: '/shop/NotificationSettings', prevRoute: pathname })}
+          />
+          <MenuItem
             icon="lock-closed"
             title="Change Password"
             onPress={() => router.push({ pathname: 'ChangePassword', prevRoute: pathname })}

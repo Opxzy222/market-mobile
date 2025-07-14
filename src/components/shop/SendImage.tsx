@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import {
   View,
   TouchableOpacity,
@@ -7,10 +7,13 @@ import {
   Alert,
   StyleSheet,
   ActivityIndicator,
+  Modal,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
 import { Ionicons } from "@expo/vector-icons";
+import { SubscriptionContext } from "../../components/SubscriptionProvider"; // Import SubscriptionContext
+import SubscriptionRequired from "@/components/RequiredSubscription"; // Import SubscriptionRequired
 
 const SendImage = ({ onSend }) => {
   console.log("SendImage render start");
@@ -19,6 +22,8 @@ const SendImage = ({ onSend }) => {
   const [imageValid, setImageValid] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false); // State for subscription modal
+  const { subscriptionStatus } = useContext(SubscriptionContext); // Access subscription status
 
   useEffect(() => {
     console.log("useEffect: selectedImage changed:", selectedImage);
@@ -66,9 +71,9 @@ const SendImage = ({ onSend }) => {
 
       console.log("Launching image picker...");
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images, // Use MediaTypeOptions.Images
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: false,
-        quality: 0.5, // Lower quality for old devices
+        quality: 0.5,
       });
 
       console.log("Picker result:", JSON.stringify(result, null, 2));
@@ -103,6 +108,12 @@ const SendImage = ({ onSend }) => {
   };
 
   const handleSend = async () => {
+    // Check subscription status
+    if (subscriptionStatus !== "standard" && subscriptionStatus !== "premium") {
+      setShowSubscriptionModal(true); // Show subscription modal
+      return;
+    }
+
     if (selectedImage && imageValid && !isLoading) {
       setIsLoading(true);
       console.log("Sending image:", selectedImage);
@@ -190,6 +201,16 @@ const SendImage = ({ onSend }) => {
           </View>
         </View>
       )}
+
+      <Modal visible={showSubscriptionModal} animationType="slide" transparent>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowSubscriptionModal(false)}
+        >
+          <SubscriptionRequired />
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 };
@@ -274,6 +295,12 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "bold",
     fontSize: 16,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.5)",
   },
 });
 

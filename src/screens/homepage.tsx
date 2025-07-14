@@ -42,7 +42,7 @@ const COLORS = {
   gradientStart: "#4B6CB7",
   gradientEnd: "#8B5CF6",
   goldAccent: "#D4A017",
-  statusBar: "#4B6CB7",
+  statusBar: "#4B6CB7", 
   headerBg: "#3A7BD5", // Kept unchanged
   fabBg: "#4A5ABA",
   darkBackground: "#1F2937",
@@ -211,7 +211,7 @@ const Homepage = () => {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
-      <StatusBar barStyle={isDarkMode ? "light-content" : "dark-content"} backgroundColor={COLORS.statusBar} />
+      <StatusBar barStyle={isDarkMode ? "light-content" : "dark-content"} backgroundColor='#2563EB' />
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
           <View style={styles.headerBrand}>

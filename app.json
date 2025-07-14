@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "market-mobile",
-    "slug": "myapp",
+    "slug": "market-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -14,14 +14,38 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.timeflies.marketmobile"
+      "bundleIdentifier": "com.timeflies.marketmobile",
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "infoPlist": {
+        "UIBackgroundModes": ["remote-notification"],
+        "NSUserNotificationsUsageDescription": "Allow this app to send you notifications about new followers, reviews, posts, and receipts.",
+        "NSLocationWhenInUseUsageDescription": "Allow this app to use your location to find nearby shops.",
+        "NSMotionUsageDescription": "Allow this app to access motion data to estimate small movements."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.timeflies.marketmobile"
+      "package": "com.timeflies.marketmobile",
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.INTERNET",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_PHONE_STATE",
+        "android.permission.CAMERA",
+        "android.permission.ACTIVITY_RECOGNITION"
+      ],
+      "edgeToEdgeEnabled": true
     },
     "web": {
       "bundler": "metro",
@@ -30,6 +54,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-dev-client",
       [
         "expo-image-picker",
         {
@@ -55,7 +80,67 @@
       "expo-font",
       "expo-secure-store",
       "expo-video",
-      "expo-web-browser"
+      "expo-web-browser",
+      ["@react-native-firebase/app"],
+      ["@react-native-firebase/messaging"],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#ffffff",
+          "androidMode": "default",
+          "androidCollapsedTitle": "#{unread_notifications} new messages",
+          "defaultChannel": "high_priority_channel",
+          "channels": [
+            {
+              "id": "high_priority_channel",
+              "name": "High Priority Notifications",
+              "importance": "high",
+              "sound": "default",
+              "vibrationPattern": [100, 200, 300, 400],
+              "enableVibrate": true
+            }
+          ]
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "buildToolsVersion": "35.0.0",
+            "minSdkVersion": 24,
+            "edgeToEdgeEnabled": true
+          },
+          "ios": {
+            "deploymentTarget": "15.1",
+            "useFrameworks": "static" // Required for AdMob on iOS
+          }
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location."
+        }
+      ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Allow $(PRODUCT_NAME) to access your device motion"
+        }
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-2360241039001516~8918197768",
+          "iosAppId": "ca-app-pub-2360241039001516~4122191720"
+        }
+      ],
+      "./plugins/firebase-manifest-fix.js",
+      "./plugins/withCustomNotificationChannel",
+      "./plugins/withDependencyFix"
     ],
     "experiments": {
       "typedRoutes": true

@@ -15,6 +15,7 @@ import {
 import { useVideoPlayer, VideoView } from "expo-video";
 import { Ionicons } from "@expo/vector-icons";
 import axios from "axios";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -23,11 +24,13 @@ const getFullUrl = (url) => {
   return url && url.startsWith("http") ? url : `${BASE_URL}${url || ""}`;
 };
 
-const AdminShopPosts = ({ posts, shopId }) => {
+// Add onPostDeleted to the props type
+const AdminShopPosts = ({ posts, shopId, onPostDeleted }) => {
   const [selectedPost, setSelectedPost] = useState(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isVideoLoading, setIsVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState(null);
+  const [sessionId, setSessionId] = useState(null);
   const playerRef = useRef(null);
 
   const player = useVideoPlayer(null, (p) => {
@@ -176,7 +179,21 @@ const AdminShopPosts = ({ posts, shopId }) => {
       const nextIndex = (currentIndex + 1) % selectedPost.media.length;
       setCurrentIndex(nextIndex);
     }
-};
+  };
+
+  useEffect(() => {
+    const fetchSessionId = async () => {
+      try {
+        const sessionIdString = await AsyncStorage.getItem('sessionToken');
+        setSessionId(sessionIdString);
+        console.log('Fetched sessionId:', sessionIdString ? 'Set' : 'Not found');
+      } catch (error) {
+        console.error('Error fetching session ID:', error);
+        Alert.alert('Error', 'Failed to retrieve authentication token. Please log in again.');
+      }
+    };
+    fetchSessionId();
+  }, []);
 
   const handleDelete = async (postId) => {
     Alert.alert(
@@ -190,10 +207,19 @@ const AdminShopPosts = ({ posts, shopId }) => {
           onPress: async () => {
             try {
               const response = await axios.delete(
-                `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/${shopId}/posts/${postId}/`
+                `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/${shopId}/posts/${postId}/`,
+                {
+                  timeout: 3000,
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: sessionId,
+                  },
+                }
               );
               console.log("Delete response:", response.status, response.data);
               Alert.alert("Success", "Post deleted successfully");
+              // Notify parent to remove the post
+              onPostDeleted(postId);
               handleCloseModal();
             } catch (error) {
               console.error("Delete error:", error.message, error.response?.status, error.response?.data);
@@ -297,7 +323,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
   },
   postItem: {
-    width: (SCREEN_WIDTH - 30) / 2,
+    width: (SCREEN_WIDTH - 80) / 2,
     margin: 5,
     aspectRatio: 1,
   },

@@ -7,12 +7,14 @@ import {
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
-  Image, StatusBar
+  Image,
+  StatusBar,
 } from "react-native";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, usePathname, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
 import { storeData, getData } from "../../storage/storage";
 
 const MessageList = () => {
@@ -25,25 +27,28 @@ const MessageList = () => {
   const [sessionId, setSessionId] = useState(null);
   const isMountedRef = useRef(true);
   const isFetchingRef = useRef(false);
-  const mountCountRef = useRef(0);
+  const lastFetchTimeRef = useRef(0);
+  const lastMessagesRef = useRef([]); // Track messages to detect changes
   const router = useRouter();
   const pathname = usePathname();
 
-  // Debug mount/unmount
+  // Debug mount/unmount (only in __DEV__)
   useEffect(() => {
-    mountCountRef.current += 1;
-    console.log(`MessageList mounted (count: ${mountCountRef.current}, pathname: ${pathname})`);
+    if (__DEV__) {
+      console.log(`MessageList mounted (pathname: ${pathname})`);
+    }
     return () => {
       isMountedRef.current = false;
-      console.log(`MessageList unmounted (count: ${mountCountRef.current}, pathname: ${pathname})`);
+      if (__DEV__) {
+        console.log(`MessageList unmounted (pathname: ${pathname})`);
+      }
     };
-  }, [pathname]);
+  }, []);
 
   // Fetch session ID
   const fetchSessionId = useCallback(async () => {
     try {
       const sessionIdString = await AsyncStorage.getItem("sessionToken");
-      console.log("Fetched session ID");
       setSessionId(sessionIdString);
       return sessionIdString;
     } catch (error) {
@@ -56,7 +61,6 @@ const MessageList = () => {
   const cacheMessages = useCallback(async (messagesToCache) => {
     try {
       await storeData("message_list", JSON.stringify(messagesToCache));
-      console.log("Messages cached");
     } catch (error) {
       console.error("Error caching messages:", error);
     }
@@ -68,7 +72,9 @@ const MessageList = () => {
       const cached = await getData("message_list");
       if (cached) {
         const parsed = JSON.parse(cached);
-        console.log("Loaded cached messages (count:", parsed.length, ")");
+        if (__DEV__) {
+          console.log("Loaded cached messages:", parsed);
+        }
         return parsed;
       }
       return [];
@@ -79,44 +85,54 @@ const MessageList = () => {
   }, []);
 
   // Fetch messages from backend
-  const fetchMessages = useCallback(
-    async () => {
-      if (!sessionId) {
-        console.warn("Cannot fetch messages: sessionId is null");
-        return;
+  const fetchMessages = useCallback(async (force = false) => {
+    if (!sessionId) {
+      return;
+    }
+    if (isFetchingRef.current) {
+      return;
+    }
+    // Skip fetch if recent (within 30 seconds) unless forced
+    const now = Date.now();
+    if (!force && now - lastFetchTimeRef.current < 30_000 && messages.length > 0) {
+      if (__DEV__) {
+        console.log("Skipping fetch: recent data available");
       }
-      if (isFetchingRef.current) {
-        console.log("Fetch in progress, skipping...");
-        return;
+      return;
+    }
+
+    isFetchingRef.current = true;
+    setLoading(true);
+    setFetchError(false);
+
+    try {
+      const response = await axios.get(
+        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/message-list/",
+        { headers: { Authorization: sessionId } }
+      );
+      const newMessages = response.data;
+      if (__DEV__) {
+        console.log("Fetched messages:", newMessages);
       }
-
-      isFetchingRef.current = true;
-      setLoading(true);
-      setFetchError(false);
-
-      try {
-        console.log("Sending request to backend...");
-        const response = await axios.get(
-          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/message-list/",
-          { headers: { Authorization: sessionId } }
-        );
-        const newMessages = response.data;
-        if (isMountedRef.current) {
-          console.log("Fetched messages (count:", newMessages.length, ")");
+      if (isMountedRef.current) {
+        // Only update if messages have changed
+        const messagesChanged = JSON.stringify(newMessages) !== JSON.stringify(lastMessagesRef.current);
+        if (messagesChanged) {
           setMessages(newMessages);
+          lastMessagesRef.current = newMessages;
           await cacheMessages(newMessages);
           filterMessages(newMessages, activeTab);
         }
-      } catch (error) {
-        console.error("Error fetching messages:", error);
-        if (isMountedRef.current) setFetchError(true);
-      } finally {
-        if (isMountedRef.current) setLoading(false);
-        isFetchingRef.current = false;
+        lastFetchTimeRef.current = now;
       }
-    },
-    [sessionId, cacheMessages, activeTab]
-  );
+    } catch (error) {
+      console.error("Error fetching messages:", error);
+      if (isMountedRef.current) setFetchError(true);
+    } finally {
+      if (isMountedRef.current) setLoading(false);
+      isFetchingRef.current = false;
+    }
+  }, [sessionId, cacheMessages, activeTab]);
 
   // Filter messages
   const filterMessages = useCallback((messagesToFilter, tab) => {
@@ -128,7 +144,9 @@ const MessageList = () => {
       filtered = messagesToFilter.filter((msg) => msg.role === "buyer");
     }
     setFilteredMessages(filtered);
-    console.log(`Filtered messages for ${tab} (count: ${filtered.length})`);
+    if (__DEV__) {
+      console.log(`Filtered messages for ${tab} (count: ${filtered.length})`);
+    }
   }, []);
 
   // Initialize messages on focus
@@ -137,20 +155,31 @@ const MessageList = () => {
       isMountedRef.current = true;
       const initializeMessages = async () => {
         setLoading(true);
+        setMessages([]); // Reset messages
+        setFilteredMessages([]); // Reset filtered messages
+        lastMessagesRef.current = []; // Reset ref
         try {
-          // Load cached messages first
+          // Fetch session
+          const session = await fetchSessionId();
+          if (!session) {
+            console.log('No session found, skipping message load');
+            setLoading(false);
+            return;
+          }
+  
+          // Load cached messages only if session is valid
           const cachedMessages = await loadCachedMessages();
           if (cachedMessages.length > 0 && isMountedRef.current) {
             setMessages(cachedMessages);
+            lastMessagesRef.current = cachedMessages;
             filterMessages(cachedMessages, activeTab);
           }
-          // Fetch fresh data from backend
-          const session = await fetchSessionId();
-          if (session && isMountedRef.current) {
-            await fetchMessages();
-          }
+  
+          // Fetch new messages
+          const fromConversation = pathname.includes('shop/Conversation') || pathname.includes('shop/StartConversation');
+          await fetchMessages(fromConversation);
         } catch (error) {
-          console.error("Error initializing messages:", error);
+          console.error('Error initializing messages:', error);
           if (isMountedRef.current) setFetchError(true);
         } finally {
           if (isMountedRef.current) setLoading(false);
@@ -160,13 +189,12 @@ const MessageList = () => {
       return () => {
         isMountedRef.current = false;
       };
-    }, [loadCachedMessages, fetchSessionId, fetchMessages])
+    }, [loadCachedMessages, fetchSessionId, fetchMessages, activeTab, pathname])
   );
 
   // Handle tab change
   const handleTabChange = useCallback(
     (tab) => {
-      console.log("Switching to tab:", tab);
       setActiveTab(tab);
       filterMessages(messages, tab);
     },
@@ -176,18 +204,13 @@ const MessageList = () => {
   // Handle pull-to-refresh
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchMessages();
+    await fetchMessages(true); // Force refresh
     setRefreshing(false);
   }, [fetchMessages]);
 
   // Handle navigation to Conversation
   const handleMessageClick = useCallback(
     (message) => {
-      console.log("Navigating to Conversation:", {
-        conversation_id: message.conversation_id,
-        shopId: message.shopId,
-        role: message.role,
-      });
       router.push({
         pathname: "shop/Conversation",
         params: {
@@ -197,7 +220,7 @@ const MessageList = () => {
           shop_is_active: message.shop_is_active.toString(),
           role: message.role,
           prevRoute: pathname,
-          shopId: message.shopId
+          shopId: message.shopId,
         },
       });
     },
@@ -213,6 +236,17 @@ const MessageList = () => {
         month: "short",
         day: "numeric",
       });
+      // Check if last_message indicates a media attachment
+      const hasAttachment = item.last_message?.startsWith("chat_attachments/");
+      const isVideo = hasAttachment && /\.(mp4|mov|avi)$/i.test(item.last_message);
+
+      if (__DEV__ && hasAttachment) {
+        console.log("Rendering message item with media:", {
+          id: item.id,
+          last_message: item.last_message,
+          isVideo,
+        });
+      }
 
       return (
         <TouchableOpacity
@@ -236,7 +270,7 @@ const MessageList = () => {
               isDeleted && styles.deletedProfileImage,
             ]}
             onError={(e) =>
-              console.log("Image Load Error:", e.nativeEvent.error)
+              console.error("Image Load Error:", e.nativeEvent.error)
             }
             defaultSource={{ uri: "https://via.placeholder.com/58?text=Profile" }}
           />
@@ -264,17 +298,28 @@ const MessageList = () => {
                 {formattedDate}
               </Text>
             </View>
-            <Text
-              style={[
-                styles.lastMessage,
-                isUnread && styles.unreadText,
-                isDeleted && styles.deletedText,
-              ]}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              {item.last_message || (item.attachment ? "📎 Media" : "No message")}
-            </Text>
+            <View style={styles.lastMessageContainer}>
+              {hasAttachment ? (
+                <Ionicons
+                  name={isVideo ? "videocam-outline" : "image-outline"}
+                  size={18}
+                  color={isUnread ? "#007AFF" : isDeleted ? "#D32F2F" : "#444"}
+                  style={styles.mediaIcon}
+                />
+              ) : (
+                <Text
+                  style={[
+                    styles.lastMessage,
+                    isUnread && styles.unreadText,
+                    isDeleted && styles.deletedText,
+                  ]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {item.last_message || "No message"}
+                </Text>
+              )}
+            </View>
           </View>
         </TouchableOpacity>
       );
@@ -283,37 +328,40 @@ const MessageList = () => {
   );
 
   // Render navigation bar
-  const renderNavBar = () => {
-    const tabs = ["All", "Space", "Customers"];
-    return (
-      <View style={styles.navBar}>
-        {tabs.map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            style={[
-              styles.navButton,
-              activeTab === tab && styles.activeNavButton,
-            ]}
-            onPress={() => handleTabChange(tab)}
-            accessibilityLabel={`${tab} Messages Tab`}
-          >
-            <Text
+  const renderNavBar = useCallback(
+    () => {
+      const tabs = ["All", "Space", "Customers"];
+      return (
+        <View style={styles.navBar}>
+          {tabs.map((tab) => (
+            <TouchableOpacity
+              key={tab}
               style={[
-                styles.navButtonText,
-                activeTab === tab && styles.activeNavButtonText,
+                styles.navButton,
+                activeTab === tab && styles.activeNavButton,
               ]}
+              onPress={() => handleTabChange(tab)}
+              accessibilityLabel={`${tab} Messages Tab`}
             >
-              {tab}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    );
-  };
+              <Text
+                style={[
+                  styles.navButtonText,
+                  activeTab === tab && styles.activeNavButtonText,
+                ]}
+              >
+                {tab}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      );
+    },
+    [activeTab, handleTabChange]
+  );
 
   return (
     <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
+      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
       <LinearGradient
         colors={["#3A7BD5", "#3A6073"]}
         style={styles.headerContainer}
@@ -336,7 +384,7 @@ const MessageList = () => {
             <Text style={styles.statusText}>Failed to fetch messages</Text>
             <TouchableOpacity
               style={styles.retryButton}
-              onPress={() => fetchMessages()}
+              onPress={() => fetchMessages(true)}
             >
               <Text style={styles.retryButtonText}>Try Again</Text>
             </TouchableOpacity>
@@ -353,7 +401,7 @@ const MessageList = () => {
           </Text>
           <TouchableOpacity
             style={styles.retryButtonLarge}
-            onPress={() => fetchMessages()}
+            onPress={() => fetchMessages(true)}
           >
             <Text style={styles.retryButtonText}>Refresh</Text>
           </TouchableOpacity>
@@ -574,6 +622,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#444",
     opacity: 0.9,
+  },
+  lastMessageContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  mediaIcon: {
+    marginRight: 8,
   },
 });
 

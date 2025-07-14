@@ -10,7 +10,6 @@ import {
   Dimensions,
   Platform,
 } from "react-native";
-import * as WebBrowser from "expo-web-browser";
 import * as FileSystem from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
 import { Button, IconButton } from "react-native-paper";
@@ -115,7 +114,7 @@ const ViewReceiptPDF = ({ receipt }) => {
       return;
     }
     try {
-      await WebBrowser.openBrowserAsync(pdf_url);
+      
     } catch (error) {
       console.error("Error opening receipt:", error);
       Alert.alert("Error", "Failed to open the receipt.");

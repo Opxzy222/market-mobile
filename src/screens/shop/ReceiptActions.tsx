@@ -19,7 +19,7 @@ const ReceiptActions = () => {
       <LinearGradient colors={["#F7FAFC", "#E3F2FD"]} style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity
-            onPress={() => router.replace(prevRoute || "/(tabs)/myshop")}
+            onPress={() => router.navigate("(tabs)/myshop")}
             style={styles.backButton}
           >
             <MaterialIcons name="arrow-back" size={26} color="white" />

@@ -142,7 +142,7 @@ const AllFollowedShops = () => {
         <LinearGradient colors={["#F7FAFC", "#E5E7EB"]} style={styles.container}>
           <View style={styles.header}>
             <TouchableOpacity
-              onPress={() => router.replace(prevRoute || "/(tabs)/shop")}
+              onPress={() => router.navigate("(tabs)/shop")}
               style={styles.backButton}
             >
               <MaterialIcons name="arrow-back" size={26} color="white" />
@@ -165,7 +165,7 @@ const AllFollowedShops = () => {
       <LinearGradient colors={["#F7FAFC", "#E5E7EB"]} style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity
-            onPress={() => router.replace(prevRoute || "/(tabs)/shop")}
+            onPress={() => router.navigate( "/(tabs)/shop")}
             style={styles.backButton}
           >
             <MaterialIcons name="arrow-back" size={26} color="white" />

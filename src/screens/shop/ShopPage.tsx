@@ -1,4 +1,3 @@
-// src/app/shop/ShopPage.tsx
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -11,7 +10,8 @@ import {
   Alert,
   Clipboard,
   ToastAndroid,
-  Platform, StatusBar
+  Platform,
+  StatusBar
 } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -237,12 +237,37 @@ const ShopPage = () => {
 
           {/* Shop Details */}
           <View style={styles.details}>
-            <Text style={styles.description}>{shop.description}</Text>
-            <Text style={styles.category}>
-              {shop.categories && Array.isArray(shop.categories)
-                ? shop.categories.map((cat) => cat.name).join(', ')
-                : 'No categories available'}
-            </Text>
+            <LinearGradient
+              colors={['#ffffff', '#f8fafc']}
+              style={styles.descriptionCard}
+            >
+              <Text style={styles.descriptionTitle}>About</Text>
+              <Text style={styles.descriptionText}>
+                {shop.description || 'No description available'}
+              </Text>
+            </LinearGradient>
+            <View style={styles.categoriesContainer}>
+              <Text style={styles.categoriesTitle}>Categories</Text>
+              <View style={styles.categoriesWrapper}>
+                {shop.categories && Array.isArray(shop.categories) && shop.categories.length > 0 ? (
+                  shop.categories.map((cat, index) => (
+                    <LinearGradient
+                      key={index}
+                      colors={['#16a085', '#1abc9c']}
+                      style={styles.categoryBadge}
+                    >
+                      <Text style={styles.categoryBadgeText}>{cat.name}</Text>
+                    </LinearGradient>
+                  ))
+                ) : (
+                  <View style={[styles.categoryBadge, styles.noCategoryBadge]}>
+                    <Text style={[styles.categoryBadgeText, styles.noCategoryBadgeText]}>
+                      No categories available
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
           </View>
 
           {/* Tab Navigation */}
@@ -285,7 +310,6 @@ const ShopPage = () => {
             {activeTab === 'reviews' && (
               <View style={[styles.reviewsContainer, { keyboardShouldPersistTaps: 'always' }]}>
                 <ReviewForm shopId={shopId} onReviewSubmitted={handleReviewSubmitted} />
-                {/* <ShopReview reviews={reviews} /> */}
                 <ShopReview reviews={reviews} />
               </View>
             )}
@@ -415,18 +439,71 @@ const styles = StyleSheet.create({
     marginRight: 5,
   },
   details: {
-    marginVertical: 5,
+    marginVertical: 15,
   },
-  category: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#34495e',
-  },
-  description: {
-    fontSize: 14,
-    color: 'black',
-    lineHeight: 22,
+  descriptionCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 20,
     marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#e8ecef',
+    minHeight: 100,
+  },
+  descriptionTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#2c3e50',
+    marginBottom: 10,
+  },
+  descriptionText: {
+    fontSize: 15,
+    color: '#34495e',
+    lineHeight: 24,
+  },
+  categoriesContainer: {
+    marginBottom: 16,
+  },
+  categoriesTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#2c3e50',
+    marginBottom: 10,
+  },
+  categoriesWrapper: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  categoryBadge: {
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    maxWidth: 200,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  noCategoryBadge: {
+    backgroundColor: '#dfe6e9',
+  },
+  categoryBadgeText: {
+    fontSize: 14,
+    color: '#ffffff',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  noCategoryBadgeText: {
+    color: '#636e72',
   },
   nav: {
     flexDirection: 'row',

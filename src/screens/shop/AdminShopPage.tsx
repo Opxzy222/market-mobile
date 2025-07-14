@@ -11,7 +11,8 @@ import {
   Clipboard,
   ToastAndroid,
   Platform,
-  KeyboardAvoidingView, StatusBar
+  KeyboardAvoidingView,
+  StatusBar,
 } from "react-native";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -23,6 +24,7 @@ import ShopPostForm from "../../components/shop/ShopPostForm";
 import AdminShopPosts from "../../components/shop/AdminShopPost";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 
 const CACHE_KEY = "AdminShopPage_Cache";
 
@@ -79,6 +81,9 @@ const AdminShopPage = () => {
     const sessionId = await AsyncStorage.getItem("sessionToken");
     if (sessionId) {
       setSessionId(sessionId);
+      console.log("Session ID loaded:", sessionId ? "Set" : "Not found");
+    } else {
+      setError("No session token found. Please log in again.");
     }
   }, [shopId]);
 
@@ -96,12 +101,16 @@ const AdminShopPage = () => {
   const fetchShopData = useCallback(async () => {
     try {
       const sessionId = await AsyncStorage.getItem("sessionToken");
+      if (!sessionId) {
+        throw new Error("No session token found");
+      }
       const response = await axios.get(
         `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/${shopId}/combined/`,
         {
           headers: {
             Authorization: sessionId,
           },
+          timeout: 5000,
         }
       );
 
@@ -122,9 +131,9 @@ const AdminShopPage = () => {
       setFollowerCount(data.follower_count || 0);
       setFollowers(data.followers || []);
       setError("");
-      saveToCache(data); // Cache the response
+      saveToCache(data);
     } catch (error) {
-      console.error("Error fetching shop data:", error);
+      console.error("Error fetching shop data:", error.message, error.response?.data);
       setError("Failed to fetch shop data. Using cached data if available.");
     }
   }, [shopId, saveToCache]);
@@ -133,7 +142,7 @@ const AdminShopPage = () => {
   useEffect(() => {
     loadCachedData().then(() => {
       if (shopId) {
-        fetchShopData(); // Always fetch fresh data
+        fetchShopData();
       }
     });
   }, [shopId, loadCachedData, fetchShopData]);
@@ -145,7 +154,47 @@ const AdminShopPage = () => {
 
   const handleReviewSubmitted = useCallback((newReview) => {
     setReviews((prevReviews) => [newReview, ...prevReviews]);
-  }, []);
+    saveToCache({
+      shop,
+      posts,
+      reviews: [newReview, ...reviews],
+      follower_count: followerCount,
+      followers,
+    });
+  }, [shop, posts, reviews, followerCount, followers, saveToCache]);
+
+  const handlePostCreated = useCallback(
+    (newPost) => {
+      console.log("New post created:", newPost);
+      setPosts((prevPosts) => [newPost, ...prevPosts]);
+      saveToCache({
+        shop,
+        posts: [newPost, ...posts],
+        reviews,
+        follower_count: followerCount,
+        followers,
+      });
+    },
+    [shop, posts, reviews, followerCount, followers, saveToCache]
+  );
+
+  const handlePostDeleted = useCallback(
+    (postId) => {
+      console.log("Post deleted:", postId);
+      setPosts((prevPosts) => {
+        const updatedPosts = prevPosts.filter((post) => post.id !== postId);
+        saveToCache({
+          shop,
+          posts: updatedPosts,
+          reviews,
+          follower_count: followerCount,
+          followers,
+        });
+        return updatedPosts;
+      });
+    },
+    [shop, posts, reviews, followerCount, followers, saveToCache]
+  );
 
   const copyToClipboard = useCallback(() => {
     if (shop?.shop_id) {
@@ -172,9 +221,10 @@ const AdminShopPage = () => {
                 uri: `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${shop?.image}`,
               }}
               style={styles.shopImage}
+              onError={(e) => console.error("Shop image load error:", e.nativeEvent.error)}
             />
             <View style={styles.shopInfo}>
-              <Text style={styles.shopName}>{shop?.name}</Text>
+              <Text style={styles.shopName}>{shop?.name || "Loading..."}</Text>
               <View style={styles.shopStatusContainer}>
                 <Ionicons
                   name={shop?.is_open ? "checkmark-circle" : "alert-circle"}
@@ -198,7 +248,7 @@ const AdminShopPage = () => {
                   color="black"
                   style={styles.icon}
                 />
-                <Text style={styles.shopAddress}>{shop?.address}</Text>
+                <Text style={styles.shopAddress}>{shop?.address || "No address available"}</Text>
               </View>
             </View>
           </View>
@@ -208,12 +258,37 @@ const AdminShopPage = () => {
         id: "details",
         component: (
           <View style={styles.details}>
-            <Text style={styles.description}>{shop?.description}</Text>
-            <Text style={styles.category}>
-              {shop?.categories && Array.isArray(shop?.categories)
-                ? shop.categories.map((cat) => cat.name).join(", ")
-                : "No categories available"}
-            </Text>
+            <LinearGradient
+              colors={['#ffffff', '#f8fafc']}
+              style={styles.descriptionCard}
+            >
+              <Text style={styles.descriptionTitle}>About</Text>
+              <Text style={styles.descriptionText}>
+                {shop?.description || "No description available"}
+              </Text>
+            </LinearGradient>
+            <View style={styles.categoriesContainer}>
+              <Text style={styles.categoriesTitle}>Categories</Text>
+              <View style={styles.categoriesWrapper}>
+                {shop?.categories && Array.isArray(shop?.categories) && shop.categories.length > 0 ? (
+                  shop.categories.map((cat, index) => (
+                    <LinearGradient
+                      key={index}
+                      colors={['#16a085', '#1abc9c']}
+                      style={styles.categoryBadge}
+                    >
+                      <Text style={styles.categoryBadgeText}>{cat.name}</Text>
+                    </LinearGradient>
+                  ))
+                ) : (
+                  <View style={[styles.categoryBadge, styles.noCategoryBadge]}>
+                    <Text style={[styles.categoryBadgeText, styles.noCategoryBadgeText]}>
+                      No categories available
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
           </View>
         ),
       },
@@ -250,34 +325,57 @@ const AdminShopPage = () => {
           <View style={styles.tabContent}>
             {activeTab === "posts" && (
               <>
-                <ShopPostForm shopId={shopId} />
-                <AdminShopPosts posts={posts} shopId={shopId} />
+                <ShopPostForm shopId={shopId} onPostCreated={handlePostCreated} />
+                <AdminShopPosts
+                  posts={posts}
+                  shopId={shopId}
+                  onPostDeleted={handlePostDeleted}
+                />
               </>
             )}
             {(activeTab === "products" || activeTab === "services") && (
-              <ShopProduct products={shop?.products} />
+              <ShopProduct products={shop?.products || []} />
             )}
             {activeTab === "customers" && <Followers followers={followers} />}
-            {activeTab === "reviews" && <ShopReview reviews={reviews} />}
+            {activeTab === "reviews" && (
+              <ShopReview reviews={reviews} onReviewSubmitted={handleReviewSubmitted} />
+            )}
           </View>
         ),
       },
     ];
 
     return content;
-  }, [shop, followerCount, activeTab, shopId, posts, followers, reviews, handleTabChange]);
+  }, [
+    shop,
+    followerCount,
+    activeTab,
+    shopId,
+    posts,
+    followers,
+    reviews,
+    handleTabChange,
+    handlePostCreated,
+    handlePostDeleted,
+    handleReviewSubmitted,
+  ]);
 
   if (error && !shop) {
     return <Text style={styles.errorText}>{error}</Text>;
   }
 
   if (!shop || sessionId === null) {
-    return <ActivityIndicator size="large" color="#f39c12" />;
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#f39c12" />
+        <Text style={styles.loadingText}>Loading shop data...</Text>
+      </View>
+    );
   }
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
-      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
+      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -288,7 +386,7 @@ const AdminShopPage = () => {
             <TouchableOpacity
               onPress={() => {
                 console.log("Back button pressed");
-                router.replace(prevRoute || "((tabs)/myshop)");
+                router.navigate("(tabs)/myshop");
               }}
               style={styles.backButton}
               activeOpacity={0.7}
@@ -306,7 +404,7 @@ const AdminShopPage = () => {
                 <Ionicons
                   name={copied ? "checkmark-circle" : "copy-outline"}
                   size={22}
-                  color={copied ? '#4CAF50' : 'white'}
+                  color={copied ? "#4CAF50" : "white"}
                 />
               </TouchableOpacity>
             </View>
@@ -326,19 +424,18 @@ const AdminShopPage = () => {
   );
 };
 
-// Styles unchanged
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#f4f4f4",
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     padding: 16,
     backgroundColor: "#3A7BD5",
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -349,7 +446,7 @@ const styles = StyleSheet.create({
   backButton: {
     padding: 5,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
   },
   content: {
     padding: 15,
@@ -379,14 +476,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   shopIdContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   shopIdLabel: {
     fontSize: 16,
     color: "#FFFFFF",
     marginRight: 8,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   shopId: {
     fontSize: 16,
@@ -396,7 +493,7 @@ const styles = StyleSheet.create({
   copyButton: {
     padding: 6,
     borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
   },
   shopName: {
     fontSize: 20,
@@ -422,18 +519,71 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   details: {
-    marginVertical: 5,
+    marginVertical: 15,
   },
-  category: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#34495e",
-  },
-  description: {
-    fontSize: 14,
-    color: "#5d6d7e",
-    lineHeight: 22,
+  descriptionCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    padding: 20,
     marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: "#e8ecef",
+    minHeight: 100,
+  },
+  descriptionTitle: {
+    fontSize: 20,
+    fontWeight: "600",
+    color: "#2c3e50",
+    marginBottom: 10,
+  },
+  descriptionText: {
+    fontSize: 15,
+    color: "#34495e",
+    lineHeight: 24,
+  },
+  categoriesContainer: {
+    marginBottom: 16,
+  },
+  categoriesTitle: {
+    fontSize: 20,
+    fontWeight: "600",
+    color: "#2c3e50",
+    marginBottom: 10,
+  },
+  categoriesWrapper: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+  },
+  categoryBadge: {
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    maxWidth: 200,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  noCategoryBadge: {
+    backgroundColor: "#dfe6e9",
+  },
+  categoryBadgeText: {
+    fontSize: 14,
+    color: "#ffffff",
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  noCategoryBadgeText: {
+    color: "#636e72",
   },
   nav: {
     flexDirection: "row",
@@ -496,6 +646,17 @@ const styles = StyleSheet.create({
     color: "#ff4d4d",
     textAlign: "center",
     marginTop: 20,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f4f4f4",
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: "#7f8c8d",
   },
 });
 

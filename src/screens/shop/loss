@@ -1,278 +1,209 @@
-import { Platform } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { initializeSQLiteDatabase, getSQLiteDatabase } from './sqliteStorage.native';
+import React, { useEffect, useState } from "react";
+import { 
+  View, Text, FlatList, ActivityIndicator, TouchableOpacity, StyleSheet,
+  StatusBar
+} from "react-native";
+import axios from "axios";
+import StatusViewer from "../../components/shop/StatusViewer";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import StatusRing from "../../components/shop/StatusRing";
+import { useFocusEffect } from "@react-navigation/native";
+import { LinearGradient } from "expo-linear-gradient";
 
-let isInitialized = false;
+const FollowedShopStatusScreen = () => {
+  const [statuses, setStatuses] = useState([]);
+  const [viewedStatuses, setViewedStatuses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [currentStatusIndex, setCurrentStatusIndex] = useState(null);
+  const [userId, setUserId] = useState(null);
 
-const initializeDatabase = async (): Promise<void> => {
-  if (isInitialized) {
-    console.log('Database already initialized, skipping');
-    return;
-  }
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchData();
+    }, [])
+  );
 
-  if (Platform.OS === 'web') {
-    console.log('Platform is web, using AsyncStorage');
-    isInitialized = true;
-    return;
-  }
-
-  try {
-    await initializeSQLiteDatabase();
-    isInitialized = true;
-  } catch (error) {
-    console.error('Database initialization failed:', error);
-    isInitialized = false;
-    throw error;
-  }
-};
-
-const storeData = async (key: string, value: string): Promise<number> => {
-  const encodedValue = btoa(encodeURIComponent(value));
-
-  if (Platform.OS === 'web') {
+  const fetchData = async () => {
     try {
-      await AsyncStorage.setItem(key, encodedValue);
-      console.log('Stored in AsyncStorage:', key);
-      return 1;
-    } catch (error) {
-      console.error('Error storing in AsyncStorage:', error);
-      throw error;
-    }
-  }
+      setLoading(true);
+      const userIdString = await AsyncStorage.getItem("user_id");
+      if (!userIdString) return;
 
-  const db = getSQLiteDatabase();
+      const userId = parseInt(userIdString, 10);
+      setUserId(userId);
 
-  try {
-    const result = await db.runAsync(
-      'INSERT OR REPLACE INTO secure_data (key, value) VALUES (?, ?);',
-      [key, encodedValue]
-    );
-    console.log('Stored in SQLite (secure_data):', result.lastInsertRowId, result.changes);
-    return result.lastInsertRowId ?? 0;
-  } catch (error) {
-    console.error('SQLite store failed:', error);
-    throw error;
-  }
-};
+      const response = await axios.get(`https://retail-alvinia-goza-f6a0e4f7.koyeb.app/statuses/?user_id=${userId}`);
+      const fetchedStatuses = response.data.statuses;
 
-const getData = async (key: string): Promise<string | null> => {
-  if (Platform.OS === 'web') {
-    try {
-      const value = await AsyncStorage.getItem(key);
-      if (value) {
-        return decodeURIComponent(atob(value));
-      }
-      return null;
-    } catch (error) {
-      console.error('Error retrieving from AsyncStorage:', error);
-      throw error;
-    }
-  }
-
-  const db = getSQLiteDatabase();
-
-  try {
-    const row = await db.getFirstAsync<{ value: string }>(
-      'SELECT value FROM secure_data WHERE key = ?;',
-      [key]
-    );
-    if (row) {
-      return decodeURIComponent(atob(row.value));
-    }
-    return null;
-  } catch (error) {
-    console.error('SQLite retrieval failed:', error);
-    throw error;
-  }
-};
-
-const clearStaleData = async (prefix: string): Promise<void> => {
-  if (Platform.OS === 'web') {
-    try {
-      const keys = await AsyncStorage.getAllKeys();
-      for (const key of keys) {
-        if (key.startsWith(prefix)) {
-          await AsyncStorage.removeItem(key);
-          console.log('Removed stale key from AsyncStorage:', key);
+      const groupedStatuses = fetchedStatuses.reduce((acc, status) => {
+        const shop = status.shop;
+        if (!acc[shop]) {
+          acc[shop] = [];
         }
-      }
+        acc[shop].push(status);
+        return acc;
+      }, {});
+
+      const groupedArray = Object.keys(groupedStatuses).map((shop) => ({
+        shop,
+        statuses: groupedStatuses[shop],
+      }));
+
+      const unviewed = groupedArray.filter(group => group.statuses.some(s => !s.viewed));
+      const viewed = groupedArray.filter(group => group.statuses.every(s => s.viewed));
+
+      setStatuses(unviewed);
+      setViewedStatuses(viewed);
     } catch (error) {
-      console.error('Error clearing stale AsyncStorage:', error);
+      console.error("Error fetching followed shop statuses:", error);
+    } finally {
+      setLoading(false);
     }
-    return;
-  }
+  };
 
-  const db = getSQLiteDatabase();
+  const handleOpenViewer = (index) => {
+    setCurrentStatusIndex(index);
+  };
 
-  try {
-    await db.runAsync('DELETE FROM secure_data WHERE key LIKE ?;', [`${prefix}%`]);
-    console.log('Cleared stale secure_data');
-  } catch (error) {
-    console.error('Error clearing stale secure_data:', error);
-    throw error;
-  }
+  const handleCloseViewer = () => {
+    setCurrentStatusIndex(null);
+    fetchData(); // Refresh data after closing viewer
+  };
+
+  const renderStatusItem = ({ item, index, isViewed }) => (
+    <TouchableOpacity
+      onPress={() => handleOpenViewer(index)}
+      style={styles.statusItem}
+      activeOpacity={0.8}
+    >
+      <StatusRing 
+        imageUri={item.statuses[0].image} 
+        totalStatuses={item.statuses.length} 
+        viewedStatuses={isViewed ? item.statuses.length : item.statuses.filter(s => s.viewed).length} 
+      />
+      <View style={styles.textContainer}>
+        <Text style={styles.name}>{item.shop}</Text>
+        <Text style={styles.time}>{item.statuses[0].created_at}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  return (
+  <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
+    <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
+    <Text style={styles.header}>Followed Shop Status</Text>
+    
+    {loading ? (
+      <ActivityIndicator size="large" color="#25D366" />
+    ) : (
+      <>
+        {statuses.length > 0 && (
+          <>
+            <Text style={styles.subHeader}>Recent Updates</Text>
+            <FlatList 
+              data={statuses} 
+              renderItem={({ item, index }) => renderStatusItem({ item, index, isViewed: false })}
+              keyExtractor={(item) => item.statuses[0].id.toString()} 
+              contentContainerStyle={styles.listContainer}
+            />
+          </>
+        )}
+
+        {viewedStatuses.length > 0 && (
+          <>
+            <View style={styles.spacer} />
+            <Text style={styles.subHeader}>Viewed Updates</Text>
+            <FlatList 
+              data={viewedStatuses} 
+              renderItem={({ item, index }) => renderStatusItem({ item, index, isViewed: true })}
+              keyExtractor={(item) => item.statuses[0].id.toString()} 
+              contentContainerStyle={styles.listContainer}
+            />
+          </>
+        )}
+
+        {statuses.length === 0 && viewedStatuses.length === 0 && (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No status updates available.</Text>
+          </View>
+        )}
+      </>
+    )}
+
+    {currentStatusIndex !== null && (
+      <StatusViewer 
+        statuses={[...statuses, ...viewedStatuses]} 
+        initialIndex={currentStatusIndex} 
+        onClose={handleCloseViewer} 
+        visible={currentStatusIndex !== null}
+        userId={userId}
+      />
+    )}
+  </LinearGradient>
+  );
 };
 
-const getSuggestions = async (query: string, limit: number = 10, offset: number = 0): Promise<string[]> => {
-  if (Platform.OS === 'web') {
-    try {
-      const cached = await AsyncStorage.getItem('suggestions');
-      if (!cached) return [];
-      const suggestions = JSON.parse(cached);
-      const filtered = suggestions
-        .filter((name: string) => name.toLowerCase().startsWith(query.toLowerCase()))
-        .slice(offset, offset + limit);
-      console.log(`Fetched ${filtered.length} suggestions from AsyncStorage`);
-      return filtered;
-    } catch (error) {
-      console.error('Error fetching suggestions from AsyncStorage:', error);
-      throw error;
-    }
-  }
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#f8f9fa",
+    padding: 20,
+  },
+  header: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#333",
+    marginBottom: 15,
+  },
+  subHeader: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#007bff",
+    marginVertical: 12,
+  },
+  listContainer: {
+    paddingBottom: 16,
+  },
+  spacer: {
+    height: 20,
+  },
+  statusItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    padding: 12,
+    marginVertical: 8,
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  textContainer: {
+    marginLeft: 15,
+  },
+  name: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#333",
+  },
+  time: {
+    fontSize: 14,
+    color: "#6c757d",
+    marginTop: 4,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: "#6c757d",
+    fontStyle: "italic",
+  },
+});
 
-  const db = getSQLiteDatabase();
-
-  try {
-    // Try FTS5 first
-    try {
-      const results = await db.getAllAsync(
-        `SELECT name FROM Suggestions_fts WHERE name MATCH ? ORDER BY name ASC LIMIT ? OFFSET ?`,
-        [`${query}*`, limit, offset]
-      );
-      console.log(`Fetched ${results.length} FTS5 suggestions from SQLite`);
-      if (results.length > 0) {
-        return results.map((row: any) => row.name);
-      }
-      console.log('No FTS5 results, falling back to LIKE');
-    } catch (ftsError) {
-      console.warn('FTS5 query failed, falling back to LIKE:', ftsError);
-    }
-
-    // Fallback to LIKE query on suggestions table
-    const results = await db.getAllAsync(
-      `SELECT name FROM suggestions WHERE lower(name) LIKE ? ORDER BY name ASC LIMIT ? OFFSET ?`,
-      [`${query.toLowerCase()}%`, limit, offset]
-    );
-    console.log(`Fetched ${results.length} LIKE suggestions from SQLite`);
-    return results.map((row: any) => row.name);
-  } catch (error) {
-    console.error('SQLite suggestions fetch failed:', error);
-    throw error;
-  }
-};
-
-const cacheSuggestions = async (suggestions: string[]): Promise<void> => {
-  if (Platform.OS === 'web') {
-    try {
-      await AsyncStorage.setItem('suggestions', JSON.stringify(suggestions));
-      console.log('Cached suggestions in AsyncStorage');
-    } catch (error) {
-      console.error('Error caching suggestions in AsyncStorage:', error);
-      throw error;
-    }
-    return;
-  }
-
-  const db = getSQLiteDatabase();
-
-  try {
-    // Validate and sanitize suggestions
-    const validSuggestions = suggestions
-      .map(s => (typeof s === 'string' && s.trim().length > 0 ? s.trim() : null))
-      .filter((s): s is string => s !== null);
-    console.log('Valid suggestions to cache:', validSuggestions.length);
-
-    // Log invalid suggestions for debugging
-    const invalidSuggestions = suggestions.filter(s => !(typeof s === 'string' && s.trim().length > 0));
-    if (invalidSuggestions.length > 0) {
-      console.log('Invalid suggestions detected:', invalidSuggestions.slice(0, 10));
-    }
-
-    if (validSuggestions.length === 0) {
-      console.log('No valid suggestions to cache');
-      return;
-    }
-
-    const batchSize = 100; // Reduced to avoid lock contention
-    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-    // Cache in suggestions table
-    await db.execAsync('BEGIN EXCLUSIVE TRANSACTION;');
-    for (let i = 0; i < validSuggestions.length; i += batchSize) {
-      const batch = validSuggestions.slice(i, i + batchSize);
-      const safeBatch = batch.map(s => String(s));
-      const placeholders = safeBatch.map(() => '(?)').join(', ');
-      try {
-        await db.runAsync(
-          `INSERT OR IGNORE INTO suggestions (name) VALUES ${placeholders};`,
-          safeBatch
-        );
-        console.log(`Cached ${i + safeBatch.length} of ${validSuggestions.length} suggestions in SQLite`);
-      } catch (error) {
-        console.warn(`Failed to insert batch ${i / batchSize + 1}:`, error);
-        continue;
-      }
-      await delay(10); // Small delay to reduce contention
-    }
-    await db.execAsync('COMMIT;');
-
-    // Cache in Suggestions_fts separately
-    try {
-      await db.execAsync('BEGIN EXCLUSIVE TRANSACTION;');
-      for (let i = 0; i < validSuggestions.length; i += batchSize) {
-        const batch = validSuggestions.slice(i, i + batchSize);
-        const safeBatch = batch.map(s => String(s));
-        const placeholders = safeBatch.map(() => '(?)').join(', ');
-        await db.runAsync(
-          `INSERT OR IGNORE INTO Suggestions_fts (name) VALUES ${placeholders};`,
-          safeBatch
-        );
-        console.log(`Cached ${i + safeBatch.length} of ${validSuggestions.length} suggestions in FTS5 table`);
-      }
-      await db.execAsync('COMMIT;');
-    } catch (ftsError) {
-      console.warn('FTS5 caching failed:', ftsError);
-      // Continue without throwing, as suggestions table is populated
-    }
-
-    console.log('Successfully cached suggestions in SQLite:', validSuggestions.length);
-  } catch (error) {
-    await db.execAsync('ROLLBACK;').catch(err => console.error('Rollback failed:', err));
-    console.error('Error caching suggestions in SQLite:', error);
-    throw error;
-  }
-};
-
-const getSuggestionsCount = async (): Promise<number> => {
-  if (Platform.OS === 'web') {
-    try {
-      const cached = await AsyncStorage.getItem('suggestions');
-      if (!cached) return 0;
-      const suggestions = JSON.parse(cached);
-      return suggestions.length;
-    } catch (error) {
-      console.error('Error counting suggestions in AsyncStorage:', error);
-      return 0;
-    }
-  }
-
-  const db = getSQLiteDatabase();
-
-  try {
-    const row = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM suggestions');
-    return row?.count ?? 0;
-  } catch (error) {
-    console.error('Error counting suggestions in SQLite:', error);
-    return 0;
-  }
-};
-
-export {
-  initializeDatabase,
-  storeData,
-  getData,
-  clearStaleData,
-  getSuggestions,
-  cacheSuggestions,
-  getSuggestionsCount,
-};
+export default FollowedShopStatusScreen;

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, TouchableOpacity, StyleSheet, Text, Animated } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import GeolocationSearch from './GeolocationSearch';
 import LocationSearch from './LocationSearch';
 import ShopIdSearch from './ShopIdSearch';
@@ -12,12 +13,22 @@ export default function SearchBar({ onSuggestionsStateChange, onFocusChange }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  const handleSearch = (searchData) => {
-    if (router) {
-      router.push({
-        pathname: '/shop/SearchResult',
-        params: { searchResults: JSON.stringify(searchData), prevRoute: pathname },
-      });
+  const handleSearch = async (searchData) => {
+    try {
+      // Increment search count
+      let count = parseInt(await AsyncStorage.getItem('searchCount') || '0', 10);
+      count += 1;
+      await AsyncStorage.setItem('searchCount', count.toString());
+      console.log('Search count incremented:', count);
+
+      if (router) {
+        router.push({
+          pathname: '/shop/SearchResult',
+          params: { searchResults: JSON.stringify(searchData), prevRoute: pathname },
+        });
+      }
+    } catch (error) {
+      console.error('Error incrementing search count:', error);
     }
   };
 

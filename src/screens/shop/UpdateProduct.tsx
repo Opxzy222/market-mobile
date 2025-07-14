@@ -48,14 +48,13 @@ const UpdateShopProducts = () => {
   const [modalTargetInfo, setModalTargetInfo] = useState(null); // category, subcategory, productId
   const [dropdownState, setDropdownState] = useState({}); // { [dropdownKey]: { isOpen: boolean, searchQuery: string, filteredItems: array } }
   const [expandedCategories, setExpandedCategories] = useState({});
+  const [loading, setLoading] = useState(false);
 
 
   const params = useLocalSearchParams();
   const { shop_id } = params;
   const router = useRouter(); 
   const contentData = useMemo(() => [{ key: "content" }], []);
-  // Add this state at the top of your component, alongside other useState hooks
-const [openDropdown, setOpenDropdown] = useState({});
 
 // Helper function to generate a unique key for each dropdown
 const getDropdownKey = (category, subcategory) => `${category}-${subcategory}`;
@@ -382,6 +381,7 @@ const handleSubmitProducts = async () => {
     try {
         const formData = new FormData();
         formData.append('shop_id', shop_id);
+        setLoading(true);
 
        // Deduplicate products and filter out invalid entries
 const allProducts = [];
@@ -436,6 +436,8 @@ allProducts.forEach(product => {
         router.push({pathname: 'shop/ShopProduct', params: { shopId: shop_id }, });
     } catch (error) {
         console.error('Error updating products:', error);
+    } finally {
+      setLoading(false);
     }
 };
   
@@ -1134,9 +1136,15 @@ return (
           {/* Final Submit */}
           <TouchableOpacity
             onPress={handleSubmitProducts}
-            style={styles.submitButton}
+            style={[styles.submitButton, loading && styles.searchButtonDisabled]}
+            disabled={loading}
+            activeOpacity={0.8}
           >
-            <Text style={styles.submitButtonText}>Update Products</Text>
+            {loading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.submitButtonText}>Update Products</Text>
+              )}
           </TouchableOpacity>
 
           {/* Price Edit Modal */}
@@ -1486,6 +1494,9 @@ subcategoryTitle: {
     alignItems: "center",
     marginTop: 0,
     marginBottom: 20
+  },
+  searchButtonDisabled: {
+    backgroundColor: '#A7C7E7',
   },
   submitButtonText: {
     color: "#fff",

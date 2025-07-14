@@ -16,7 +16,7 @@ import {
   Keyboard,
   Platform,
   StatusBar,
-  Image
+  Image,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
@@ -33,13 +33,12 @@ import ChatVideo from "../../components/shop/ChatVideo";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-
 const isWeb = Constants.platform?.web;
 
 const Conversation = () => {
   const [userId, setUserId] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [inputMessage, setInputMessage] = useState('');
+  const [inputMessage, setInputMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
@@ -53,22 +52,21 @@ const Conversation = () => {
   const receivedMessagesRef = useRef(new Set());
   const isScreenFocused = useRef(false);
   const lastCacheAttempt = useRef(0);
+  const lastMessagesLength = useRef(0); // Track message length to avoid unnecessary scrolls
 
   const params = useLocalSearchParams();
   const router = useRouter();
   const pathname = usePathname();
   const { conversation_id, shop_id, prevRoute, name, shop_is_active, shopId } = params;
-  const isShopActive = shop_is_active === 'true';
+  const isShopActive = shop_is_active === "true";
 
   // Initialize database
   useEffect(() => {
     const setupDatabase = async () => {
       try {
-        console.log('Initializing database...');
         await initializeDatabase();
-        console.log('Database initialized');
       } catch (error) {
-        console.error('Failed to initialize database:', error);
+        console.error("Failed to initialize database:", error);
       }
     };
     setupDatabase();
@@ -79,16 +77,15 @@ const Conversation = () => {
     const loadSessionData = async () => {
       try {
         const [sessionIdString, userIdString] = await Promise.all([
-          AsyncStorage.getItem('sessionToken'),
-          AsyncStorage.getItem('user_id'),
+          AsyncStorage.getItem("sessionToken"),
+          AsyncStorage.getItem("user_id"),
         ]);
-        console.log('Fetched session ID:', sessionIdString, 'user ID:', userIdString);
         setSessionId(sessionIdString);
         if (userIdString) {
           setUserId(parseInt(userIdString, 10));
         }
       } catch (error) {
-        console.error('Error loading session data:', error);
+        console.error("Error loading session data:", error);
       }
     };
     loadSessionData();
@@ -98,28 +95,14 @@ const Conversation = () => {
   const loadCachedMessages = async () => {
     const cacheKey = `messages_${conversation_id}`;
     try {
-      console.log('Loading cached messages for key:', cacheKey);
       const cached = await getData(cacheKey);
       if (cached) {
         const parsed = JSON.parse(cached);
-        console.log('Loaded cached messages:', {
-          key: cacheKey,
-          messageCount: parsed.length,
-          messages: parsed.map((msg) => ({
-            id: msg.id,
-            content: msg.content,
-            type: msg.type,
-            attachment: msg.attachment,
-            thumbnail_url: msg.thumbnail_url,
-            pending: msg.pending,
-          })),
-        });
         parsed.forEach((msg) => receivedMessagesRef.current.add(Number(msg.id)));
         return parsed;
       }
-      console.log('No cached messages found for key:', cacheKey);
     } catch (error) {
-      console.error('Error loading cached messages:', error);
+      console.error("Error loading cached messages:", error);
     }
     return [];
   };
@@ -132,7 +115,7 @@ const Conversation = () => {
         setMessages(cachedMessages);
         setMessagesLoaded(!!cachedMessages.length);
       } catch (error) {
-        console.error('Error loading cached data:', error);
+        console.error("Error loading cached data:", error);
       }
     };
     loadCachedData();
@@ -142,161 +125,120 @@ const Conversation = () => {
   const cacheMessages = async (messagesToCache, localConversationId = conversation_id) => {
     const cacheKey = `messages_${localConversationId}`;
     try {
-      console.log('Caching messages:', {
-        key: cacheKey,
-        messageCount: messagesToCache.length,
-        messages: messagesToCache.map((msg) => ({
-          id: msg.id,
-          content: msg.content,
-          type: msg.type,
-          attachment: msg.attachment,
-          thumbnail_url: msg.thumbnail_url,
-          pending: msg.pending,
-        })),
-      });
       await storeData(cacheKey, JSON.stringify(messagesToCache));
-      console.log('Messages cached for conversation:', localConversationId);
     } catch (error) {
-      console.error('Error caching messages:', error);
-      throw error;
+      console.error("Error caching messages:", error);
     }
   };
 
   // Fetch messages
   const fetchMessages = async () => {
-    if (!conversation_id || !sessionId) {
-      console.warn('Cannot fetch messages: missing conversation_id or sessionId', {
-        conversation_id,
-        sessionId,
-      });
-      return;
-    }
+    if (!conversation_id || !sessionId) return;
 
-    console.log('Starting fetchMessages, conversationId:', conversation_id);
     setLoading(true);
     setFetchError(false);
 
     try {
-      console.log('Fetching messages from API...');
       const response = await axios.get(
         `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/conversation/?conversation_id=${conversation_id}`,
         {
           headers: { Authorization: sessionId },
           params: { limit: 50 },
-        },
+        }
       );
 
-      console.log('API response:', { messageCount: response.data.length });
-
       if (response.data.length > 0) {
-        console.log(
-          'Setting senderId:',
-          response.data[0].sender_user_id,
-          'shopOwner:',
-          response.data[0].receiver_id,
-        );
         setSenderId(response.data[0].sender_user_id);
         setShopOwner(response.data[0].receiver_id);
       }
 
-      // Deduplicate by id and attachment
-      const uniqueMessages = response.data.reduce((acc, msg) => {
-        const key = `${msg.id}-${msg.attachment || ''}`;
-        if (!acc.some((m) => `${m.id}-${m.attachment || ''}` === key)) {
-          acc.push(msg);
-        }
-        return acc;
-      }, []).filter((msg) => !receivedMessagesRef.current.has(Number(msg.id)));
+      const uniqueMessages = response.data
+        .reduce((acc, msg) => {
+          const key = `${msg.id}-${msg.attachment || ""}`;
+          if (!acc.some((m) => `${m.id}-${m.attachment || ""}` === key)) {
+            acc.push(msg);
+          }
+          return acc;
+        }, [])
+        .filter((msg) => !receivedMessagesRef.current.has(Number(msg.id)));
 
-      console.log('Unique messages:', uniqueMessages.length);
       uniqueMessages.forEach((msg) => receivedMessagesRef.current.add(Number(msg.id)));
 
       const normalizedMessages = uniqueMessages.map((msg) => {
-        let normalizedType = msg.type || msg.msg_type || 'text';
+        let normalizedType = msg.type || msg.msg_type || "text";
         if (
-          normalizedType === 'photo' ||
-          normalizedType === 'image/jpeg' ||
-          normalizedType === 'image/png' ||
-          normalizedType === 'jpg' ||
-          normalizedType === 'jpeg' ||
-          normalizedType === 'png'
+          ["photo", "image/jpeg", "image/png", "jpg", "jpeg", "png"].includes(
+            normalizedType
+          )
         ) {
-          normalizedType = 'image';
+          normalizedType = "image";
         } else if (
-          normalizedType === 'video/mp4' ||
-          normalizedType === 'mp4' ||
-          normalizedType === 'video' ||
-          normalizedType?.toLowerCase().includes('video')
+          ["video/mp4", "mp4", "video"].includes(normalizedType) ||
+          normalizedType?.toLowerCase().includes("video")
         ) {
-          normalizedType = 'video';
-        } else if (normalizedType === 'application/pdf') {
-          normalizedType = 'pdf';
+          normalizedType = "video";
+        } else if (normalizedType === "application/pdf") {
+          normalizedType = "pdf";
         }
 
         if (msg.attachment) {
           const lowerAttachment = msg.attachment.toLowerCase();
           if (lowerAttachment.match(/\.(jpg|jpeg|png|gif)$/)) {
-            normalizedType = 'image';
+            normalizedType = "image";
           } else if (lowerAttachment.match(/\.mp4$/)) {
-            normalizedType = 'video';
+            normalizedType = "video";
           } else if (lowerAttachment.match(/\.pdf$/)) {
-            normalizedType = 'pdf';
+            normalizedType = "pdf";
           }
         }
 
         const attachmentPath = msg.attachment
-          ? msg.attachment.replace(/conversation_attachments/g, 'chat_attachments')
+          ? msg.attachment.replace(/conversation_attachments/g, "chat_attachments")
           : null;
         const thumbnailPath = msg.thumbnail_url
-          ? msg.thumbnail_url.replace(/conversation_thumbnails/g, 'chat_thumbnails')
+          ? msg.thumbnail_url.replace(
+              /conversation_thumbnails/g,
+              "chat_thumbnails"
+            )
           : null;
 
         return {
           ...msg,
           id: Number(msg.id),
           type: normalizedType,
-          name: msg.attachment?.split('/').pop(),
+          name: msg.attachment?.split("/").pop(),
           attachment: attachmentPath,
           thumbnail_url: thumbnailPath,
-          pending: !!(msg.pending === true || msg.pending === 'true'),
-          read: !!(msg.read === true || msg.read === 'true'),
+          pending: !!(msg.pending === true || msg.pending === "true"),
+          read: !!(msg.read === true || msg.read === "true"),
         };
       });
 
       setMessages((prev) => {
         const merged = [
           ...prev.filter(
-            (msg) => !normalizedMessages.some((newMsg) => newMsg.id === msg.id || (newMsg.attachment && newMsg.attachment === msg.attachment)),
+            (msg) =>
+              !normalizedMessages.some(
+                (newMsg) =>
+                  newMsg.id === msg.id ||
+                  (newMsg.attachment &&
+                    newMsg.attachment === msg.attachment)
+              )
           ),
           ...normalizedMessages,
         ].sort((a, b) => a.id - b.id);
-        console.log('Setting merged messages:', {
-          messageCount: merged.length,
-          messages: merged.map((msg) => ({
-            id: msg.id,
-            content: msg.content,
-            type: msg.type,
-            attachment: msg.attachment,
-            thumbnail_url: msg.thumbnail_url,
-            pending: msg.pending,
-          })),
-        });
-        cacheMessages(merged).catch((error) =>
-          console.error('Failed to cache merged messages:', error),
-        );
+        cacheMessages(merged);
         setMessagesLoaded(true);
         return merged;
       });
 
       if (isScreenFocused.current && uniqueMessages.length > 0) {
-        console.log('Marking messages as read after fetch');
         markMessagesAsRead();
       }
     } catch (error) {
-      console.error('Error fetching messages:', error);
+      console.error("Error fetching messages:", error);
       setFetchError(true);
     } finally {
-      console.log('Fetch complete, setting loading to false');
       setLoading(false);
     }
   };
@@ -309,127 +251,98 @@ const Conversation = () => {
 
   // Mark messages as read
   const markMessagesAsRead = async () => {
-    if (!conversation_id || !sessionId || messages.length === 0) {
-      console.warn('Cannot mark messages as read:', {
-        conversation_id,
-        sessionId,
-        messageCount: messages.length,
-      });
-      return;
-    }
+    if (!conversation_id || !sessionId || messages.length === 0) return;
 
     try {
-      console.log('Marking messages as read for conversationId:', conversation_id);
       await axios.post(
-        'https://retail-alvinia-goza-f6a0e4f7.koyeb.app/mark-messages-read/',
+        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/mark-messages-read/",
         { conversation_id },
         {
           headers: {
-            'Content-Type': 'application/json',
+            "Content-Type": "application/json",
             Authorization: sessionId,
           },
-        },
+        }
       );
-      console.log('Messages marked as read');
     } catch (error) {
-      console.error('Error marking messages as read:', error);
+      console.error("Error marking messages as read:", error);
     }
   };
 
-  // WebSocket connection
+  // WebSocket connection with debouncing
   useEffect(() => {
-    if (!conversation_id) {
-      console.warn('Cannot connect WebSocket: conversation_id is null');
-      return;
-    }
+    if (!conversation_id) return;
 
-    console.log('Connecting WebSocket for conversationId:', conversation_id);
     const connectWebSocket = () => {
       const websocketUrl = `wss://retail-alvinia-goza-f6a0e4f7.koyeb.app/ws/chat/${conversation_id}/`;
       websocketRef.current = new WebSocket(websocketUrl);
 
       websocketRef.current.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        console.log('WebSocket received:', {
-          message_id: data.message_id,
-          temp_id: data.temp_id,
-          attachment: data.attachment,
-          thumbnail_url: data.thumbnail_url,
-          type: data.type,
-        });
-
-        if (data.type === 'read_update') {
+        if (data.type === "read_update") {
           setMessages((prevMessages) => {
             const updatedMessages = prevMessages.map((msg) =>
-              data.message_ids.includes(Number(msg.id)) ? { ...msg, read: true } : msg,
+              data.message_ids.includes(Number(msg.id))
+                ? { ...msg, read: true }
+                : msg
             );
-            console.log('Updating read status for messages:', data.message_ids);
-            cacheMessages(updatedMessages).catch((error) =>
-              console.error('Failed to cache read update:', error),
-            );
+            cacheMessages(updatedMessages);
             return updatedMessages;
           });
         } else {
           let messageId = Number(data.message_id);
           let tempId = Number(data.temp_id);
 
-          if (!messageId || isNaN(messageId)) {
-            console.warn('Invalid message ID, ignoring:', messageId);
-            return;
-          }
+          if (!messageId || isNaN(messageId)) return;
 
-          if (receivedMessagesRef.current.has(messageId)) {
-            console.log(`Message ${messageId} already processed, skipping...`);
-            return;
-          }
+          if (receivedMessagesRef.current.has(messageId)) return;
 
           receivedMessagesRef.current.add(messageId);
 
-          let normalizedType = data.msg_type || data.type || 'text';
+          let normalizedType = data.msg_type || data.type || "text";
           if (
-            normalizedType === 'photo' ||
-            normalizedType === 'image/jpeg' ||
-            normalizedType === 'image/png' ||
-            normalizedType === 'jpg' ||
-            normalizedType === 'jpeg' ||
-            normalizedType === 'png'
+            ["photo", "image/jpeg", "image/png", "jpg", "jpeg", "png"].includes(
+              normalizedType
+            )
           ) {
-            normalizedType = 'image';
+            normalizedType = "image";
           } else if (
-            normalizedType === 'video/mp4' ||
-            normalizedType === 'mp4' ||
-            normalizedType === 'video' ||
-            normalizedType?.toLowerCase().includes('video')
+            ["video/mp4", "mp4", "video"].includes(normalizedType) ||
+            normalizedType?.toLowerCase().includes("video")
           ) {
-            normalizedType = 'video';
-          } else if (normalizedType === 'application/pdf') {
-            normalizedType = 'pdf';
+            normalizedType = "video";
+          } else if (normalizedType === "application/pdf") {
+            normalizedType = "pdf";
           }
 
           if (data.attachment) {
             const lowerAttachment = data.attachment.toLowerCase();
             if (lowerAttachment.match(/\.(jpg|jpeg|png|gif)$/)) {
-              normalizedType = 'image';
+              normalizedType = "image";
             } else if (lowerAttachment.match(/\.mp4$/)) {
-              normalizedType = 'video';
+              normalizedType = "video";
             } else if (lowerAttachment.match(/\.pdf$/)) {
-              normalizedType = 'pdf';
+              normalizedType = "pdf";
             }
           }
 
           const attachmentPath = data.attachment
-            ? data.attachment.replace(/conversation_attachments/g, 'chat_attachments')
+            ? data.attachment.replace(/conversation_attachments/g, "chat_attachments")
             : null;
           const thumbnailPath = data.thumbnail_url
-            ? data.thumbnail_url.replace(/conversation_thumbnails/g, 'chat_thumbnails')
+            ? data.thumbnail_url.replace(
+                /conversation_thumbnails/g,
+                "chat_thumbnails"
+              )
             : null;
 
           setMessages((prevMessages) => {
-            // Check for duplicates by attachment
             const existingIndex = prevMessages.findIndex(
               (msg) =>
                 msg.id === tempId ||
-                (msg.attachment && msg.attachment === attachmentPath && msg.type === normalizedType),
+                (msg.attachment &&
+                  msg.attachment === attachmentPath &&
+                  msg.type === normalizedType)
             );
 
             let updatedMessages;
@@ -444,9 +357,8 @@ const Conversation = () => {
                 thumbnail_url: thumbnailPath || updatedMessages[existingIndex].thumbnail_url,
                 pending: false,
                 read: false,
-                name: data.attachment?.split('/').pop() || updatedMessages[existingIndex].name,
+                name: data.attachment?.split("/").pop() || updatedMessages[existingIndex].name,
               };
-              console.log('Replacing existing message:', { oldId: prevMessages[existingIndex].id, newId: messageId });
             } else {
               updatedMessages = [
                 ...prevMessages,
@@ -460,65 +372,52 @@ const Conversation = () => {
                   thumbnail_url: thumbnailPath,
                   read: false,
                   pending: false,
-                  name: data.attachment?.split('/').pop(),
+                  name: data.attachment?.split("/").pop(),
                 },
               ];
-              console.log('Adding new WebSocket message:', messageId);
             }
-            cacheMessages(updatedMessages).catch((error) =>
-              console.error('Failed to cache WebSocket message:', error),
-            );
+            cacheMessages(updatedMessages);
             return updatedMessages;
           });
 
           if (isAtBottom) {
             InteractionManager.runAfterInteractions(() => {
               if (messages.length > 0) {
-                console.log('Scrolling to bottom after WebSocket message');
                 flatListRef.current?.scrollToEnd({ animated: true });
               }
             });
           }
 
           if (isScreenFocused.current) {
-            console.log('Marking messages as read after WebSocket message');
             markMessagesAsRead();
           }
         }
       };
 
       websocketRef.current.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        console.error("WebSocket error:", error);
       };
 
       websocketRef.current.onclose = () => {
-        console.log('WebSocket closed');
+        console.log("WebSocket closed");
       };
     };
 
     connectWebSocket();
 
     return () => {
-      console.log('Closing WebSocket...');
       websocketRef.current?.close();
     };
-  }, [conversation_id, messages]);
+  }, [conversation_id]);
 
   // Send message via WebSocket
   const handleSendMessage = useCallback(() => {
     if (!isShopActive) {
-      Alert.alert('Cannot Send', 'This shop is no longer active.');
+      Alert.alert("Cannot Send", "This shop is no longer active.");
       return;
     }
 
-    if (!inputMessage.trim() || !websocketRef.current || !conversation_id) {
-      console.warn('Cannot send WebSocket message:', {
-        inputMessage: !!inputMessage.trim(),
-        websocket: !!websocketRef.current,
-        conversation_id,
-      });
-      return;
-    }
+    if (!inputMessage.trim() || !websocketRef.current || !conversation_id) return;
 
     const tempId = Date.now();
 
@@ -532,20 +431,16 @@ const Conversation = () => {
           timestamp: new Date().toISOString(),
           attachment: null,
           thumbnail_url: null,
-          type: 'text',
+          type: "text",
           read: false,
           pending: true,
         },
       ];
-      console.log('Adding temp WebSocket message:', tempId);
-      cacheMessages(newMessages).catch((error) =>
-        console.error('Failed to cache WebSocket temp message:', error),
-      );
+      cacheMessages(newMessages);
       return newMessages;
     });
 
     try {
-      console.log('Sending WebSocket message:', inputMessage);
       websocketRef.current.send(
         JSON.stringify({
           content: inputMessage,
@@ -553,26 +448,22 @@ const Conversation = () => {
           sender_id: userId,
           conversation_id: conversation_id,
           timestamp: new Date().toISOString(),
-        }),
+        })
       );
-      setInputMessage('');
+      setInputMessage("");
       setIsAtBottom(true);
       InteractionManager.runAfterInteractions(() => {
         if (messages.length > 0) {
-          console.log('Scrolling to bottom after sending WebSocket message');
           flatListRef.current?.scrollToEnd({ animated: true });
         }
       });
     } catch (error) {
-      console.error('Error sending message:', error);
-      Alert.alert('Message Failed', 'Unable to send message. Please try again.');
+      console.error("Error sending message:", error);
+      Alert.alert("Message Failed", "Unable to send message. Please try again.");
 
       setMessages((prevMessages) => {
         const updatedMessages = prevMessages.filter((msg) => msg.id !== tempId);
-        console.log('Removing failed WebSocket temp message:', tempId);
-        cacheMessages(updatedMessages).catch((error) =>
-          console.error('Failed to cache after failed WebSocket message:', error),
-        );
+        cacheMessages(updatedMessages);
         return updatedMessages;
       });
     }
@@ -581,87 +472,64 @@ const Conversation = () => {
   // Send attachment
   const handleSendAttachment = useCallback(
     async (file, type) => {
-      console.log('handleSendAttachment started:', { file, type });
-  
       if (!isShopActive) {
-        console.error('Shop is not active');
-        Alert.alert('Cannot Send', 'This shop is no longer active.');
+        Alert.alert("Cannot Send", "This shop is no longer active.");
         return;
       }
-  
+
       if (!file?.uri || !conversation_id || !userId || !shopId) {
-        console.error('Invalid input parameters:', {
-          fileUri: file?.uri,
-          conversation_id,
-          userId,
-          shopId,
-          file,
-        });
-        Alert.alert('Error', 'Invalid file or conversation details.');
+        Alert.alert("Error", "Invalid file or conversation details.");
         return;
       }
-  
+
+      const tempId = Date.now();
+      const normalizedType =
+        type === "photo" ? "image" : type === "video" ? "video" : "pdf";
+
+      setMessages((prevMessages) => {
+        const newMessages = [
+          ...prevMessages,
+          {
+            id: tempId,
+            content: null,
+            sender_id: userId,
+            timestamp: new Date().toISOString(),
+            attachment: file.uri,
+            type: normalizedType,
+            thumbnail_url: null,
+            read: false,
+            pending: true,
+            name: file.name || `file_${tempId}`,
+          },
+        ];
+        cacheMessages(newMessages);
+        return newMessages;
+      });
+
       try {
-        const tempId = Date.now();
-        const normalizedType =
-          type === 'photo' ? 'image' : type === 'video' ? 'video' : 'pdf';
-  
-        console.log('Adding temporary message:', { tempId, file, type: normalizedType });
-        setMessages((prevMessages) => {
-          const newMessages = [
-            ...prevMessages,
-            {
-              id: tempId,
-              content: null,
-              sender_id: userId,
-              timestamp: new Date().toISOString(),
-              attachment: file.uri,
-              type: normalizedType,
-              thumbnail_url: null,
-              read: false,
-              pending: true,
-              name: file.name || `file_${tempId}`,
-            },
-          ];
-          console.log('Temporary message added:', tempId);
-          cacheMessages(newMessages).catch((error) =>
-            console.error('Failed to cache attachment message:', error)
-          );
-          return newMessages;
-        });
-  
         const formData = new FormData();
-        formData.append('sender_id', String(userId));
-        formData.append('shop_id', String(shopId));
-        formData.append('conversation_id', conversation_id);
-  
+        formData.append("sender_id", String(userId));
+        formData.append("shop_id", String(shopId));
+        formData.append("conversation_id", conversation_id);
+
         const fileName =
           file.name ||
-          `file_${Date.now()}.${type === 'photo' ? 'jpg' : type === 'video' ? 'mp4' : 'pdf'}`;
+          `file_${Date.now()}.${type === "photo" ? "jpg" : type === "video" ? "mp4" : "pdf"}`;
         let fileUri = file.uri;
-  
-        let mimeType = file.type || (type === 'video' ? 'video/mp4' : type === 'pdf' ? 'application/pdf' : 'image/jpeg');
-  
-        if (Platform.OS === 'ios' && !fileUri.startsWith('file://')) {
+
+        let mimeType = file.type || (type === "video" ? "video/mp4" : type === "pdf" ? "application/pdf" : "image/jpeg");
+
+        if (Platform.OS === "ios" && !fileUri.startsWith("file://")) {
           fileUri = `file://${fileUri}`;
-          console.log('Normalized iOS URI:', fileUri);
         }
-  
-        console.log('Preparing file for FormData:', {
-          uri: fileUri,
-          name: fileName,
-          type: mimeType,
-          platform: Platform.OS,
-        });
-  
+
         let newFile;
-        if (fileUri.startsWith('blob:')) {
-          console.log('Processing blob URI:', fileUri);
+        if (fileUri.startsWith("blob:")) {
           const response = await fetch(fileUri);
-          if (!response.ok) throw new Error('Failed to fetch blob data');
+          if (!response.ok) throw new Error("Failed to fetch blob data");
           const blob = await response.blob();
           newFile = new File([blob], fileName, {
-            type: mimeType || blob.type || 'application/octet-stream',
+            type: mimeType || blob.type || "application/octet-stream",
           });
         } else {
           newFile = {
@@ -670,29 +538,21 @@ const Conversation = () => {
             name: fileName,
           };
         }
-  
-        formData.append('file', newFile);
-  
-        console.log('Uploading attachment:', fileName);
-        const startTime = Date.now();
+
+        formData.append("file", newFile);
+
         const response = await axios.post(
           `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/upload/${conversation_id}/`,
           formData,
           {
-            headers: { 'Content-Type': 'multipart/form-data', Authorization: sessionId },
+            headers: { "Content-Type": "multipart/form-data", Authorization: sessionId },
             timeout: 30000,
           }
         );
-        console.log('Upload took:', Date.now() - startTime, 'ms');
-  
+
         const data = response.data;
-        if (!data.file_url) throw new Error('File upload failed');
-        console.log('Attachment uploaded:', {
-          file_url: data.file_url,
-          thumbnail_url: data.thumbnail_url,
-          message_id: data.message_id,
-        });
-  
+        if (!data.file_url) throw new Error("File upload failed");
+
         setMessages((prevMessages) => {
           const filteredMessages = prevMessages.filter(
             (msg) => msg.id !== tempId && !(msg.attachment && msg.attachment === data.file_url)
@@ -704,113 +564,83 @@ const Conversation = () => {
               content: null,
               sender_id: userId,
               timestamp: new Date().toISOString(),
-              attachment: data.file_url.replace(/conversation_attachments/g, 'chat_attachments'),
+              attachment: data.file_url.replace(/conversation_attachments/g, "chat_attachments"),
               type: normalizedType,
               thumbnail_url: data.thumbnail_url
-                ? data.thumbnail_url.replace(/conversation_thumbnails/g, 'chat_thumbnails')
+                ? data.thumbnail_url.replace(/conversation_thumbnails/g, "chat_thumbnails")
                 : null,
               read: false,
               pending: false,
               name: fileName,
             },
           ];
-          console.log('Updated messages with uploaded attachment:', { messageId: data.message_id });
-          cacheMessages(updatedMessages).catch((error) =>
-            console.error('Failed to cache updated attachment message:', error)
-          );
+          cacheMessages(updatedMessages);
           return updatedMessages;
         });
-  
+
         if (websocketRef.current) {
-          try {
-            console.log('Sending WebSocket message:', { tempId, messageId: data.message_id, readyState: websocketRef.current.readyState });
-            websocketRef.current.send(
-              JSON.stringify({
-                sender_id: userId,
-                conversation_id: conversation_id,
-                type: 'message',
-                timestamp: new Date().toISOString(),
-                content: null,
-                attachment: data.file_url,
-                thumbnail_url: data.thumbnail_url,
-                temp_id: tempId,
-                message_id: data.message_id,
-              })
-            );
-          } catch (wsError) {
-            console.warn('WebSocket send failed, ignoring:', {
-              errorMessage: wsError.message,
-              errorStack: wsError.stack,
-              tempId,
-              readyState: websocketRef.current?.readyState,
-            });
-            // Optionally queue message for retry
-          }
-        } else {
-          console.warn('WebSocket not available, skipping send:', { tempId });
+          websocketRef.current.send(
+            JSON.stringify({
+              sender_id: userId,
+              conversation_id: conversation_id,
+              type: "message",
+              timestamp: new Date().toISOString(),
+              content: null,
+              attachment: data.file_url,
+              thumbnail_url: data.thumbnail_url,
+              temp_id: tempId,
+              message_id: data.message_id,
+            })
+          );
         }
-  
+
         setIsAtBottom(true);
         InteractionManager.runAfterInteractions(() => {
           if (messages.length > 0 && flatListRef.current) {
-            console.log('Scrolling to bottom after attachment upload');
             flatListRef.current.scrollToEnd({ animated: false });
           }
         });
       } catch (error) {
-        console.error('Upload error:', {
-          message: error.message,
-          stack: error.stack,
-          response: error.response?.data,
-          status: error.response?.status,
-          fileUri: file.uri,
-          fileName,
-          mimeType,
-        });
-        Alert.alert('Upload Failed', 'Failed to upload file. Please try again.');
-  
+        console.error("Upload error:", error);
+        Alert.alert("Upload Failed", "Failed to upload file. Please try again.");
+
         setMessages((prevMessages) => {
           const updatedMessages = prevMessages.filter((msg) => msg.id !== tempId);
-          console.log('Removed failed attachment message:', tempId);
-          cacheMessages(updatedMessages).catch((error) =>
-            console.error('Failed to cache after failed attachment:', error)
-          );
+          cacheMessages(updatedMessages);
           return updatedMessages;
         });
       }
     },
-    [userId, shopId, conversation_id, messages, isShopActive, sessionId, websocketRef, flatListRef]
+    [userId, shopId, conversation_id, messages, isShopActive, sessionId]
   );
 
-  // Handle screen focus
+  // Handle screen focus with optimized logic
   useFocusEffect(
     useCallback(() => {
-      console.log('Screen focused, conversationId:', conversation_id);
       isScreenFocused.current = true;
-      if (conversation_id && messages.length > 0) {
+      if (conversation_id && messages.length > 0 && messages.length !== lastMessagesLength.current) {
         markMessagesAsRead();
         InteractionManager.runAfterInteractions(() => {
           if (!loading && messages.length > 0) {
-            console.log('Scrolling to last message on screen focus');
             flatListRef.current?.scrollToEnd({ animated: false });
           }
         });
       }
+      lastMessagesLength.current = messages.length;
       return () => {
-        console.log('Screen unfocused');
         isScreenFocused.current = false;
       };
-    }, [conversation_id, messages, loading]),
+    }, [conversation_id, messages.length, loading])
   );
 
   // Scroll to bottom on messages load
   useEffect(() => {
-    if (!loading && messages.length > 0) {
+    if (!loading && messages.length > 0 && messages.length !== lastMessagesLength.current) {
       InteractionManager.runAfterInteractions(() => {
-        console.log('Scrolling to last message on messages load');
         flatListRef.current?.scrollToEnd({ animated: false });
       });
     }
+    lastMessagesLength.current = messages.length;
   }, [loading, messages.length]);
 
   // Handle input focus
@@ -820,20 +650,18 @@ const Conversation = () => {
       setIsAtBottom(true);
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
-        console.log('Scrolled to bottom on input focus');
       }, 100);
     }
   };
 
   // Handle keyboard
   useEffect(() => {
-    const keyboardDidShow = Keyboard.addListener('keyboardDidShow', () => {
+    const keyboardDidShow = Keyboard.addListener("keyboardDidShow", () => {
       if (!isShopActive) return;
       if (messages.length > 0) {
         setIsAtBottom(true);
         setTimeout(() => {
           flatListRef.current?.scrollToEnd({ animated: true });
-          console.log('Keyboard shown, scrolled to bottom');
         }, 100);
       }
     });
@@ -850,7 +678,6 @@ const Conversation = () => {
 
   // Handle scrollToIndex failure
   const onScrollToIndexFailed = (info) => {
-    console.warn('scrollToIndex failed:', info);
     InteractionManager.runAfterInteractions(() => {
       flatListRef.current?.scrollToEnd({ animated: true });
     });
@@ -859,9 +686,9 @@ const Conversation = () => {
   // Render message item
   const renderItem = useCallback(
     ({ item }) => {
-      const isImage = item.type === 'image';
-      const isVideo = item.type === 'video';
-      const isPdf = item.type === 'pdf';
+      const isImage = item.type === "image";
+      const isVideo = item.type === "video";
+      const isPdf = item.type === "pdf";
       const isImageFallback =
         item.attachment &&
         !isImage &&
@@ -875,40 +702,31 @@ const Conversation = () => {
         !isPdf &&
         item.attachment.match(/\.mp4$/i);
 
-      console.log('Render item:', {
-        id: item.id,
-        type: item.type,
-        attachment: item.attachment,
-        thumbnail_url: item.thumbnail_url,
-        pending: item.pending,
-        pendingType: typeof item.pending,
-        name: item.name,
-        full_thumbnail_uri: item.thumbnail_url ? `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${item.thumbnail_url}` : null,
-      });
-
-      const formattedTime = new Date(item.timestamp).toLocaleTimeString('en-US', {
-        hour: '2-digit',
-        minute: '2-digit',
+      const formattedTime = new Date(item.timestamp).toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
         hour12: true,
       });
 
       const mediaUri = item.pending
         ? item.attachment
         : item.attachment
-        ? `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${item.attachment.replace(/conversation_attachments/g, 'chat_attachments')}`
+        ? `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${item.attachment.replace(/conversation_attachments/g, "chat_attachments")}`
         : null;
 
       const thumbnailUri = item.thumbnail_url
-        ? `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${item.thumbnail_url.replace(/conversation_thumbnails/g, 'chat_thumbnails')}`
+        ? `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${item.thumbnail_url.replace(/conversation_thumbnails/g, "chat_thumbnails")}`
         : null;
 
       return (
         <View style={styles.messageWrapper}>
           {item.attachment ? (
             <View
-              style={[ // Fixed: Added curly braces around style array
+              style={[
                 styles.mediaContainer,
-                item.sender_id === userId ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' },
+                item.sender_id === userId
+                  ? { alignSelf: "flex-end" }
+                  : { alignSelf: "flex-start" },
               ]}
             >
               {isImage || isImageFallback ? (
@@ -926,7 +744,7 @@ const Conversation = () => {
                     uri={mediaUri}
                     name={item.name}
                     thumbnailUrl={thumbnailUri}
-                    pending={!!(item.pending === true || item.pending === 'true')}
+                    pending={!!(item.pending === true || item.pending === "true")}
                     messageId={item.id}
                     sessionId={sessionId}
                   />
@@ -937,7 +755,9 @@ const Conversation = () => {
                   )}
                 </View>
               ) : isPdf ? (
-                <Text style={styles.attachmentText}>PDF Document: {item.name}</Text>
+                <Text style={styles.attachmentText}>
+                  PDF Document: {item.name}
+                </Text>
               ) : (
                 <Text style={styles.attachmentText}>Unsupported file type</Text>
               )}
@@ -945,9 +765,9 @@ const Conversation = () => {
                 <Text style={styles.timestampText}>{formattedTime}</Text>
                 {item.sender_id === userId && (
                   <MaterialIcons
-                    name={item.read ? 'done-all' : 'done'}
+                    name={item.read ? "done-all" : "done"}
                     size={18}
-                    color={item.read ? '#007BFF' : 'gray'}
+                    color={item.read ? "#007BFF" : "gray"}
                     style={styles.checkmark}
                   />
                 )}
@@ -955,9 +775,11 @@ const Conversation = () => {
             </View>
           ) : (
             <View
-              style={[ // Fixed: Added curly braces around style array
+              style={[
                 styles.message,
-                item.sender_id === userId ? styles.userMessage : styles.shopMessage,
+                item.sender_id === userId
+                  ? styles.userMessage
+                  : styles.shopMessage,
               ]}
             >
               <View style={styles.messageContent}>
@@ -966,9 +788,9 @@ const Conversation = () => {
                   <Text style={styles.timestampText}>{formattedTime}</Text>
                   {item.sender_id === userId && (
                     <MaterialIcons
-                      name={item.read ? 'done-all' : 'done'}
+                      name={item.read ? "done-all" : "done"}
                       size={18}
-                      color={item.read ? '#007BFF' : 'gray'}
+                      color={item.read ? "#007BFF" : "gray"}
                       style={styles.checkmark}
                     />
                   )}
@@ -980,7 +802,7 @@ const Conversation = () => {
       );
     },
     [userId, sessionId]
-  );
+  )
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
@@ -995,7 +817,7 @@ const Conversation = () => {
         <LinearGradient colors={["#F7FAFC", "#E5E7EB"]} style={styles.container}>
           <View style={styles.header}>
             <TouchableOpacity
-              onPress={() => router.replace(prevRoute || "((tabs)/placeholder)")}
+              onPress={() => router.navigate("(tabs)/placeholder")}
               style={styles.backButton}
             >
               <MaterialIcons name="arrow-back" size={26} color="white" />
@@ -1295,6 +1117,7 @@ const Conversation = () => {
       flexGrow: 1,
       paddingHorizontal: 16,
       paddingBottom: 16,
+      marginTop: 12,
     },
     messageWrapper: {
       marginBottom: 12,

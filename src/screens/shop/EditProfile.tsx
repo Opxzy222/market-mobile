@@ -292,7 +292,7 @@ const EditProfileScreen = () => {
         >
           <View style={styles.header}>
             <TouchableOpacity
-              onPress={() => router.replace(prevRoute || "/(tabs)/profile")}
+              onPress={() => router.navigate("(tabs)/profile")}
               style={styles.backButton}
             >
               <MaterialIcons name="arrow-back" size={26} color="white" />

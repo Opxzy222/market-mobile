@@ -1,51 +1,121 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
-  Alert,
   StyleSheet,
-  Image,
-  ScrollView,
+  Dimensions,
+  Platform,
   ActivityIndicator,
+  KeyboardAvoidingView, ScrollView
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import axios from "axios";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  Easing,
+} from "react-native-reanimated";
+import { Image } from "expo-image";
 
-export default function SignUp() {
+const { width } = Dimensions.get("window");
+
+const API_URL = "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/complete-registration/";
+
+// Constants for consistent theming (aligned with SignIn and Homepage)
+const COLORS = {
+  primary: "#1E3A8A",
+  accent: "#FCD34D",
+  background: "#f7f8fc", // Kept original background color
+  cardBackground: "#FFFFFF",
+  textPrimary: "#111827",
+  textSecondary: "#6B7280",
+  white: "#FFFFFF",
+  gradientStart: "#4B6CB7",
+  gradientEnd: "#8B5CF6",
+  error: "#EF4444",
+  border: "#E5E7EB",
+  inputBackground: "#F3F4F6",
+  success: "#10B981",
+};
+
+const SPACING = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 24,
+  xxl: 32,
+};
+
+const SignUp = () => {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [secureText, setSecureText] = useState(true);
   const [secureConfirmText, setSecureConfirmText] = useState(true);
-  const [loading, setLoading] = useState(false); // 👈 loading state
-
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const router = useRouter();
   const params = useLocalSearchParams();
   const { email } = params;
 
-  const validatePassword = (password) => ({
+  // Animation values
+  const buttonScale = useSharedValue(1);
+  const inputScale = useSharedValue(1);
+  const logoOpacity = useSharedValue(0);
+  const logoTranslateY = useSharedValue(20);
+
+  // Animation styles
+  const buttonAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: buttonScale.value }],
+  }));
+
+  const inputAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: inputScale.value }],
+  }));
+
+  const logoAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: logoOpacity.value,
+    transform: [{ translateY: logoTranslateY.value }],
+  }));
+
+  // Trigger logo animation on mount
+  React.useEffect(() => {
+    logoOpacity.value = withTiming(1, { duration: 800, easing: Easing.out(Easing.exp) });
+    logoTranslateY.value = withTiming(0, { duration: 800, easing: Easing.out(Easing.exp) });
+  }, []);
+
+  const validatePassword = useCallback((password) => ({
     length: password.length >= 8,
     capital: /[A-Z]/.test(password),
     number: /[0-9]/.test(password),
-  });
+  }), []);
 
   const passwordChecks = validatePassword(password);
 
-  const handleSignUp = async () => {
+  const handleSignUp = useCallback(async () => {
     if (loading) return;
 
+    if (!firstName || !lastName || !password || !confirmPassword) {
+      setErrorMessage("Please fill in all fields");
+      return;
+    }
+
     if (password !== confirmPassword) {
-      Alert.alert("Error", "Passwords do not match");
+      setErrorMessage("Passwords do not match");
       return;
     }
 
     if (!passwordChecks.length || !passwordChecks.capital || !passwordChecks.number) {
-      Alert.alert(
-        "Error",
+      setErrorMessage(
         "Password must contain at least 8 characters, one capital letter, and one number"
       );
       return;
@@ -58,137 +128,381 @@ export default function SignUp() {
     formData.append("password", password);
 
     setLoading(true);
+    setErrorMessage("");
     try {
-      const response = await axios.post(
-        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/complete-registration/",
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
-      );
+      const response = await axios.post(API_URL, formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
 
       if (response.data.message === "Registration successful") {
+        setErrorMessage("");
         Alert.alert("Account Created Successfully ✅");
         router.push("/login");
       } else {
-        Alert.alert("Error", response.data.message || "Sign-up failed");
+        setErrorMessage(response.data.message || "Sign-up failed");
       }
     } catch (error) {
       const errMsg = error.response?.data?.error || "An error occurred. Please try again.";
-      Alert.alert("Error", errMsg);
+      setErrorMessage(errMsg);
     } finally {
       setLoading(false);
     }
+  }, [email, firstName, lastName, password, confirmPassword, loading, router]);
+
+  const handleButtonPressIn = () => {
+    buttonScale.value = withSpring(0.95, { stiffness: 400, damping: 20 });
+  };
+
+  const handleButtonPressOut = () => {
+    buttonScale.value = withSpring(1, { stiffness: 400, damping: 20 });
+  };
+
+  const handleInputFocus = () => {
+    inputScale.value = withTiming(1.02, { duration: 200, easing: Easing.out(Easing.ease) });
+  };
+
+  const handleInputBlur = () => {
+    inputScale.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.ease) });
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Image source={require("../../assets/images/icon1.png")} style={styles.image} resizeMode="contain" />
-      <Text style={styles.title}>Sign Up</Text>
-      <TextInput placeholder="First Name" onChangeText={setFirstName} value={firstName} style={styles.input} autoCapitalize="words" placeholderTextColor="#888" />
-      <TextInput placeholder="Last Name" onChangeText={setLastName} value={lastName} style={styles.input} autoCapitalize="words" placeholderTextColor="#888" />
-      
-      <View style={styles.passwordContainer}>
-        <TextInput placeholder="Password" onChangeText={setPassword} value={password} secureTextEntry={secureText} style={styles.passwordInput} placeholderTextColor="#888" />
-        <TouchableOpacity onPress={() => setSecureText(!secureText)}>
-          <Ionicons name={secureText ? "eye-off" : "eye"} size={24} color="#777" />
-        </TouchableOpacity>
-      </View>
+    <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+      >
+        <ScrollView
+          contentContainerStyle={styles.container}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Animated.View style={[styles.logoContainer, logoAnimatedStyle]}>
+            <Image
+              source={require("../../assets/images/icon1.png")} // Fixed syntax
+              style={styles.image}
+              contentFit="contain"
+              accessibilityLabel="Gogo Marketplace Logo"
+            />
+            <Text style={styles.title}>Create Account</Text>
+            <Text style={styles.subtitle}>Join Gogo to explore local businesses</Text>
+          </Animated.View>
 
-      <View style={styles.passwordContainer}>
-        <TextInput placeholder="Confirm Password" onChangeText={setConfirmPassword} value={confirmPassword} secureTextEntry={secureConfirmText} style={styles.passwordInput} placeholderTextColor="#888" />
-        <TouchableOpacity onPress={() => setSecureConfirmText(!secureConfirmText)}>
-          <Ionicons name={secureConfirmText ? "eye-off" : "eye"} size={24} color="#777" />
-        </TouchableOpacity>
-      </View>
+          {errorMessage ? (
+            <View style={styles.errorContainer}>
+              <Ionicons name="alert-circle-outline" size={20} color={COLORS.error} />
+              <Text style={styles.errorText}>{errorMessage}</Text>
+            </View>
+          ) : null}
 
-      <View style={styles.passwordChecks}>
-        <Text style={{ color: passwordChecks.length ? "green" : "red" }}>✔ At least 8 characters</Text>
-        <Text style={{ color: passwordChecks.capital ? "green" : "red" }}>✔ At least 1 capital letter</Text>
-        <Text style={{ color: passwordChecks.number ? "green" : "red" }}>✔ At least 1 number</Text>
-      </View>
+          <Animated.View style={[styles.inputContainer, inputAnimatedStyle]}>
+            <TextInput
+              placeholder="First Name"
+              onChangeText={setFirstName}
+              value={firstName}
+              style={styles.input}
+              autoCapitalize="words"
+              placeholderTextColor={COLORS.textSecondary}
+              onFocus={handleInputFocus}
+              onBlur={handleInputBlur}
+              accessibilityLabel="First name input"
+            />
+          </Animated.View>
 
-      <TouchableOpacity onPress={handleSignUp} style={styles.button} disabled={loading}>
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>Create Account</Text>
-        )}
-      </TouchableOpacity>
+          <Animated.View style={[styles.inputContainer, inputAnimatedStyle]}>
+            <TextInput
+              placeholder="Last Name"
+              onChangeText={setLastName}
+              value={lastName}
+              style={styles.input}
+              autoCapitalize="words"
+              placeholderTextColor={COLORS.textSecondary}
+              onFocus={handleInputFocus}
+              onBlur={handleInputBlur}
+              accessibilityLabel="Last name input"
+            />
+          </Animated.View>
 
-      <TouchableOpacity onPress={() => router.push("/login")} style={styles.link}>
-        <Text style={styles.linkText}>Already have an account? Sign In</Text>
-      </TouchableOpacity>
-    </ScrollView>
+          <Animated.View style={[styles.inputContainer, inputAnimatedStyle]}>
+            <View style={styles.passwordContainer}>
+              <TextInput
+                placeholder="Password"
+                onChangeText={setPassword}
+                value={password}
+                secureTextEntry={secureText}
+                style={styles.passwordInput}
+                placeholderTextColor={COLORS.textSecondary}
+                onFocus={handleInputFocus}
+                onBlur={handleInputBlur}
+                accessibilityLabel="Password input"
+              />
+              <TouchableOpacity
+                onPress={() => {
+                  console.log("Toggle secure text for password");
+                  setSecureText(!secureText);
+                }}
+                hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                activeOpacity={0.7}
+                style={styles.iconButton}
+                accessibilityLabel={secureText ? "Show password" : "Hide password"}
+              >
+                <Ionicons
+                  name={secureText ? "eye-off" : "eye"}
+                  size={24}
+                  color={COLORS.textSecondary}
+                />
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+
+          <Animated.View style={[styles.inputContainer, inputAnimatedStyle]}>
+            <View style={styles.passwordContainer}>
+              <TextInput
+                placeholder="Confirm Password"
+                onChangeText={setConfirmPassword}
+                value={confirmPassword}
+                secureTextEntry={secureConfirmText}
+                style={styles.passwordInput}
+                placeholderTextColor={COLORS.textSecondary}
+                onFocus={handleInputFocus}
+                onBlur={handleInputBlur}
+                accessibilityLabel="Confirm password input"
+              />
+              <TouchableOpacity
+                onPress={() => {
+                  console.log("Toggle secure text for confirm password");
+                  setSecureConfirmText(!secureConfirmText);
+                }}
+                hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                activeOpacity={0.7}
+                style={styles.iconButton}
+                accessibilityLabel={secureConfirmText ? "Show confirm password" : "Hide confirm password"}
+              >
+                <Ionicons
+                  name={secureConfirmText ? "eye-off" : "eye"}
+                  size={24}
+                  color={COLORS.textSecondary}
+                />
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+
+          <View style={styles.passwordChecks}>
+            <View style={styles.checkItem}>
+              <Ionicons
+                name={passwordChecks.length ? "checkmark-circle" : "close-circle"}
+                size={20}
+                color={passwordChecks.length ? COLORS.success : COLORS.error}
+              />
+              <Text
+                style={[
+                  styles.checkText,
+                  { color: passwordChecks.length ? COLORS.success : COLORS.error },
+                ]}
+              >
+                At least 8 characters
+              </Text>
+            </View>
+            <View style={styles.checkItem}>
+              <Ionicons
+                name={passwordChecks.capital ? "checkmark-circle" : "close-circle"}
+                size={20}
+                color={passwordChecks.capital ? COLORS.success : COLORS.error}
+              />
+              <Text
+                style={[
+                  styles.checkText,
+                  { color: passwordChecks.capital ? COLORS.success : COLORS.error },
+                ]}
+              >
+                At least 1 capital letter
+              </Text>
+            </View>
+            <View style={styles.checkItem}>
+              <Ionicons
+                name={passwordChecks.number ? "checkmark-circle" : "close-circle"}
+                size={20}
+                color={passwordChecks.number ? COLORS.success : COLORS.error}
+              />
+              <Text
+                style={[
+                  styles.checkText,
+                  { color: passwordChecks.number ? COLORS.success : COLORS.error },
+                ]}
+              >
+                At least 1 number
+              </Text>
+            </View>
+          </View>
+
+          <Animated.View style={[styles.buttonContainer, buttonAnimatedStyle]}>
+            <TouchableOpacity
+              onPress={handleSignUp}
+              onPressIn={handleButtonPressIn}
+              onPressOut={handleButtonPressOut}
+              disabled={loading}
+              style={styles.button}
+              activeOpacity={0.9}
+              accessibilityLabel="Create account button"
+            >
+              <LinearGradient
+                colors={[COLORS.gradientStart, COLORS.gradientEnd]}
+                style={styles.buttonGradient}
+              >
+                {loading ? (
+                  <ActivityIndicator color={COLORS.white} />
+                ) : (
+                  <Text style={styles.buttonText}>Create Account</Text>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+          </Animated.View>
+
+          <View style={styles.linksContainer}>
+            <TouchableOpacity
+              onPress={() => {
+                console.log("Navigating to login");
+                router.push("/login");
+              }}
+              hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+              activeOpacity={0.7}
+              accessibilityLabel="Sign in link"
+            >
+              <Text style={styles.linkText}>Already have an account? Sign In</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
-}
+};
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.background, // #f7f8fc
+  },
   container: {
     flexGrow: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
-    backgroundColor: "#f7f8fc",
+    padding: SPACING.xl,
+  },
+  logoContainer: {
+    alignItems: "center",
+    marginBottom: SPACING.xxl,
   },
   image: {
-    width: "70%",
-    height: 150,
-    marginBottom: 20,
+    width: width * 0.3,
+    height: 100,
+    marginBottom: SPACING.lg,
   },
   title: {
-    fontSize: 28,
-    fontWeight: "bold",
-    marginBottom: 20,
-    color: "#333",
+    fontSize: 32,
+    fontWeight: "700",
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.sm,
+    letterSpacing: -0.5,
+    textAlign: "center",
+  },
+  subtitle: {
+    fontSize: 16,
+    color: COLORS.textSecondary,
+    textAlign: "center",
+    lineHeight: 22,
+    maxWidth: "80%",
+  },
+  errorContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEE2E2",
+    padding: SPACING.md,
+    borderRadius: SPACING.sm,
+    marginBottom: SPACING.lg,
+    width: "100%",
+  },
+  errorText: {
+    fontSize: 14,
+    color: COLORS.error,
+    marginLeft: SPACING.sm,
+  },
+  inputContainer: {
+    width: "100%",
+    marginBottom: SPACING.lg,
+    borderRadius: SPACING.md,
+    backgroundColor: COLORS.inputBackground,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   input: {
-    width: "100%",
-    padding: 15,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    marginBottom: 15,
-    backgroundColor: "#fff",
+    padding: SPACING.md,
+    fontSize: 16,
+    color: COLORS.textPrimary,
+    borderRadius: SPACING.md,
   },
   passwordContainer: {
     flexDirection: "row",
     alignItems: "center",
-    width: "100%",
-    padding: 15,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    backgroundColor: "#fff",
-    marginBottom: 15,
+    paddingRight: SPACING.sm,
   },
   passwordInput: {
     flex: 1,
-    paddingRight: 10,
+    padding: SPACING.md,
+    fontSize: 16,
+    color: COLORS.textPrimary,
+  },
+  iconButton: {
+    padding: SPACING.sm,
   },
   passwordChecks: {
-    alignSelf: "flex-start",
-    marginBottom: 10,
+    width: "100%",
+    marginBottom: SPACING.lg,
+  },
+  checkItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: SPACING.xs,
+  },
+  checkText: {
+    fontSize: 14,
+    marginLeft: SPACING.sm,
+    color: COLORS.textSecondary,
+  },
+  buttonContainer: {
+    width: "100%",
+    marginTop: SPACING.md,
   },
   button: {
-    backgroundColor: "#3498db",
-    padding: 15,
-    borderRadius: 8,
-    width: "100%",
+    borderRadius: SPACING.md,
+    overflow: "hidden",
+    elevation: 4,
+  },
+  buttonGradient: {
+    paddingVertical: SPACING.lg,
     alignItems: "center",
   },
   buttonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
+    fontSize: 18,
+    fontWeight: "600",
+    color: COLORS.white,
+    letterSpacing: 0.5,
   },
-  link: {
-    marginTop: 20,
+  linksContainer: {
+    marginTop: SPACING.xl,
+    alignItems: "center",
   },
   linkText: {
-    color: "#3498db",
-    fontSize: 14,
+    fontSize: 16,
+    color: COLORS.primary,
+    marginVertical: SPACING.sm,
+    fontWeight: "500",
   },
 });
+
+export default SignUp;
