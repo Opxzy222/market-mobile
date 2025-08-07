@@ -4,7 +4,7 @@ buildscript {
         minSdkVersion = 24
         compileSdkVersion = 34
         targetSdkVersion = 34
-        ndkVersion = "26.3.11579264"
+        ndkVersion = "25.2.9519653" # Stable for React Native 0.74.5 and Expo 53
     }
     repositories {
         google()
