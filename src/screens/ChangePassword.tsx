@@ -4,15 +4,18 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
-  StyleSheet, StatusBar
+  StyleSheet,
+  StatusBar,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Ionicons } from "@expo/vector-icons";
+import Toast from "react-native-toast-message"; // Replaced Alert with Toast for consistency
 import { useRouter, useLocalSearchParams } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
+import { SafeAreaView } from "react-native-safe-area-context";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
+import { Ionicons } from "@expo/vector-icons";
+import Animated, { FadeInUp, FadeInDown } from "react-native-reanimated";
 
 const ChangePassword = () => {
   const [oldPassword, setOldPassword] = useState("");
@@ -24,32 +27,28 @@ const ChangePassword = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const router = useRouter();
-  const params = useLocalSearchParams();
-  const { prevRoute } = params;
+  const { prevRoute } = useLocalSearchParams();
 
   const handleChangePassword = async () => {
     if (!oldPassword || !newPassword || !confirmPassword) {
-      Alert.alert("Error", "All fields are required.");
+      Toast.show({ type: "error", text1: "Error", text2: "All fields are required." });
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      Alert.alert("Error", "New passwords do not match.");
+      Toast.show({ type: "error", text1: "Error", text2: "New passwords do not match." });
       return;
     }
 
     try {
       setLoading(true);
-
-      // Retrieve session token from AsyncStorage
       const sessionToken = await AsyncStorage.getItem("sessionToken");
 
       if (!sessionToken) {
-        Alert.alert("Error", "Session expired. Please log in again.");
+        Toast.show({ type: "error", text1: "Error", text2: "Session expired. Please log in again." });
         return;
       }
 
-      // API Request
       const response = await fetch("https://retail-alvinia-goza-f6a0e4f7.koyeb.app/change-password/", {
         method: "PATCH",
         headers: {
@@ -67,91 +66,138 @@ const ChangePassword = () => {
 
       if (response.ok) {
         await AsyncStorage.setItem("sessionToken", data.session_id);
-        Alert.alert("Success", "Password updated successfully!");
+        Toast.show({ type: "success", text1: "Success", text2: "Password updated successfully!" });
         setOldPassword("");
         setNewPassword("");
         setConfirmPassword("");
+        router.navigate("(tabs)/profile");
       } else {
-        Alert.alert("Error", data.error || "Failed to update password.");
+        Toast.show({ type: "error", text1: "Error", text2: data.error || "Failed to update password." });
       }
     } catch (error) {
       console.error("Change Password Error:", error);
-      Alert.alert("Error", "Something went wrong. Please try again.");
+      Toast.show({ type: "error", text1: "Error", text2: "Something went wrong. Please try again." });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <LinearGradient colors={["#F5F5F5", "#E0E0E0"]} style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
-      <View style={styles.header}>
-      <TouchableOpacity onPress={() => router.navigate('(tabs)/profile')}>
-          <MaterialIcons name="arrow-back" size={26} color="white" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Change Password</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-      <View style={styles.card}>
-
-        {/* Old Password Input */}
-        <View style={styles.inputContainer}>
-          <Ionicons name="lock-closed-outline" size={20} color="#777" />
-          <TextInput
-            placeholder="Current Password"
-            secureTextEntry={!showOldPassword}
-            autoCorrect={false}
-            autoCapitalize="none"
-            style={styles.input}
-            value={oldPassword}
-            onChangeText={setOldPassword}
-          />
-          <TouchableOpacity onPress={() => setShowOldPassword(!showOldPassword)}>
-            <Ionicons name={showOldPassword ? "eye-off-outline" : "eye-outline"} size={22} color="#777" />
+    <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
+      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+      <LinearGradient colors={["#F5F5F5", "#E0E0E0"]} style={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => router.navigate("(tabs)/profile")}
+            style={styles.backButton}
+          >
+            <MaterialIcons name="arrow-back" size={26} color="white" />
           </TouchableOpacity>
+          <Text style={styles.headerTitle}>Change Password</Text>
+          <View style={styles.headerSpacer} />
         </View>
 
-        {/* New Password Input */}
-        <View style={styles.inputContainer}>
-          <Ionicons name="key-outline" size={20} color="#777" />
-          <TextInput
-            placeholder="New Password"
-            secureTextEntry={!showNewPassword}
-            autoCorrect={false}
-            autoCapitalize="none"
-            style={styles.input}
-            value={newPassword}
-            onChangeText={setNewPassword}
-          />
-          <TouchableOpacity onPress={() => setShowNewPassword(!showNewPassword)}>
-            <Ionicons name={showNewPassword ? "eye-off-outline" : "eye-outline"} size={22} color="#777" />
-          </TouchableOpacity>
-        </View>
+        {/* Content */}
+        <Animated.View style={styles.contentContainer} entering={FadeInUp.duration(500)}>
+          <Animated.Text style={styles.title} entering={FadeInUp.duration(500).delay(100)}>
+            Update Your Password
+          </Animated.Text>
+          <Animated.Text style={styles.subtitle} entering={FadeInUp.duration(500).delay(200)}>
+            Enter your current and new password to secure your account
+          </Animated.Text>
+          <Animated.View style={styles.card} entering={FadeInDown.duration(500).delay(300)}>
+            {/* Old Password Input */}
+            <View style={styles.inputContainer}>
+              <Ionicons name="lock-closed-outline" size={20} color="#6B7280" />
+              <TextInput
+                placeholder="Current Password"
+                placeholderTextColor="#A3A3A3"
+                secureTextEntry={!showOldPassword}
+                autoCorrect={false}
+                autoCapitalize="none"
+                style={styles.input}
+                value={oldPassword}
+                onChangeText={setOldPassword}
+                accessibilityLabel="Current password input"
+              />
+              <TouchableOpacity onPress={() => setShowOldPassword(!showOldPassword)}>
+                <Ionicons
+                  name={showOldPassword ? "eye-off-outline" : "eye-outline"}
+                  size={22}
+                  color="#6B7280"
+                />
+              </TouchableOpacity>
+            </View>
 
-        {/* Confirm New Password Input */}
-        <View style={styles.inputContainer}>
-          <Ionicons name="key-outline" size={20} color="#777" />
-          <TextInput
-            placeholder="Confirm New Password"
-            secureTextEntry={!showConfirmPassword}
-            autoCorrect={false}
-            autoCapitalize="none"
-            style={styles.input}
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-          />
-          <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
-            <Ionicons name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} size={22} color="#777" />
-          </TouchableOpacity>
-        </View>
+            {/* New Password Input */}
+            <View style={styles.inputContainer}>
+              <Ionicons name="key-outline" size={20} color="#6B7280" />
+              <TextInput
+                placeholder="New Password"
+                placeholderTextColor="#A3A3A3"
+                secureTextEntry={!showNewPassword}
+                autoCorrect={false}
+                autoCapitalize="none"
+                style={styles.input}
+                value={newPassword}
+                onChangeText={setNewPassword}
+                accessibilityLabel="New password input"
+              />
+              <TouchableOpacity onPress={() => setShowNewPassword(!showNewPassword)}>
+                <Ionicons
+                  name={showNewPassword ? "eye-off-outline" : "eye-outline"}
+                  size={22}
+                  color="#6B7280"
+                />
+              </TouchableOpacity>
+            </View>
 
-        <TouchableOpacity onPress={handleChangePassword} style={styles.button} disabled={loading}>
-          <LinearGradient colors={["#4CAF50", "#45A049"]} style={styles.buttonGradient}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Update Password</Text>}
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
-    </LinearGradient>
+            {/* Confirm New Password Input */}
+            <View style={styles.inputContainer}>
+              <Ionicons name="key-outline" size={20} color="#6B7280" />
+              <TextInput
+                placeholder="Confirm New Password"
+                placeholderTextColor="#A3A3A3"
+                secureTextEntry={!showConfirmPassword}
+                autoCorrect={false}
+                autoCapitalize="none"
+                style={styles.input}
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                accessibilityLabel="Confirm new password input"
+              />
+              <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
+                <Ionicons
+                  name={showConfirmPassword ? "eye-off-outline" : "eye-outline"}
+                  size={22}
+                  color="#6B7280"
+                />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.button, loading && styles.buttonDisabled]}
+              onPress={handleChangePassword}
+              disabled={loading}
+            >
+              <LinearGradient
+                colors={loading ? ['#D1D5DB', '#B0B0B0'] : ['#4F46E5', '#7C3AED']}
+                style={styles.buttonGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              >
+                {loading ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.buttonText}>Update Password</Text>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+          </Animated.View>
+        </Animated.View>
+      </LinearGradient>
+    </SafeAreaView>
   );
 };
 
@@ -162,68 +208,101 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 18,
-    backgroundColor: "rgba(255, 255, 255, 0.8)",
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    backgroundColor: "#3A7BD5",
+    borderBottomLeftRadius: 35,
+    borderBottomRightRadius: 35,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 6,
-    elevation: 5,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    marginBottom: 12,
-    backdropFilter: "blur(10px)", // Glass effect
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: "bold",
-    marginLeft: 75,
-    color: "black",
+    elevation: 6,
   },
   backButton: {
-    borderRadius: 50,
-    backgroundColor: "#E0E0E0",
-    marginRight: 12,
+    padding: 5,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#FFFFFF",
+    flex: 1,
+    textAlign: "center",
+  },
+  headerSpacer: {
+    width: 42,
+  },
+  contentContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 32,
+  },
+  title: {
+    fontSize: 30,
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: 8,
+    fontFamily: "System", // Suggest 'Inter_800ExtraBold' or 'Poppins_ExtraBold'
+  },
+  subtitle: {
+    fontSize: 16,
+    fontWeight: "400",
+    color: "#6B7280",
+    marginBottom: 24,
+    fontFamily: "System", // Suggest 'Inter_Regular' or 'Poppins_Regular'
   },
   card: {
-    backgroundColor: "rgba(255, 255, 255, 0.8)",
-    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
     padding: 20,
-    elevation: 5,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    marginTop: 20,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: "rgba(0, 0, 0, 0.05)",
   },
   inputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F5F5F5",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 15,
+    backgroundColor: "#F9FAFB",
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "rgba(0, 0, 0, 0.08)",
   },
   input: {
     flex: 1,
-    marginLeft: 10,
+    marginLeft: 12,
     fontSize: 16,
-    color: "#333",
+    fontWeight: "500",
+    color: "#111827",
   },
   button: {
-    marginTop: 10,
-    borderRadius: 8,
+    borderRadius: 10,
     overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  buttonDisabled: {
+    opacity: 0.7,
   },
   buttonGradient: {
-    padding: 15,
+    paddingVertical: 14,
     alignItems: "center",
   },
   buttonText: {
-    color: "#fff",
-    fontWeight: "bold",
-    fontSize: 16,
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#FFFFFF",
+    fontFamily: "System", // Suggest 'Inter_SemiBold' or 'Poppins_SemiBold'
   },
 });
 

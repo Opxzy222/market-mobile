@@ -6,11 +6,11 @@ import {
   InterstitialAd,
   AdEventType,
   TestIds,
-  MobileAds,
   NativeAdView,
 } from 'react-native-google-mobile-ads';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// Ad unit IDs
 const BANNER_AD_UNIT_ID = __DEV__
   ? TestIds.BANNER
   : 'ca-app-pub-2360241039001516/8894147031';
@@ -21,43 +21,39 @@ const NATIVE_AD_UNIT_ID = __DEV__
   ? TestIds.NATIVE
   : 'ca-app-pub-2360241039001516/9517278195';
 
-// Type definition for useInterstitialAd return value
+// Type definition for interstitial ad hooks
 interface InterstitialAdHook {
   showInterstitial: () => Promise<void>;
   adLoaded: boolean;
 }
 
-// Hook for interstitial ad management
 export const useInterstitialAd = (): InterstitialAdHook => {
   const [interstitialAd, setInterstitialAd] = useState<InterstitialAd | null>(null);
   const [adLoaded, setAdLoaded] = useState(false);
 
   useEffect(() => {
-    MobileAds()
-      .initialize()
-      .then((adapterStatuses) => console.log('AdMob initialized:', adapterStatuses))
-      .catch((error) => console.error('AdMob initialization error:', error));
-
     const ad = InterstitialAd.createForAdRequest(INTERSTITIAL_AD_UNIT_ID, {
       requestNonPersonalizedAdsOnly: true,
       keywords: ['retail', 'shopping', 'market'],
     });
 
     const handleAdLoaded = () => {
-      console.log('Interstitial ad loaded');
+      console.log('Search interstitial ad loaded');
       setAdLoaded(true);
       setInterstitialAd(ad);
     };
 
     const handleAdClosed = () => {
-      console.log('Interstitial ad closed');
+      console.log('Search interstitial ad closed, resetting searchCount');
       setAdLoaded(false);
-      AsyncStorage.setItem('searchCount', '0'); // Reset count
+      AsyncStorage.setItem('searchCount', '0')
+        .then(() => console.log('searchCount reset to 0'))
+        .catch((error) => console.error('Error resetting searchCount:', error));
       ad.load();
     };
 
     const handleAdError = (error: Error) => {
-      console.error('Interstitial ad error:', error);
+      console.error('Search interstitial ad error:', error);
       setAdLoaded(false);
       ad.load();
     };
@@ -66,6 +62,7 @@ export const useInterstitialAd = (): InterstitialAdHook => {
     ad.addAdEventListener(AdEventType.CLOSED, handleAdClosed);
     ad.addAdEventListener(AdEventType.ERROR, handleAdError);
 
+    console.log('Loading search interstitial ad');
     ad.load();
 
     return () => ad.removeAllListeners();
@@ -74,18 +71,78 @@ export const useInterstitialAd = (): InterstitialAdHook => {
   const showInterstitial = async () => {
     if (adLoaded && interstitialAd) {
       try {
+        console.log('Attempting to show search interstitial ad');
         await interstitialAd.show();
-        console.log('Interstitial ad shown');
+        console.log('Search interstitial ad shown successfully');
       } catch (error) {
-        console.error('Error showing interstitial ad:', error);
+        console.error('Error showing search interstitial ad:', error);
       }
+    } else {
+      console.log('Cannot show ad: adLoaded=', adLoaded, 'interstitialAd=', !!interstitialAd);
     }
   };
 
   return { showInterstitial, adLoaded };
 };
 
-// Native ad component
+export const useNavigationInterstitialAd = (): InterstitialAdHook => {
+  const [interstitialAd, setInterstitialAd] = useState<InterstitialAd | null>(null);
+  const [adLoaded, setAdLoaded] = useState(false);
+
+  useEffect(() => {
+    const ad = InterstitialAd.createForAdRequest(INTERSTITIAL_AD_UNIT_ID, {
+      requestNonPersonalizedAdsOnly: true,
+      keywords: ['retail', 'shopping', 'market'],
+    });
+
+    const handleAdLoaded = () => {
+      console.log('Navigation interstitial ad loaded');
+      setAdLoaded(true);
+      setInterstitialAd(ad);
+    };
+
+    const handleAdClosed = () => {
+      console.log('Navigation interstitial ad closed, resetting navigationCount');
+      setAdLoaded(false);
+      AsyncStorage.setItem('navigationCount', '0')
+        .then(() => console.log('navigationCount reset to 0'))
+        .catch((error) => console.error('Error resetting navigationCount:', error));
+      ad.load();
+    };
+
+    const handleAdError = (error: Error) => {
+      console.error('Navigation interstitial ad error:', error);
+      setAdLoaded(false);
+      ad.load();
+    };
+
+    ad.addAdEventListener(AdEventType.LOADED, handleAdLoaded);
+    ad.addAdEventListener(AdEventType.CLOSED, handleAdClosed);
+    ad.addAdEventListener(AdEventType.ERROR, handleAdError);
+
+    console.log('Loading navigation interstitial ad');
+    ad.load();
+
+    return () => ad.removeAllListeners();
+  }, []);
+
+  const showInterstitial = async () => {
+    if (adLoaded && interstitialAd) {
+      try {
+        console.log('Attempting to show navigation interstitial ad');
+        await interstitialAd.show();
+        console.log('Navigation interstitial ad shown successfully');
+      } catch (error) {
+        console.error('Error showing navigation interstitial ad:', error);
+      }
+    } else {
+      console.log('Cannot show ad: adLoaded=', adLoaded, 'interstitialAd=', !!interstitialAd);
+    }
+  };
+
+  return { showInterstitial, adLoaded };
+};
+
 const NativeAdComponent: React.FC = () => {
   const [adLoaded, setAdLoaded] = useState(false);
 
@@ -121,7 +178,6 @@ const NativeAdComponent: React.FC = () => {
   );
 };
 
-// Banner ad component (fallback)
 const BannerAdComponent: React.FC = () => {
   return (
     <BannerAd
@@ -136,7 +192,6 @@ const BannerAdComponent: React.FC = () => {
   );
 };
 
-// Props for AdMobManager
 interface AdMobManagerProps {
   useNativeAd?: boolean;
 }

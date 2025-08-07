@@ -10,7 +10,11 @@ import {
 } from 'react-native';
 import debounce from 'lodash.debounce';
 import axios from 'axios';
+import { Ionicons } from '@expo/vector-icons';
 import { initializeDatabase, getSuggestions, cacheSuggestions, getSuggestionsCount } from '../storage/storage';
+
+const TOTAL_SUGGESTIONS = 163000; // Total number of suggestions
+const PROCESSING_BATCH_SIZE = 1000; // Batch size for processing suggestions
 
 const AutocompleteInput = ({
   value,
@@ -20,14 +24,20 @@ const AutocompleteInput = ({
   onFocusChange,
   inputRef,
   onSuggestionsStateChange,
+  onSearch,
+  loading,
+  onPopulationStateChange,
 }) => {
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [loading, setIsLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState(null);
   const [suggestionsHeight, setSuggestionsHeight] = useState(0);
-  const scrollViewRef = useRef<ScrollView>(null);
-  const textInputRef = useRef<TextInput>(null);
+  const [isPopulating, setIsPopulating] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const scrollViewRef = useRef(null);
+  const textInputRef = useRef(null);
+  const lastProgressRef = useRef(0); // Track last reported progress
 
   useEffect(() => {
     const init = async () => {
@@ -35,7 +45,7 @@ const AutocompleteInput = ({
         await initializeDatabase();
         console.log('Database initialized, checking suggestions');
         const count = await getSuggestionsCount();
-        if (count < 1000) {
+        if (count < 160000) {
           console.log('Populating initial suggestions');
           await populateInitialSuggestions();
         } else {
@@ -44,7 +54,7 @@ const AutocompleteInput = ({
       } catch (err) {
         console.error('Initialization failed:', err);
         setError('Failed to initialize database');
-        await populateInitialSuggestions(true); // Retry with backend fetch
+        await populateInitialSuggestions(true);
       }
     };
     init();
@@ -54,12 +64,16 @@ const AutocompleteInput = ({
     try {
       const count = await getSuggestionsCount();
       console.log('Suggestions count:', count);
-      if (!forceFetch && count >= 160000) {
+      if (!forceFetch && count >= TOTAL_SUGGESTIONS) {
         console.log('Suggestions sufficiently populated, skipping fetch');
         return;
       }
 
-      setIsLoading(true);
+      setIsPopulating(true);
+      setProgress(0);
+      lastProgressRef.current = 0;
+      onPopulationStateChange?.({ isPopulating: true, progress: 0 });
+
       const response = await axios.get('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/all-suggestions/', {
         timeout: 60000,
         headers: {
@@ -67,64 +81,67 @@ const AutocompleteInput = ({
           'Accept': 'application/json',
           'User-Agent': 'market-mobile/1.0.0',
         },
-        validateStatus: status => status >= 200 && status < 300,
+        validateStatus: (status) => status >= 200 && status < 300,
       });
 
-      console.log('Response status:', response.status);
-      console.log('Response headers:', response.headers);
+      const rawSuggestions = [];
+      for (let i = 0; i < response.data.suggestions.length; i += PROCESSING_BATCH_SIZE) {
+        const batch = response.data.suggestions.slice(i, i + PROCESSING_BATCH_SIZE);
+        const processedBatch = batch
+          .map((item, index) => {
+            const globalIndex = i + index + 1;
+            const currentProgress = (globalIndex / TOTAL_SUGGESTIONS) * 100;
+            const roundedProgress = Math.min(Math.round(currentProgress * 10) / 10, 99);
+            // Stricter check to avoid duplicates
+            if (roundedProgress > lastProgressRef.current + 0.099) {
+              setProgress(roundedProgress);
+              onPopulationStateChange?.({ isPopulating: true, progress: roundedProgress });
+              lastProgressRef.current = roundedProgress;
+              console.log('Population state changed:', { isPopulating: true, progress: roundedProgress });
+            }
 
-      const rawSuggestions = response.data.suggestions
-        .map((item: any, index: number) => {
-          if (item && typeof item.name === 'string') {
-            const trimmed = item.name.trim();
-            return trimmed.length > 0 ? trimmed : null;
-          }
-          console.warn(`Invalid suggestion item at index ${index}:`, item);
-          return null;
-        })
-        .filter((name: string | null) => name) as string[];
+            if (item && typeof item.name === 'string') {
+              const trimmed = item.name.trim();
+              return trimmed.length > 0 ? trimmed : null;
+            }
+            console.warn(`Invalid suggestion item at index ${globalIndex - 1}:`, item);
+            return null;
+          })
+          .filter((name) => name);
 
-      console.log('Raw API suggestions:', rawSuggestions.length);
-
-      const maxSuggestions = 180000;
-      const uniqueSuggestions: string[] = [];
-      const seen = new Set<string>();
-
-      for (const s of rawSuggestions) {
-        const lower = s.toLowerCase();
-        if (!seen.has(lower)) {
-          seen.add(lower);
-          uniqueSuggestions.push(s);
-          if (uniqueSuggestions.length >= maxSuggestions) break;
-        }
+        rawSuggestions.push(...processedBatch);
+        await new Promise((resolve) => setTimeout(resolve, 10)); // Yield for UI
       }
-      console.log('Unique suggestions:', uniqueSuggestions.length);
 
-      await cacheSuggestions(uniqueSuggestions);
+      const finalSuggestions = rawSuggestions.slice(0, TOTAL_SUGGESTIONS);
+      console.time('cacheSuggestions');
+      await cacheSuggestions(finalSuggestions);
+      console.timeEnd('cacheSuggestions');
       console.log('Suggestions cached successfully in SQLite');
+      setProgress(100);
+      onPopulationStateChange?.({ isPopulating: true, progress: 100 });
+      lastProgressRef.current = 100;
+
+      setTimeout(() => {
+        setIsPopulating(false);
+        setProgress(0);
+        lastProgressRef.current = 0;
+        onPopulationStateChange?.({ isPopulating: false, progress: 0 });
+      }, 500);
     } catch (error) {
       console.error('Error populating suggestions:', error);
-      if (axios.isAxiosError(error)) {
-        console.error('Axios error details:', {
-          message: error.message,
-          code: error.code,
-          response: error.response ? {
-            status: error.response.status,
-            data: error.response.data,
-            headers: error.response.headers,
-          } : null,
-        });
-        setError(`Failed to load suggestions: ${error.response?.status || 'Network error'}`);
-      } else {
-        setError('Database or network error');
-      }
+      setError(`Failed to load suggestions: ${error.response?.status || 'Network error'}`);
+      setIsPopulating(false);
+      setProgress(0);
+      lastProgressRef.current = 0;
+      onPopulationStateChange?.({ isPopulating: false, progress: 0 });
     } finally {
       setIsLoading(false);
     }
   };
 
   const fetchSuggestions = useCallback(
-    debounce(async (input: string) => {
+    debounce(async (input) => {
       if (!input || input.length < 1) {
         setSuggestions([]);
         setError(null);
@@ -142,28 +159,23 @@ const AutocompleteInput = ({
               'Accept': 'application/json',
               'User-Agent': 'market-mobile/1.0.0',
             },
-            validateStatus: status => status >= 200 && status < 300,
+            validateStatus: (status) => status >= 200 && status < 300,
           });
 
           const rawSuggestions = response.data.suggestions
-            .map((item: any) => (item && typeof item.name === 'string' && item.name.trim().length > 0 ? item.name.trim() : null))
-            .filter((name: string | null) => name) as string[];
-
-          results = rawSuggestions
-            .filter(name => name.toLowerCase().startsWith(input.toLowerCase()))
+            .map((item) => (item && typeof item.name === 'string' && item.name.trim().length > 0 ? item.name.trim() : null))
+            .filter((name) => name)
+            .filter((name) => name.toLowerCase().startsWith(input.toLowerCase()))
             .slice(0, 20);
 
-          if (results.length > 0) {
-            await cacheSuggestions(results);
+          if (rawSuggestions.length > 0) {
+            await cacheSuggestions(rawSuggestions);
             console.log('Cached backend suggestions in SQLite');
           }
+          results = rawSuggestions;
         }
-        console.log('Fetched suggestions:', results.slice(0, 20));
         setSuggestions(results);
         setError(null);
-        if (results.length === 0) {
-          console.log(`No suggestions found for query "${input}"`);
-        }
       } catch (error) {
         console.error('Error fetching suggestions:', error);
         setError('Failed to fetch suggestions');
@@ -175,15 +187,13 @@ const AutocompleteInput = ({
     []
   );
 
-  const handleInput = (text: string) => {
-    console.log('Input changed:', text);
+  const handleInput = (text) => {
     onChangeText(text);
     fetchSuggestions(text);
   };
 
   const handleSelectSuggestion = useCallback(
-    (suggestion: string) => {
-      console.log('Suggestion selected:', suggestion);
+    (suggestion) => {
       onChangeText(suggestion);
       setSuggestions([]);
       setSuggestionsHeight(0);
@@ -198,7 +208,6 @@ const AutocompleteInput = ({
 
   const handleSubmitEditing = () => {
     if (value) {
-      console.log('Submit editing with value:', value);
       setSuggestions([]);
       setSuggestionsHeight(0);
       onSuggestionsStateChange?.({ showSuggestions: false, suggestions: [], suggestionsHeight: 0 });
@@ -209,19 +218,16 @@ const AutocompleteInput = ({
   };
 
   const handleFocus = () => {
-    console.log('Input focused');
     setIsFocused(true);
     onFocusChange?.(true);
     if (value) fetchSuggestions(value);
   };
 
   const handleBlur = () => {
-    console.log('Input blurred, current value:', value);
     setIsFocused(false);
     onFocusChange?.(false);
     setTimeout(() => {
       if (!isFocused) {
-        console.log('Hiding suggestions, preserving value:', value);
         setSuggestions([]);
         setSuggestionsHeight(0);
         onSuggestionsStateChange?.({ showSuggestions: false, suggestions: [], suggestionsHeight: 0 });
@@ -229,8 +235,8 @@ const AutocompleteInput = ({
     }, 200);
   };
 
-  const handleCloseSuggestions = () => {
-    console.log('Close suggestions, preserving value:', value);
+  const handleClear = () => {
+    onChangeText('');
     setSuggestions([]);
     setSuggestionsHeight(0);
     onSuggestionsStateChange?.({ showSuggestions: false, suggestions: [], suggestionsHeight: 0 });
@@ -241,11 +247,7 @@ const AutocompleteInput = ({
 
   return (
     <View style={[styles.container, style]}>
-      <View
-        style={[styles.inputWrapper, isFocused && styles.inputWrapperFocused, { zIndex: 1000 }]}
-        onStartShouldSetResponder={() => true}
-        onResponderRelease={() => console.log('AutocompleteInput touch captured')}
-      >
+      <View style={[styles.inputWrapper, isFocused && styles.inputWrapperFocused, { zIndex: 1000 }]}>
         <TextInput
           ref={inputRef || textInputRef}
           style={styles.input}
@@ -263,14 +265,27 @@ const AutocompleteInput = ({
         {value && (
           <TouchableOpacity
             style={styles.clearButton}
-            onPress={handleCloseSuggestions}
+            onPress={handleClear}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            accessibilityLabel="Close suggestions"
+            accessibilityLabel="Clear input"
           >
-            <Text style={styles.clearButtonText}>✕</Text>
+            <Ionicons name="close-circle" size={20} color="#777" />
           </TouchableOpacity>
         )}
-        {loading && <ActivityIndicator size="small" color="#007bff" style={styles.loader} />}
+        <TouchableOpacity
+          style={[styles.searchButton, loading && styles.searchButtonDisabled]}
+          onPress={() => onSearch?.(value)}
+          disabled={loading}
+          activeOpacity={0.8}
+          accessibilityLabel="Search"
+        >
+          {loading ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Ionicons name="search" size={20} color="#fff" />
+          )}
+        </TouchableOpacity>
+        {/*{isLoading && <ActivityIndicator size="small" color="#007bff" style={styles.loader} />} */}
       </View>
       {error && <Text style={styles.errorText}>{error}</Text>}
       {suggestions.length > 0 && (
@@ -325,6 +340,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: '#fff',
     paddingHorizontal: 10,
+    height: 48,
   },
   inputWrapperFocused: {
     borderColor: '#007bff',
@@ -339,18 +355,27 @@ const styles = StyleSheet.create({
     height: 48,
     fontSize: 16,
     color: '#333',
+    paddingRight: 8,
   },
   clearButton: {
     padding: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  clearButtonText: {
-    fontSize: 16,
-    color: '#777',
+  searchButton: {
+    backgroundColor: '#007bff',
+    borderRadius: 6,
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 4,
+  },
+  searchButtonDisabled: {
+    backgroundColor: '#A7C7E7',
   },
   loader: {
-    marginLeft: 10,
+    marginLeft: 8,
   },
   suggestionsContainer: {
     marginTop: 4,

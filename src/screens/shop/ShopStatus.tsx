@@ -14,12 +14,11 @@ import {
   Platform,
   Dimensions,
   StatusBar,
+  Animated,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
-import { VideoView, useVideoPlayer } from "expo-video";
-import { format } from "date-fns";
 import { Ionicons } from "@expo/vector-icons";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -29,18 +28,29 @@ import SubscriptionRequired from "@/components/RequiredSubscription";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
+import { format } from "date-fns";
 
 const { width } = Dimensions.get("window");
 const BACKEND_URL = "https://retail-alvinia-goza-f6a0e4f7.koyeb.app";
 const FALLBACK_IMAGE = "https://randomuser.me/api/portraits/lego/1.jpg";
 
-const StatusItem = ({ item, index, onPress, onDelete }) => {
-  const player = item.media && item.media_type === "video" && item.thumbnail_url
-    ? useVideoPlayer(item.thumbnail_url, (player) => {
-        player.loop = true;
-        player.pause();
-      })
-    : null;
+const StatusItem = ({ item, index, onPress, onDelete, regenerateMediaUrl, sessionId }) => {
+  const [mediaUrls, setMediaUrls] = useState({ media: item.media, thumbnail: item.thumbnail_url });
+
+  const handleImageError = async (type) => {
+    console.error(`Failed to load ${type} for status ID ${item.id}: ${mediaUrls[type]}`);
+    try {
+      const response = await axios.get(`${BACKEND_URL}/status/regenerate-url/?status_id=${item.id}`, {
+        headers: { Authorization: `Bearer ${sessionId}` },
+      });
+      const { media_url, thumbnail_url } = response.data;
+      setMediaUrls({ media: media_url, thumbnail: thumbnail_url });
+      regenerateMediaUrl(item.id, media_url, thumbnail_url);
+    } catch (error) {
+      console.error(`Error regenerating URL for status ID ${item.id}:`, error);
+      Alert.alert("Error", "Failed to load media. Please try again.");
+    }
+  };
 
   const handleDeletePress = () => {
     Alert.alert(
@@ -60,30 +70,26 @@ const StatusItem = ({ item, index, onPress, onDelete }) => {
   return (
     <View style={styles.statusItem}>
       <TouchableOpacity onPress={() => onPress(index)} style={styles.statusContent}>
-        {item.media && item.media_type === "image" && (
+        {item.media_type === "image" && (
           <Image
-            source={{ uri: item.media }}
+            source={{ uri: mediaUrls.media || FALLBACK_IMAGE }}
             style={[styles.avatar, styles.unreadBorder]}
-            onError={() => console.error(`Failed to load status media: ${item.media}`)}
+            onError={() => handleImageError("media")}
           />
         )}
-        {item.media && item.media_type === "video" && (
+        {item.media_type === "video" && (
           <View style={[styles.avatar, styles.unreadBorder]}>
             <Image
-              source={{ uri: item.thumbnail_url || item.media }}
+              source={{ uri: mediaUrls.thumbnail || FALLBACK_IMAGE }}
               style={styles.avatar}
-              onError={() => console.error(`Failed to load video thumbnail: ${item.thumbnail_url}`)}
+              onError={() => handleImageError("thumbnail")}
             />
             <View style={styles.playIconContainer}>
-              <Ionicons
-                name="play-circle"
-                size={24}
-                color="rgba(255, 255, 255, 0.8)"
-              />
+              <Ionicons name="play-circle" size={24} color="rgba(255, 255, 255, 0.8)" />
             </View>
           </View>
         )}
-        {!item.media && (
+        {item.media_type === "text" && (
           <Image
             source={{ uri: item.image || FALLBACK_IMAGE }}
             style={[styles.avatar, styles.unreadBorder]}
@@ -111,6 +117,8 @@ const StatusScreen = () => {
   const [selectedMedia, setSelectedMedia] = useState([]);
   const [currentStatusIndex, setCurrentStatusIndex] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const uploadProgressAnim = useRef(new Animated.Value(0)).current;
   const { subscriptionStatus } = useContext(SubscriptionContext);
   const fileInputRef = useRef(null);
   const { shopId, prevRoute } = useLocalSearchParams();
@@ -131,22 +139,33 @@ const StatusScreen = () => {
 
   const fetchStatuses = useCallback(async () => {
     try {
-      setLoading(true);
-      const response = await axios.get(`${BACKEND_URL}/shop/${shopId}/active_status/`, {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: sessionId ? `Bearer ${sessionId}` : "",
-        },
-      });
-      console.log("API Response:", JSON.stringify(response.data, null, 2));
-      setStatuses(response.data.statuses || []);
+        setLoading(true);
+        const response = await axios.get(`${BACKEND_URL}/shop/${shopId}/active_status/`, {
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: sessionId ? `Bearer ${sessionId}` : "",
+            },
+        });
+        const formattedStatuses = response.data.statuses.map(status => ({
+            id: status.id,
+            shop_id: status.shop_id, // Add shop_id
+            shop: status.shop.name,
+            text: status.text,
+            media: status.media,
+            thumbnail_url: status.thumbnail_url,
+            media_type: status.media_type,
+            created_at: status.created_at,
+            views_count: status.views_count,
+            image: status.shop.image // Use shop.image
+        }));
+        setStatuses(formattedStatuses);
     } catch (error) {
-      console.error("Error fetching statuses:", error);
-      Alert.alert("Error", "Failed to fetch statuses. Please try again.");
+        console.error("Error fetching statuses:", error);
+        Alert.alert("Error", "Failed to fetch statuses. Please try again.");
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
-  }, [shopId, sessionId]);
+}, [shopId, sessionId]);
 
   useEffect(() => {
     if (sessionId) {
@@ -161,6 +180,14 @@ const StatusScreen = () => {
       }
     }, [fetchStatuses, sessionId])
   );
+
+  const regenerateMediaUrl = useCallback((statusId, mediaUrl, thumbnailUrl) => {
+    setStatuses((prevStatuses) =>
+      prevStatuses.map((status) =>
+        status.id === statusId ? { ...status, media: mediaUrl, thumbnail_url: thumbnailUrl } : status
+      )
+    );
+  }, []);
 
   const handleDeleteStatus = useCallback(async (statusId) => {
     try {
@@ -196,10 +223,7 @@ const StatusScreen = () => {
           const isImage = mimeType?.startsWith("image/");
 
           if (!isImage && !isVideo) {
-            Alert.alert(
-              "Warning",
-              `File "${name || "selected file"}" is not a valid image or video.`
-            );
+            Alert.alert("Warning", `File "${name || "selected file"}" is not a valid image or video.`);
             return null;
           }
 
@@ -210,10 +234,7 @@ const StatusScreen = () => {
             }
 
             if (info.size > 10 * 1024 * 1024) {
-              Alert.alert(
-                "Warning",
-                `File "${name || "selected file"}" is too large (max 10 MB).`
-              );
+              Alert.alert("Warning", `File "${name || "selected file"}" is too large (max 10 MB).`);
               return null;
             }
 
@@ -222,22 +243,17 @@ const StatusScreen = () => {
               uri,
               name: name || `media_${Date.now()}.${isVideo ? "mp4" : "jpg"}`,
               type: isVideo ? "video" : "image",
-              thumbnail: isVideo ? uri : null, // Use video URI as fallback thumbnail
+              thumbnail: isVideo ? uri : null,
               valid: true,
             };
           } catch (error) {
             console.error("Validation failed for:", uri, error);
-            Alert.alert(
-              "Warning",
-              `File "${name || "selected file"}" is invalid and will be skipped.`
-            );
+            Alert.alert("Warning", `File "${name || "selected file"}" is invalid and will be skipped.`);
             return null;
           }
         });
 
-        const newMedia = (await Promise.all(newMediaPromises)).filter(
-          (item) => item !== null
-        );
+        const newMedia = (await Promise.all(newMediaPromises)).filter((item) => item !== null);
         setSelectedMedia((prevMedia) => [...prevMedia, ...newMedia]);
       }
     } catch (error) {
@@ -259,10 +275,7 @@ const StatusScreen = () => {
       const newMedia = files.map((file) => {
         const mediaType = file.type.startsWith("image") ? "image" : "video";
         if (file.size > 10 * 1024 * 1024) {
-          Alert.alert(
-            "Warning",
-            `File "${file.name}" is too large (max 10 MB).`
-          );
+          Alert.alert("Warning", `File "${file.name}" is too large (max 10 MB).`);
           return null;
         }
         return {
@@ -270,7 +283,7 @@ const StatusScreen = () => {
           uri: URL.createObjectURL(file),
           name: file.name,
           type: mediaType,
-          thumbnail: mediaType === "video" ? URL.createObjectURL(file) : null, // Fallback thumbnail
+          thumbnail: mediaType === "video" ? URL.createObjectURL(file) : null,
           file,
           valid: true,
         };
@@ -315,6 +328,13 @@ const StatusScreen = () => {
       return;
     }
     setLoading(true);
+    setUploadProgress(0);
+    Animated.timing(uploadProgressAnim, {
+      toValue: 0,
+      duration: 0,
+      useNativeDriver: false,
+    }).start();
+
     try {
       const formData = new FormData();
       if (statusText) formData.append("text", statusText);
@@ -325,34 +345,23 @@ const StatusScreen = () => {
           try {
             if (Platform.OS === "web" && file.file) {
               formData.append("media", file.file);
-              if (file.type === "video" && file.thumbnail) {
-                formData.append("thumbnail", file.file); // Note: Backend needs to handle thumbnail separately
-              }
               validMedia.push(file);
             } else {
               const info = await FileSystem.getInfoAsync(file.uri);
               if (!info.exists) {
-                Alert.alert(
-                  "Warning",
-                  `File "${file.name}" is no longer accessible and will be skipped.`
-                );
+                Alert.alert("Warning", `File "${file.name}" is no longer accessible and will be skipped.`);
                 continue;
               }
-              const newFile = {
+              formData.append("media", {
                 uri: file.uri.startsWith("file://") ? file.uri : `file://${file.uri}`,
                 type: file.type === "image" ? "image/jpeg" : "video/mp4",
                 name: file.name,
-              };
-              formData.append("media", newFile);
-              // Note: Thumbnail upload requires backend support
+              });
               validMedia.push(file);
             }
           } catch (error) {
             console.error("File validation failed before submit:", file.uri, error);
-            Alert.alert(
-              "Warning",
-              `File "${file.name}" is invalid and will be skipped.`
-            );
+            Alert.alert("Warning", `File "${file.name}" is invalid and will be skipped.`);
           }
         }
       }
@@ -369,6 +378,17 @@ const StatusScreen = () => {
           "Content-Type": "multipart/form-data",
           Authorization: `Bearer ${sessionId}`,
         },
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const progress = Math.min((progressEvent.loaded / progressEvent.total) * 100, 100);
+            setUploadProgress(progress);
+            Animated.timing(uploadProgressAnim, {
+              toValue: Math.min(progress / 100, 1),
+              duration: 200,
+              useNativeDriver: false,
+            }).start();
+          }
+        },
       });
       setStatusText("");
       setSelectedMedia([]);
@@ -376,9 +396,22 @@ const StatusScreen = () => {
       fetchStatuses();
     } catch (error) {
       console.error("Error posting media status:", error);
-      Alert.alert("Error", "Failed to post media status. Please try again.");
+      Alert.alert(
+        "Error",
+        "Failed to post media statuses. Please try again.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Retry", onPress: handlePostMediaStatus },
+        ]
+      );
     } finally {
       setLoading(false);
+      setUploadProgress(0);
+      Animated.timing(uploadProgressAnim, {
+        toValue: 0,
+        duration: 0,
+        useNativeDriver: false,
+      }).start();
     }
   };
 
@@ -415,7 +448,7 @@ const StatusScreen = () => {
                 <View style={styles.playIconContainer}>
                   <Ionicons
                     name="play-circle"
-                      size={30}
+                    size={30}
                     color="rgba(255, 255, 255, 0.8)"
                   />
                 </View>
@@ -504,10 +537,12 @@ const StatusScreen = () => {
               data={statuses}
               renderItem={({ item, index }) => (
                 <StatusItem
-                  item={item}
+                  item={{ ...item, sessionId }}
                   index={index}
                   onPress={handleViewStatus}
                   onDelete={handleDeleteStatus}
+                  regenerateMediaUrl={regenerateMediaUrl}
+                  sessionId={sessionId}
                 />
               )}
               keyExtractor={(item) => item.id.toString()}
@@ -576,6 +611,26 @@ const StatusScreen = () => {
                     multiline
                     numberOfLines={4}
                   />
+                  {loading && (
+                    <View style={styles.progressContainer}>
+                      <View style={styles.progressBarBackground}>
+                        <Animated.View
+                          style={[
+                            styles.progressBar,
+                            {
+                              width: uploadProgressAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: ["0%", "100%"],
+                              }),
+                            },
+                          ]}
+                        />
+                      </View>
+                      <Text style={styles.progressText}>
+                        Uploading: {Math.min(uploadProgress, 100).toFixed(0)}%
+                      </Text>
+                    </View>
+                  )}
                   <View style={styles.actionRow}>
                     <TouchableOpacity style={styles.actionButton} onPress={pickMedia}>
                       <Ionicons name="folder-open-outline" size={24} color="#007AFF" />
@@ -597,7 +652,7 @@ const StatusScreen = () => {
                       disabled={loading}
                     >
                       {loading ? (
-                        <ActivityIndicator size="small" color="#34C759" />
+                        <Ionicons name="cloud-upload-outline" size={24} color="#34C759" />
                       ) : (
                         <>
                           <Ionicons name="checkmark-circle-outline" size={24} color="#34C759" />
@@ -634,6 +689,7 @@ const StatusScreen = () => {
               statuses={statuses}
               initialIndex={currentStatusIndex}
               onClose={handleCloseViewer}
+              sessionId={sessionId}
             />
           ) : null}
         </View>
@@ -642,6 +698,7 @@ const StatusScreen = () => {
   );
 };
 
+// Styles remain the same
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -887,6 +944,31 @@ const styles = StyleSheet.create({
   },
   flatListContent: {
     paddingBottom: 16,
+  },
+  progressContainer: {
+    marginBottom: 12,
+    backgroundColor: "#F8F8F8",
+    borderRadius: 8,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  progressBarBackground: {
+    height: 6,
+    backgroundColor: "#E0E0E0",
+    borderRadius: 3,
+    overflow: "hidden",
+  },
+  progressBar: {
+    height: "100%",
+    backgroundColor: "#34C759",
+    borderRadius: 3,
+  },
+  progressText: {
+    marginTop: 4,
+    fontSize: 14,
+    color: "#333",
+    textAlign: "center",
   },
 });
 

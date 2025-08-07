@@ -1,52 +1,142 @@
-import React, { useEffect, useState, useCallback } from "react";
+// src/screens/shop/ShopReceipts.tsx
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import {
   View,
   Text,
-  ScrollView,
+  FlatList,
   Alert,
   ActivityIndicator,
   TouchableOpacity,
-  StyleSheet,
   Image,
-  Modal,
+  StyleSheet,
   Dimensions,
-  Platform, StatusBar
+  Platform,
+  Modal,
+  StatusBar,
 } from "react-native";
-import { Card, Button, Divider, Chip } from "react-native-paper";
+import { Card, Divider, Chip } from "react-native-paper";
 import Animated, { FadeInUp, FadeOut } from "react-native-reanimated";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import axios from "axios";
-import ViewReceiptPDF from "../../components/shop/ViewReceipt";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { Picker } from "@react-native-picker/picker";
+import ViewReceiptPDF from "../../components/shop/ViewReceipt";
+import { useLocalSearchParams, useRouter } from "expo-router";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const TABS = ["All", "Accepted", "Pending", "Rejected", "Voided"];
 
 const statusStyles = {
-  pending: { color: "#FFA500", label: "Pending", icon: "time-outline" },
-  accepted: { color: "#4CAF50", label: "Accepted", icon: "checkmark-circle-outline" },
-  rejected: { color: "#F44336", label: "Rejected", icon: "close-circle-outline" },
-  voided: { color: "#9E9E9E", label: "Voided", icon: "remove-circle-outline" },
+  pending: { color: "#F59E0B", label: "Pending", icon: "time-outline" },
+  accepted: { color: "#22C55E", label: "Accepted", icon: "checkmark-circle-outline" },
+  rejected: { color: "#EF4444", label: "Rejected", icon: "close-circle-outline" },
+  voided: { color: "#6B7280", label: "Voided", icon: "remove-circle-outline" },
+};
+
+// Memoized Receipt Card Component
+const ReceiptCard = React.memo(({ item, handleAction }) => {
+  const receipt = item.data;
+  const status = statusStyles[receipt.status?.toLowerCase()] || {};
+
+  return (
+    <Animated.View entering={FadeInUp.duration(300)} exiting={FadeOut.duration(200)}>
+      <Animated.View style={styles.animatedCard}>
+        <Card mode="elevated" style={styles.card}>
+          <TouchableOpacity activeOpacity={0.7} style={styles.cardTouchable}>
+            <LinearGradient
+              colors={["rgba(255, 255, 255, 0.95)", "rgba(241, 245, 249, 0.95)"]}
+              style={styles.cardBackground}
+            >
+              <View style={styles.cardHeader}>
+                <Image
+                  source={{ uri: receipt.customer_image || "https://via.placeholder.com/40" }}
+                  style={styles.image}
+                  onError={(e) => console.error("Image load error:", e.nativeEvent.error)}
+                />
+                <View style={styles.cardDetails}>
+                  <Text style={styles.receiptId} numberOfLines={1}>
+                    Receipt ID: {receipt.receipt_id || "Unknown"}
+                  </Text>
+                  <View style={styles.receiptInfo}>
+                    <Text style={styles.receiptText}>₦{receipt.total_amount || "0.00"}</Text>
+                    <Text style={styles.receiptText}>• {formatDate(receipt.created_at)}</Text>
+                  </View>
+                  <View style={styles.statusContainer}>
+                    <Chip
+                      style={[
+                        styles.statusChip,
+                        { backgroundColor: status.color || "#6B7280" },
+                      ]}
+                    >
+                      <Ionicons name={status.icon || "help-circle-outline"} size={14} color="#FFF" />
+                      <Text style={styles.statusText}>{status.label || "Unknown"}</Text>
+                    </Chip>
+                  </View>
+                </View>
+              </View>
+              <Divider style={styles.divider} />
+              <View style={styles.buttonContainer}>
+                <ViewReceiptPDF receipt={receipt} />
+                {receipt.status?.toLowerCase() === "pending" && (
+                  <TouchableOpacity
+                    style={styles.actionButton}
+                    onPress={() => handleAction(receipt.id, "void")}
+                  >
+                    <LinearGradient colors={["#6B7280", "#4B5563"]} style={styles.buttonGradient}>
+                      <Ionicons name="remove-outline" size={16} color="#FFF" />
+                      <Text style={styles.actionButtonText}>Void</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        </Card>
+      </Animated.View>
+    </Animated.View>
+  );
+});
+
+// Format date for display
+const formatDate = (dateStr) => {
+  if (!dateStr) return "N/A";
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return "Invalid";
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+
+  const isToday = date.toDateString() === today.toDateString();
+  const isYesterday = date.toDateString() === yesterday.toDateString();
+
+  if (isToday) return "Today";
+  if (isYesterday) return "Yesterday";
+  return date.toLocaleDateString("en-US", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 };
 
 const ShopReceipts = () => {
   const [receipts, setReceipts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("All");
   const [sessionId, setSessionId] = useState(null);
+  const [activeTab, setActiveTab] = useState("All");
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerType, setPickerType] = useState(null);
   const [tempDate, setTempDate] = useState(new Date());
-
-  const params = useLocalSearchParams();
-  const { shopId } = params;
+  const [salesMonth, setSalesMonth] = useState(new Date().getMonth());
+  const [salesYear, setSalesYear] = useState(new Date().getFullYear());
+  const [monthPickerVisible, setMonthPickerVisible] = useState(false);
+  const { shopId } = useLocalSearchParams();
   const router = useRouter();
 
   // Fetch session ID
@@ -54,15 +144,23 @@ const ShopReceipts = () => {
     const fetchSessionId = async () => {
       try {
         const sessionIdString = await AsyncStorage.getItem("sessionToken");
-        console.log("Fetched session ID:", sessionIdString);
+        console.log("Fetched session ID:", sessionIdString || "null");
+        if (!sessionIdString) {
+          Alert.alert("Error", "Please log in to view receipts.", [
+            { text: "OK", onPress: () => router.push("/login") },
+          ]);
+          setLoading(false);
+          return;
+        }
         setSessionId(sessionIdString);
       } catch (error) {
         console.error("Error fetching session ID:", error);
+        Alert.alert("Error", "Failed to load session.");
+        setLoading(false);
       }
     };
-
     fetchSessionId();
-  }, []);
+  }, [router]);
 
   // Fetch receipts
   const fetchReceipts = useCallback(async () => {
@@ -82,12 +180,12 @@ const ShopReceipts = () => {
           },
         }
       );
-
-      console.log("API response:", JSON.stringify(response.data, null, 2));
       const fetchedReceipts = Array.isArray(response.data.receipts)
-        ? response.data.receipts.filter((item) => item && typeof item === "object" && item.id)
+        ? response.data.receipts.filter(
+            (item) => item && typeof item === "object" && item.id && item.created_at
+          )
         : [];
-      console.log("Filtered receipts:", fetchedReceipts.length, "Data:", JSON.stringify(fetchedReceipts, null, 2));
+      console.log("Fetched receipts:", fetchedReceipts.length);
       setReceipts(fetchedReceipts);
     } catch (error) {
       console.error("Error fetching receipts:", error.response?.data || error.message);
@@ -98,14 +196,15 @@ const ShopReceipts = () => {
     }
   }, [shopId, sessionId]);
 
-  // Fetch receipts when shopId or sessionId changes
-  useEffect(() => {
-    fetchReceipts();
-  }, [fetchReceipts]);
+  useFocusEffect(
+    useCallback(() => {
+      console.log("Screen focused, fetching receipts...");
+      fetchReceipts();
+    }, [fetchReceipts])
+  );
 
   // Reset filter states when tab changes
   useEffect(() => {
-    console.log("Active tab changed to:", activeTab);
     setStartDate(null);
     setEndDate(null);
     setFilterModalVisible(false);
@@ -113,50 +212,68 @@ const ShopReceipts = () => {
     setPickerType(null);
   }, [activeTab]);
 
-  // Handle void receipt
-  const handleVoidReceipt = async (receiptId) => {
-    try {
-      await axios.post(
-        `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/receipts/${receiptId}/void/`,
-        {},
-        {
-          headers: { Authorization: sessionId },
-        }
+  // Calculate monthly sales
+  const calculateMonthlySales = useMemo(() => {
+    const startOfMonth = new Date(salesYear, salesMonth, 1);
+    const endOfMonth = new Date(salesYear, salesMonth + 1, 0, 23, 59, 59, 999);
+
+    const relevantReceipts = receipts.filter((receipt) => {
+      if (!receipt?.id || !receipt?.created_at) return false;
+      const receiptDate = new Date(receipt.created_at);
+      const status = receipt.status?.toLowerCase();
+      return (
+        (status === "accepted" || status === "pending") &&
+        receiptDate >= startOfMonth &&
+        receiptDate <= endOfMonth
       );
-      Alert.alert("Success", "Receipt voided successfully.");
-      setReceipts((prev) =>
-        prev.map((receipt) =>
-          receipt.id === receiptId ? { ...receipt, status: "voided" } : receipt
-        )
-      );
-    } catch (error) {
-      console.error("Error voiding receipt:", error);
-      Alert.alert("Error", "Failed to void receipt.");
-    }
-  };
-
-  // Format date for display
-  const formatDate = (dateStr) => {
-    const date = new Date(dateStr);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(today.getDate() - 1);
-
-    const isToday = date.toDateString() === today.toDateString();
-    const isYesterday = date.toDateString() === yesterday.toDateString();
-
-    if (isToday) return "Today";
-    if (isYesterday) return "Yesterday";
-    return date.toLocaleDateString("en-US", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
     });
-  };
+
+    const total = relevantReceipts.reduce((sum, receipt) => {
+      const amount = parseFloat(receipt.total_amount) || 0;
+      return sum + amount;
+    }, 0);
+    return total.toFixed(2);
+  }, [receipts, salesMonth, salesYear]);
+
+  // Handle void receipt
+  const handleAction = useCallback(async (receiptId, action) => {
+    const actionTitle = action === "void" ? "Void" : action;
+    return new Promise((resolve) => {
+      Alert.alert(
+        `${actionTitle} Receipt`,
+        `Are you sure you want to ${action} this receipt?`,
+        [
+          { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+          {
+            text: "Confirm",
+            onPress: async () => {
+              try {
+                await axios.post(
+                  `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/receipts/${receiptId}/${action}/`,
+                  {},
+                  { headers: { Authorization: sessionId } }
+                );
+                Alert.alert("Success", `Receipt ${action}ed.`);
+                setReceipts((prev) =>
+                  prev.map((receipt) =>
+                    receipt.id === receiptId ? { ...receipt, status: "voided" } : receipt
+                  )
+                );
+                resolve(true);
+              } catch (error) {
+                console.error(`Error ${action}ing receipt:`, error.response?.data || error.message);
+                Alert.alert("Error", `Failed to ${action} receipt.`);
+                resolve(false);
+              }
+            },
+          },
+        ]
+      );
+    });
+  }, [sessionId]);
 
   // Handle DateTimePicker change
-  const handleDateChange = (event, selectedDate) => {
-    console.log("DateTimePicker event:", event.type, "Date:", selectedDate);
+  const handleDateChange = useCallback((event, selectedDate) => {
     setPickerVisible(Platform.OS === "ios");
     if (event.type === "dismissed" || !selectedDate) {
       setPickerVisible(false);
@@ -180,141 +297,202 @@ const ShopReceipts = () => {
     }
     setPickerVisible(false);
     setPickerType(null);
-  };
+  }, [pickerType, startDate, endDate]);
 
   // Show DateTimePicker
-  const showDatePicker = (type) => {
-    console.log("Showing DateTimePicker for:", type, "Tab:", activeTab);
+  const showDatePicker = useCallback((type) => {
     setPickerType(type);
     setTempDate(type === "start" && startDate ? startDate : type === "end" && endDate ? endDate : new Date());
     setPickerVisible(true);
-  };
+  }, [startDate, endDate]);
 
-  // Filter receipts based on active tab and date range
-  const filteredReceipts = receipts.filter((receipt) => {
-    if (!receipt || typeof receipt !== "object" || !receipt.id) {
-      console.warn("Invalid receipt in filter:", receipt);
-      return false;
-    }
-    console.log("Filtering receipt:", receipt.id, { status: receipt.status, created_at: receipt.created_at });
-    const receiptDate = new Date(receipt.created_at);
-    const receiptStatus = receipt.status?.toLowerCase() || "";
-    const tabStatus = activeTab.toLowerCase();
+  // Filter receipts
+  const filteredReceipts = useMemo(() => {
+    const filtered = receipts.filter((receipt) => {
+      if (!receipt?.id || !receipt?.created_at) {
+        console.warn("Invalid receipt:", receipt);
+        return false;
+      }
+      const receiptDate = new Date(receipt.created_at);
+      const receiptStatus = receipt.status?.toLowerCase() || "";
+      const tabStatus = activeTab.toLowerCase();
 
-    const matchesStatus = tabStatus === "all" || receiptStatus === tabStatus;
+      const matchesStatus = tabStatus === "all" || receiptStatus === tabStatus;
+      let matchesDate = true;
+      if (startDate) matchesDate = matchesDate && receiptDate >= new Date(startDate.setHours(0, 0, 0, 0));
+      if (endDate) matchesDate = matchesDate && receiptDate <= new Date(endDate.setHours(23, 59, 59, 999));
 
-    let matchesDate = true;
-    if (startDate) {
-      matchesDate = matchesDate && receiptDate >= new Date(startDate.setHours(0, 0, 0, 0));
-    }
-    if (endDate) {
-      matchesDate = matchesDate && receiptDate <= new Date(endDate.setHours(23, 59, 59, 999));
-    }
+      return matchesStatus && matchesDate;
+    });
+    console.log("Filtered receipts:", filtered.length);
+    return filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  }, [receipts, activeTab, startDate, endDate]);
 
-    const matches = matchesStatus && matchesDate;
-    console.log(`Receipt ${receipt.id} matches:`, matches);
-    return matches;
-  });
+  // Prepare FlatList data
+  const flatData = useMemo(() => {
+    const data = [];
+    let lastDate = null;
+    filteredReceipts.forEach((receipt) => {
+      const dateKey = formatDate(receipt.created_at);
+      if (dateKey !== lastDate) {
+        data.push({ type: "separator", date: dateKey });
+        lastDate = dateKey;
+      }
+      data.push({ type: "receipt", data: receipt });
+    });
+    return data;
+  }, [filteredReceipts]);
 
-  console.log("Filtered receipts:", filteredReceipts.length, "Active tab:", activeTab);
+  // Render sales summary
+  const renderSalesSummary = useCallback(() => {
+    const totalSales = calculateMonthlySales;
+    const monthName = new Date(salesYear, salesMonth).toLocaleString("en-US", { month: "short" });
+    return (
+      <Card style={styles.spendingCard}>
+        <View style={styles.spendingHeader}>
+          <Text style={styles.spendingTitle}>{monthName} {salesYear} Sales</Text>
+          <TouchableOpacity
+            style={styles.monthButton}
+            onPress={() => setMonthPickerVisible(true)}
+          >
+            <Ionicons name="calendar-outline" size={18} color="#FFF" />
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.spendingAmount}>₦{totalSales}</Text>
+      </Card>
+    );
+  }, [calculateMonthlySales, salesMonth, salesYear]);
+
+  // Render month picker modal
+  const renderMonthPickerModal = useCallback(() => (
+    <Modal
+      visible={monthPickerVisible}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setMonthPickerVisible(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Select Month</Text>
+          <Picker
+            selectedValue={salesMonth}
+            onValueChange={(value) => setSalesMonth(value)}
+            style={styles.picker}
+          >
+            {Array.from({ length: 12 }, (_, i) => (
+              <Picker.Item
+                key={i}
+                label={new Date(2025, i).toLocaleString("en-US", { month: "long" })}
+                value={i}
+              />
+            ))}
+          </Picker>
+          <Picker
+            selectedValue={salesYear}
+            onValueChange={(value) => setSalesYear(value)}
+            style={styles.picker}
+          >
+            {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map((year) => (
+              <Picker.Item key={year} label={`${year}`} value={year} />
+            ))}
+          </Picker>
+          <View style={styles.modalButtons}>
+            <TouchableOpacity
+              style={styles.applyButton}
+              onPress={() => setMonthPickerVisible(false)}
+            >
+              <LinearGradient colors={["#2563EB", "#10B981"]} style={styles.buttonGradient}>
+                <Text style={styles.buttonText}>Apply</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.clearButton}
+              onPress={() => {
+                setSalesMonth(new Date().getMonth());
+                setSalesYear(new Date().getFullYear());
+                setMonthPickerVisible(false);
+              }}
+            >
+              <Text style={styles.clearButtonText}>Reset</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  ), [salesMonth, salesYear]);
 
   // Render navigation bar
-  const renderNavBar = () => (
+  const renderNavBar = useCallback(() => (
     <View style={styles.navBar}>
       <View style={styles.navBarInner}>
         {TABS.map((tab) => (
           <TouchableOpacity
             key={tab}
             style={[styles.navButton, activeTab === tab && styles.activeNavButton]}
-            onPress={() => {
-              console.log("Switching to tab:", tab);
-              setActiveTab(tab);
-            }}
-            accessibilityLabel={`${tab} Receipts Tab`}
+            onPress={() => setActiveTab(tab)}
           >
             <Text
-              style={[
-                styles.navButtonText,
-                activeTab === tab && styles.activeNavButtonText,
-              ]}
+              style={[styles.navButtonText, activeTab === tab && styles.activeNavButtonText]}
               numberOfLines={1}
               adjustsFontSizeToFit
             >
               {tab}
             </Text>
             {activeTab === tab && (
-              <LinearGradient
-                colors={["#2563EB", "#10B981"]}
-                style={styles.underline}
-              />
+              <LinearGradient colors={["#2563EB", "#10B981"]} style={styles.underline} />
             )}
           </TouchableOpacity>
         ))}
       </View>
     </View>
-  );
+  ), [activeTab]);
 
   // Render filter modal
-  const renderFilterModal = () => (
+  const renderFilterModal = useCallback(() => (
     <Modal
       visible={filterModalVisible}
       transparent
-      animationType="slide"
-      onRequestClose={() => {
-        console.log("Closing filter modal via backdrop");
-        setFilterModalVisible(false);
-        setPickerVisible(false);
-      }}
+      animationType="fade"
+      onRequestClose={() => setFilterModalVisible(false)}
     >
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
-          <View style={styles.bottomSheetHandle} />
           <Text style={styles.modalTitle}>Filter by Date</Text>
           <TouchableOpacity
             style={styles.dateInput}
             onPress={() => showDatePicker("start")}
-            accessibilityLabel="Select Start Date"
           >
             <Text style={styles.dateInputText}>
-              {startDate ? startDate.toLocaleDateString("en-US") : "Select Start Date"}
+              {startDate ? formatDate(startDate) : "Start Date"}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.dateInput}
             onPress={() => showDatePicker("end")}
-            accessibilityLabel="Select End Date"
           >
             <Text style={styles.dateInputText}>
-              {endDate ? endDate.toLocaleDateString("en-US") : "Select End Date"}
+              {endDate ? formatDate(endDate) : "End Date"}
             </Text>
           </TouchableOpacity>
           <View style={styles.modalButtons}>
             <TouchableOpacity
-              style={styles.applyFilterButton}
-              onPress={() => {
-                console.log("Applying filter");
-                setFilterModalVisible(false);
-                setPickerVisible(false);
-              }}
+              style={styles.applyButton}
+              onPress={() => setFilterModalVisible(false)}
             >
-              <LinearGradient
-                colors={["#2563EB", "#10B981"]}
-                style={styles.buttonGradient}
-              >
+              <LinearGradient colors={["#2563EB", "#10B981"]} style={styles.buttonGradient}>
                 <Text style={styles.buttonText}>Apply</Text>
               </LinearGradient>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.clearFilterButton}
+              style={styles.clearButton}
               onPress={() => {
-                console.log("Clearing filter");
                 setStartDate(null);
                 setEndDate(null);
                 setFilterModalVisible(false);
                 setPickerVisible(false);
               }}
             >
-              <Text style={styles.clearFilterButtonText}>Clear</Text>
+              <Text style={styles.clearButtonText}>Clear</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -326,18 +504,49 @@ const ShopReceipts = () => {
             onChange={handleDateChange}
             maximumDate={new Date()}
             style={styles.dateTimePicker}
-            textColor="#111827"
           />
         )}
       </View>
     </Modal>
-  );
+  ), [filterModalVisible, startDate, endDate, pickerVisible, tempDate, handleDateChange, showDatePicker]);
+
+  // Render FlatList item
+  const renderItem = useCallback(({ item }) => {
+    if (item.type === "separator") {
+      return (
+        <View style={styles.dateHeader}>
+          <Text style={styles.dateHeaderText}>{item.date}</Text>
+          <LinearGradient
+            colors={["#2563EB", "#10B981"]}
+            style={styles.dateHeaderUnderline}
+          />
+        </View>
+      );
+    }
+    return <ReceiptCard item={item} handleAction={handleAction} />;
+  }, [handleAction]);
+
+  // FlatList item layout for performance
+  const getItemLayout = useCallback((data, index) => {
+    const isSeparator = data[index]?.type === "separator";
+    const length = isSeparator ? 36 : 140;
+    return { length, offset: length * index, index };
+  }, []);
 
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <MaterialIcons name="arrow-back" size={24} color="#FFF" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Shop Receipts</Text>
+          <View style={styles.headerSpacer} />
+        </View>
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#6200EE" />
+          <ActivityIndicator size="large" color="#2563EB" />
+          <Text style={styles.loadingText}>Loading...</Text>
         </View>
       </SafeAreaView>
     );
@@ -345,96 +554,52 @@ const ShopReceipts = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
+      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={styles.backButton}
-        >
-          <MaterialIcons name="arrow-back" size={26} color="white" />
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <MaterialIcons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Shop Receipts</Text>
         <View style={styles.headerSpacer} />
       </View>
-      <ScrollView contentContainerStyle={styles.content}>
+      <View style={styles.content}>
+        {renderSalesSummary()}
         {renderNavBar()}
         <View style={styles.filterContainer}>
           <TouchableOpacity
             style={styles.filterButton}
-            onPress={() => {
-              console.log("Opening filter modal for tab:", activeTab);
-              setFilterModalVisible(true);
-            }}
-            accessibilityLabel="Filter by Date"
+            onPress={() => setFilterModalVisible(true)}
           >
-            <Ionicons name="filter-outline" size={20} color="#2563EB" />
-            <Text style={styles.filterButtonText}>Filter by Date</Text>
+            <Ionicons name="filter-outline" size={18} color="#FFF" />
           </TouchableOpacity>
           {(startDate || endDate) && (
-            <Text style={styles.filterInfoText}>
-              Filtered: {startDate ? startDate.toLocaleDateString("en-US") : "Start"} -{" "}
-              {endDate ? endDate.toLocaleDateString("en-US") : "End"}
+            <Text style={styles.filterInfoText} numberOfLines={1}>
+              {startDate ? formatDate(startDate) : "Start"} - {endDate ? formatDate(endDate) : "End"}
             </Text>
           )}
         </View>
-        {filteredReceipts.length === 0 ? (
+        {flatData.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <Ionicons name="receipt-outline" size={60} color="#9E9E9E" />
-            <Text style={styles.emptyText}>No Receipts Yet</Text>
-            <Text style={styles.emptySubText}>No receipts found for this shop.</Text>
+            <Ionicons name="receipt-outline" size={48} color="#6B7280" />
+            <Text style={styles.emptyText}>No Receipts</Text>
           </View>
         ) : (
-          filteredReceipts.map((item) => {
-            const status = statusStyles[item.status] || {};
-            return (
-              <Animated.View key={item.id} entering={FadeInUp} exiting={FadeOut}>
-                <Card mode="elevated" style={styles.card}>
-                  <View style={styles.cardHeader}>
-                    <Image
-                      source={{
-                        uri: item.customer_image || "https://via.placeholder.com/40",
-                      }}
-                      style={styles.image}
-                    />
-                    <View style={styles.cardDetails}>
-                      <Text style={styles.receiptId}>Receipt ID: {item.receipt_id}</Text>
-                      <Text style={styles.receiptText}>Total: ₦{item.total_amount}</Text>
-                      <Text style={styles.receiptText}>Date: {formatDate(item.created_at)}</Text>
-                    </View>
-                  </View>
-
-                  <Divider style={styles.divider} />
-
-                  <View style={styles.statusContainer}>
-                    <Chip style={[styles.statusChip, { backgroundColor: status.color }]}>
-                      <Ionicons name={status.icon} size={16} color="white" />
-                      <Text style={styles.statusText}>{status.label}</Text>
-                    </Chip>
-                  </View>
-
-                  <Divider style={styles.divider} />
-
-                  <View style={styles.buttonContainer}>
-                    <ViewReceiptPDF receipt={item} />
-                    {item.status === "pending" && (
-                      <Button
-                        mode="contained"
-                        icon="close"
-                        onPress={() => handleVoidReceipt(item.id)}
-                        style={styles.voidButton}
-                        labelStyle={styles.voidButtonText}
-                      >
-                        Void
-                      </Button>
-                    )}
-                  </View>
-                </Card>
-              </Animated.View>
-            );
-          })
+          <FlatList
+            data={flatData}
+            keyExtractor={(item, index) =>
+              item.type === "separator" ? `sep-${item.date}-${index}` : `rec-${item.data.id}`
+            }
+            renderItem={renderItem}
+            contentContainerStyle={styles.flatListContent}
+            initialNumToRender={10}
+            maxToRenderPerBatch={10}
+            windowSize={21}
+            getItemLayout={getItemLayout}
+          />
         )}
         {renderFilterModal()}
-      </ScrollView>
+        {renderMonthPickerModal()}
+      </View>
     </SafeAreaView>
   );
 };
@@ -442,291 +607,344 @@ const ShopReceipts = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F7FAFC",
+    backgroundColor: "#F9FAFB",
   },
   centered: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
+  loadingText: {
+    marginTop: 8,
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#374151",
+    fontFamily: "System",
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    backgroundColor: "#3A7BD5",
-    borderBottomLeftRadius: 35,
-    borderBottomRightRadius: 35,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: "#2563EB",
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
   },
   backButton: {
-    padding: 5,
-    borderRadius: 12,
+    padding: 8,
+    borderRadius: 8,
     backgroundColor: "rgba(255, 255, 255, 0.2)",
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#FFFFFF",
-    textAlign: "center",
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#FFF",
     flex: 1,
+    textAlign: "center",
+    fontFamily: "System",
   },
   headerSpacer: {
-    width: 42,
+    width: 32,
   },
   content: {
-    padding: 16,
-    paddingBottom: 100,
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  spendingCard: {
+    borderRadius: 12,
+    padding: 12,
+    backgroundColor: "#FFF",
+    marginBottom: 12,
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+  },
+  spendingHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  spendingTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#1F2A44",
+    fontFamily: "System",
+  },
+  spendingAmount: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#2563EB",
+    marginVertical: 4,
+    fontFamily: "System",
+  },
+  monthButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: "#2563EB",
   },
   navBar: {
     flexDirection: "row",
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#FFF",
     borderRadius: 12,
+    padding: 4,
+    marginBottom: 12,
+    elevation: 3,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    elevation: 4,
-    marginBottom: 16,
+    shadowOpacity: 0.15,
   },
   navBarInner: {
-    flexDirection: "row",
     flex: 1,
+    flexDirection: "row",
   },
   navButton: {
     flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
+    paddingVertical: 10,
     alignItems: "center",
-    borderRadius: 5,
-    marginHorizontal: 4,
+    borderRadius: 8,
+    maxWidth: SCREEN_WIDTH / 6,
   },
   activeNavButton: {
-    backgroundColor: "rgba(37, 99, 235, 0.1)",
+    backgroundColor: "#EFF6FF",
   },
   navButtonText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#333",
+    color: "#374151",
+    fontFamily: "System",
   },
   activeNavButtonText: {
     color: "#2563EB",
   },
   underline: {
     height: 3,
-    width: "100%",
+    width: "80%",
     marginTop: 4,
     borderRadius: 2,
   },
   filterContainer: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     marginBottom: 12,
   },
   filterButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  filterButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#2563EB",
-    marginLeft: 6,
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: "#2563EB",
+    marginRight: 8,
   },
   filterInfoText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "500",
+    color: "#374151",
+    fontFamily: "System",
+    flex: 1,
+    textAlign: "right",
+  },
+  dateHeader: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    marginBottom: 6,
+    marginTop: 8,
+  },
+  dateHeaderText: {
+    fontSize: 14,
+    fontWeight: "600",
     color: "#1F2A44",
+    fontFamily: "System",
+  },
+  dateHeaderUnderline: {
+    height: 2,
+    borderRadius: 1,
+    marginTop: 2,
+  },
+  animatedCard: {
+    // No transform to avoid Reanimated warning
   },
   card: {
     marginBottom: 12,
-    borderRadius: 16,
-    padding: 10,
-    backgroundColor: "#FFFFFF",
+    marginHorizontal: 4,
+    borderRadius: 12,
+    overflow: "hidden",
+    elevation: 4,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    elevation: 2,
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  cardTouchable: {
+    borderRadius: 12,
+  },
+  cardBackground: {
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: "rgba(203, 213, 225, 0.3)",
   },
   cardHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 10,
   },
   image: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    borderWidth: 3,
-    borderColor: "#3A7BD5",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: "#2563EB",
+    marginRight: 8,
   },
   cardDetails: {
-    marginLeft: 12,
     flex: 1,
   },
   receiptId: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#333",
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#1F2A44",
+    fontFamily: "System",
+  },
+  receiptInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
   receiptText: {
     fontSize: 14,
-    color: "#666",
-  },
-  divider: {
-    marginVertical: 8,
-    backgroundColor: "#E5E7EB",
+    fontWeight: "500",
+    color: "#6B7280",
+    fontFamily: "System",
   },
   statusContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    marginTop: 4,
   },
   statusChip: {
-    padding: 6,
+    borderRadius: 16,
+    maxWidth: 120,
+    paddingHorizontal: 8,
   },
   statusText: {
-    color: "white",
-    fontWeight: "bold",
-    fontSize: 13,
+    color: "#FFF",
+    fontWeight: "800",
+    fontSize: 14,
     marginLeft: 4,
+    fontFamily: "System",
+  },
+  divider: {
+    marginVertical: 6,
+    backgroundColor: "rgba(229, 231, 235, 0.5)",
   },
   buttonContainer: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 10,
+    gap: 8,
   },
-  voidButton: {
-    backgroundColor: "#555",
+  actionButton: {
     borderRadius: 8,
   },
-  voidButtonText: {
-    fontSize: 14,
+  actionButtonText: {
+    fontSize: 13,
     fontWeight: "600",
-    color: "#FFFFFF",
+    color: "#FFF",
+    marginLeft: 4,
+    fontFamily: "System",
+    alignSelf: "center",
+    flexShrink: 0, // Prevent text from wrapping
+  },
+  buttonGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 8, // Reduced padding for tighter layout
+    borderRadius: 8,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
-    zIndex: 1000,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    justifyContent: "center",
+    paddingHorizontal: 16,
   },
   modalContent: {
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    backgroundColor: "#FFF",
+    borderRadius: 12,
     padding: 16,
-    paddingBottom: 32,
-    maxHeight: Platform.OS === "ios" ? 400 : 300,
-    zIndex: 1001,
-  },
-  bottomSheetHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: "#D1D5DB",
-    borderRadius: 2,
-    alignSelf: "center",
-    marginBottom: 12,
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: "700",
-    color: "#111827",
+    fontWeight: "600",
+    color: "#1F2A44",
     textAlign: "center",
-    marginBottom: 16,
+    marginBottom: 12,
+    fontFamily: "System",
   },
   dateInput: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    marginBottom: 12,
+    padding: 12,
+    borderRadius: 8,
     backgroundColor: "#F9FAFB",
+    marginBottom: 8,
   },
   dateInputText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "500",
-    color: "#1F2A44",
+    color: "#374151",
+    fontFamily: "System",
   },
   modalButtons: {
     flexDirection: "row",
     gap: 8,
   },
-  applyFilterButton: {
+  applyButton: {
     flex: 1,
-    borderRadius: 12,
+    borderRadius: 10,
   },
-  clearFilterButton: {
+  clearButton: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    alignItems: "center",
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: "#F9FAFB",
   },
   buttonGradient: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
+    padding: 12,
+    borderRadius: 10,
     alignItems: "center",
   },
   buttonText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "600",
-    color: "#FFFFFF",
+    color: "#FFF",
+    fontFamily: "System",
   },
-  clearFilterButtonText: {
-    fontSize: 14,
+  clearButtonText: {
+    fontSize: 15,
     fontWeight: "600",
     color: "#2563EB",
+    textAlign: "center",
+    fontFamily: "System",
   },
   dateTimePicker: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 10,
-    zIndex: 1002,
+    backgroundColor: "#FFF",
+    borderRadius: 8,
+  },
+  picker: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 8,
+    marginBottom: 8,
   },
   emptyContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingVertical: 20,
   },
   emptyText: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#9E9E9E",
-    textAlign: "center",
-    marginTop: 12,
+    color: "#6B7280",
+    marginTop: 8,
+    fontFamily: "System",
   },
-  emptySubText: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#9E9E9E",
-    textAlign: "center",
-    marginTop: 4,
+  flatListContent: {
+    paddingBottom: 80,
   },
 });
 

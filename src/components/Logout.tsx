@@ -1,9 +1,11 @@
+// components/Logout.tsx
 import React, { useState, useCallback } from 'react';
 import { Alert, ActivityIndicator, ToastAndroid, TouchableOpacity, Text, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useNavigation } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { clearNonSuggestionData } from '../storage/storage'; // Adjust path to your storage module
+import { clearNonSuggestionData } from '../storage/storage';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { useAppReset } from '@/context/AppResetContext';
 
 interface LogoutProps {
   onLogoutSuccess?: () => void;
@@ -21,6 +23,8 @@ const Logout: React.FC<LogoutProps> = ({
   textStyle,
 }) => {
   const router = useRouter();
+  const navigation = useNavigation();
+  const { resetAppState } = useAppReset();
   const [loading, setLoading] = useState(false);
 
   const handleLogout = useCallback(async () => {
@@ -28,37 +32,49 @@ const Logout: React.FC<LogoutProps> = ({
 
     try {
       const sessionId = await AsyncStorage.getItem('sessionToken');
-      console.log('Session ID:', sessionId); // Debug: Log session token
+      console.log('Session ID:', sessionId);
+
       if (!sessionId) {
         Alert.alert('Error', 'No session found');
         setLoading(false);
         return;
       }
 
-      // Call backend logout API
       const response = await fetch('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/logout/', {
         method: 'POST',
         headers: { Authorization: sessionId },
       });
-      console.log('Logout API response status:', response.status); // Debug: Log API response
+      console.log('Logout API response status:', response.status);
 
-      if (response.status === 200) {
-        // Clear non-suggestion data
+      if (response.ok) {
+        await AsyncStorage.multiRemove(['sessionToken', 'user_id']);
         await clearNonSuggestionData();
-        console.log('Completed clearNonSuggestionData'); // Debug: Confirm clearing
+        console.log('Completed clearNonSuggestionData');
 
-        // Show success message
+        // Navigate first
+        try {
+          router.replace('/'); // Navigate to index as in old code
+        } catch (error) {
+          console.error('Navigation error:', error);
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'index' }],
+          });
+        }
+
+        // Call resetAppState after navigation
+        setTimeout(() => {
+          resetAppState();
+          console.log('resetAppState called after navigation');
+        }, 100); // 100ms delay to ensure navigation completes
+
         if (Platform.OS === 'android') {
           ToastAndroid.show('Logout successful', ToastAndroid.SHORT);
         } else {
           Alert.alert('Success', 'Logout successful');
         }
 
-        // Call onLogoutSuccess callback if provided
         onLogoutSuccess?.();
-
-        // Navigate to login screen
-        router.push('/');
       } else {
         Alert.alert('Error', 'Logout failed');
       }
@@ -68,10 +84,10 @@ const Logout: React.FC<LogoutProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [onLogoutSuccess, router]);
+  }, [onLogoutSuccess, router, navigation, resetAppState]);
 
   const confirmLogout = () => {
-    console.log('Logout button pressed'); // Debug: Confirm button press
+    console.log('Logout button pressed');
     Alert.alert(
       'Confirm Logout',
       'Are you sure you want to logout?',

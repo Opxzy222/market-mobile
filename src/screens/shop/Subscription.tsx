@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useRef } from 'react';
 import {
   View,
   Text,
@@ -17,7 +17,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { Picker } from '@react-native-picker/picker';
 import axios from 'axios';
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView } from 'react-native-safe-area-context';
+import Animated, { FadeInDown, useSharedValue, useAnimatedStyle, withRepeat, withTiming } from 'react-native-reanimated';
 import SubscriptionProvider, { SubscriptionContext } from '../../components/SubscriptionProvider';
 
 const Subscription = () => {
@@ -25,47 +26,60 @@ const Subscription = () => {
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalMessage, setModalMessage] = useState('');
-  const [planDetailsModal, setPlanDetailsModal] = useState(false);
+  const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const { currentPlan, endDate } = useLocalSearchParams();
   const router = useRouter();
   const { refreshSubscription } = useContext(SubscriptionContext);
+  const scrollViewRef = useRef(null);
 
   const API_BASE_URL = 'https://retail-alvinia-goza-f6a0e4f7.koyeb.app';
 
   const PLAN_DETAILS = {
     regular: {
-      included: ['Unlimited Transactions', 'Basic Analytics', 'Email Support'],
-      excluded: ['Priority Support', 'Advanced Analytics', 'Custom Branding'],
+      name: 'Regular Plan',
+      price: '₦2,500/month',
+      originalPrice: '₦5,000/month',
+      discount: '50% Off',
+      features: [
+        'Ad-Free Experience',
+        'Advanced Search Filters',
+        'Send Media in Chat',
+        'Interactive Map Access',
+        'View Space Products',
+      ],
     },
     standard: {
-      included: ['Unlimited Transactions', 'Basic Analytics', 'Email Support', 'Priority Support'],
-      excluded: ['Advanced Analytics', 'Custom Branding'],
-    },
-    premium: {
-      included: [
-        'Unlimited Transactions',
-        'Basic Analytics',
-        'Email Support',
-        'Priority Support',
-        'Advanced Analytics',
-        'Custom Branding',
+      name: 'Standard Plan',
+      price: '₦5,000/month',
+      originalPrice: '₦10,000/month',
+      discount: '50% Off',
+      features: [
+        'All Regular Plan Features',
+        'Enhanced Search Visibility',
+        'Receipt Generation',
+        'Post Media Content',
+        'Update Media Stories',
       ],
-      excluded: [],
     },
   };
 
-  const allFeatures = Array.from(
-    new Set(
-      Object.values(PLAN_DETAILS).flatMap((plan) => [
-        ...plan.included,
-        ...plan.excluded,
-      ])
-    )
-  );
+  // Animation for swipe indicator
+  const translateX = useSharedValue(0);
+  React.useEffect(() => {
+    translateX.value = withRepeat(
+      withTiming(10, { duration: 500 }),
+      -1,
+      true
+    );
+  }, [translateX]);
+
+  const animatedArrowStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
 
   const purchasePlan = async () => {
     if (!selectedPlan) {
-      Alert.alert('Error', 'Please select a plan.');
+      Alert.alert('Error', 'Please select a subscription plan.');
       return;
     }
 
@@ -85,7 +99,6 @@ const Subscription = () => {
       setModalMessage(response.data.message);
       setModalVisible(true);
 
-      // On success, refresh subscription and Account caches
       await refreshSubscription();
       const balanceResponse = await axios.get(`${API_BASE_URL}/payments/balance/`, {
         headers: { Authorization: token },
@@ -102,11 +115,11 @@ const Subscription = () => {
         await AsyncStorage.setItem('subscription_end_date', subscription.end_date || '');
       }
     } catch (error) {
-      const message = error.response?.data?.message || 'Error purchasing plan';
+      const message = error.response?.data?.message || 'Failed to purchase plan. Please try again.';
       if (message.toLowerCase().includes('insufficient balance')) {
         Alert.alert(
           'Insufficient Balance',
-          'Please top up your account to purchase this plan.',
+          'Please fund your account to proceed with this subscription.',
           [
             {
               text: 'OK',
@@ -115,7 +128,7 @@ const Subscription = () => {
           ]
         );
       } else if (message.toLowerCase().includes('invalid plan')) {
-        Alert.alert('Error', 'Selected plan is invalid. Please try again.');
+        Alert.alert('Error', 'The selected plan is invalid. Please choose another plan.');
       } else {
         setModalMessage(message);
         setModalVisible(true);
@@ -125,22 +138,33 @@ const Subscription = () => {
     }
   };
 
+  const handleScroll = (event) => {
+    const contentOffsetX = event.nativeEvent.contentOffset.x;
+    const cardWidth = 260; // Width of each plan card
+    const index = Math.round(contentOffsetX / cardWidth);
+    setCurrentCardIndex(index);
+  };
+
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
-      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
-      <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.container}>
+    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
+      <StatusBar barStyle="light-content" backgroundColor="#1E40AF" />
+      <LinearGradient colors={['#E0F2FE', '#BFDBFE']} style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <MaterialIcons name="arrow-back" size={26} color="white" />
+          <TouchableOpacity
+            accessibilityLabel="Go back"
+            onPress={() => router.back()}
+            style={styles.backButton}
+          >
+            <MaterialIcons name="arrow-back" size={28} color="#FFFFFF" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Subscription</Text>
+          <Text style={styles.headerTitle}>Subscription Plans</Text>
           <View style={styles.headerSpacer} />
         </View>
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          <View style={styles.planCard}>
-            <Text style={styles.cardTitle}>Your Current Plan</Text>
+          <Animated.View entering={FadeInDown.duration(400)} style={styles.planCard}>
+            <Text style={styles.cardTitle}>Your Current Subscription</Text>
             <View style={styles.planInfo}>
-              <MaterialIcons name="card-membership" size={24} color="#5A8DEE" />
+              <MaterialIcons name="card-membership" size={24} color="#1E40AF" />
               <View style={styles.planInfoText}>
                 <Text style={styles.planLabel}>Plan</Text>
                 <Text style={styles.planValue}>
@@ -148,51 +172,118 @@ const Subscription = () => {
                     ? currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1)
                     : 'None'}
                 </Text>
-                <Text style={styles.planLabel}>Expires On</Text>
+                <Text style={styles.planLabel}>Expiration Date</Text>
                 <Text style={styles.planValue}>{endDate !== 'N/A' ? endDate : 'N/A'}</Text>
               </View>
             </View>
-          </View>
+          </Animated.View>
 
-          <Text style={styles.sectionTitle}>Choose a Subscription Plan</Text>
+          <Animated.Text entering={FadeInDown.duration(400).delay(100)} style={styles.sectionTitle}>
+            Select a Subscription Plan
+          </Animated.Text>
+          <Animated.Text entering={FadeInDown.duration(400).delay(200)} style={styles.planInstruction}>
+            Swipe to explore our plans and unlock premium features
+          </Animated.Text>
+          <Animated.View entering={FadeInDown.duration(400).delay(300)} style={styles.swipeIndicator}>
+            <Animated.View style={animatedArrowStyle}>
+              <MaterialIcons name="swipe" size={24} color="#1E40AF" />
+            </Animated.View>
+            <Text style={styles.swipeText}>Swipe to View Plans</Text>
+          </Animated.View>
+
           <View style={styles.planContainer}>
-            <View style={styles.pickerContainer}>
+            <ScrollView
+              ref={scrollViewRef}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.planScroll}
+              contentContainerStyle={styles.planScrollContent}
+              onScroll={handleScroll}
+              scrollEventThrottle={16}
+              snapToInterval={260} // Match card width for snapping
+              decelerationRate="fast"
+            >
+              {Object.entries(PLAN_DETAILS).map(([planKey, plan], index) => (
+                <Animated.View
+                  key={planKey}
+                  entering={FadeInDown.duration(400).delay(400 + index * 100)}
+                  style={[styles.planCardOption, selectedPlan === planKey && styles.selectedPlanCard]}
+                >
+                  <TouchableOpacity
+                    accessibilityLabel={`Select ${plan.name}`}
+                    onPress={() => setSelectedPlan(planKey)}
+                  >
+                    <LinearGradient
+                      colors={planKey === 'standard' ? ['#FBBF24', '#F59E0B'] : ['#FFFFFF', '#F3F4F6']}
+                      style={styles.planCardGradient}
+                    >
+                      <View style={styles.planHeader}>
+                        <Text style={styles.planCardTitle}>{plan.name}</Text>
+                        {planKey === 'standard' && (
+                          <View style={styles.premiumBadge}>
+                            <Text style={styles.premiumBadgeText}>Space</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.planCardPrice}>{plan.price}</Text>
+                      <Text style={styles.planCardOriginalPrice}>{plan.originalPrice}</Text>
+                      <Text style={styles.planCardDiscount}>{plan.discount}</Text>
+                      <View style={styles.featuresList}>
+                        {plan.features.map((feature, idx) => (
+                          <View key={idx} style={styles.featureItem}>
+                            <MaterialIcons name="check-circle" size={20} color="#22C55E" />
+                            <Text style={styles.featureText}>{feature}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </Animated.View>
+              ))}
+            </ScrollView>
+            <View style={styles.carouselDots}>
+              {Object.keys(PLAN_DETAILS).map((_, index) => (
+                <View
+                  key={index}
+                  style={[
+                    styles.dot,
+                    currentCardIndex === index ? styles.activeDot : styles.inactiveDot,
+                  ]}
+                />
+              ))}
+            </View>
+            <Animated.View entering={FadeInDown.duration(400).delay(600)} style={styles.pickerContainer}>
               <Picker
                 selectedValue={selectedPlan}
                 onValueChange={(itemValue) => setSelectedPlan(itemValue)}
                 style={styles.picker}
                 itemStyle={styles.pickerItem}
               >
-                <Picker.Item label="Select a plan" value="" />
-                <Picker.Item label="Regular - ₦5,000/month" value="regular" />
-                <Picker.Item label="Standard - ₦10,000/month" value="standard" />
-                <Picker.Item label="Premium - ₦25,000/month" value="premium" />
+                <Picker.Item label="Select a Plan" value="" />
+                <Picker.Item label="Regular Plan - ₦2,500/month" value="regular" />
+                <Picker.Item label="Standard Plan - ₦5,000/month" value="standard" />
               </Picker>
-            </View>
-            <TouchableOpacity
-              style={styles.planDetailsButton}
-              onPress={() => setPlanDetailsModal(true)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.planDetailsButtonText}>View Plan Details</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.purchaseButton, !selectedPlan && styles.disabledButton]}
-              onPress={purchasePlan}
-              disabled={loading || !selectedPlan}
-              activeOpacity={0.7}
-            >
-              <LinearGradient
-                colors={['#5A8DEE', '#7B9FFF']}
-                style={styles.buttonGradient}
+            </Animated.View>
+            <Animated.View entering={FadeInDown.duration(400).delay(700)}>
+              <TouchableOpacity
+                accessibilityLabel="Subscribe to selected plan"
+                style={[styles.purchaseButton, !selectedPlan && styles.disabledButton]}
+                onPress={purchasePlan}
+                disabled={loading || !selectedPlan}
+                activeOpacity={0.7}
               >
-                {loading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.buttonText}>Purchase Plan</Text>
-                )}
-              </LinearGradient>
-            </TouchableOpacity>
+                <LinearGradient
+                  colors={['#1E40AF', '#3B82F6']}
+                  style={styles.buttonGradient}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.buttonText}>Subscribe Now</Text>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+            </Animated.View>
           </View>
 
           <Modal
@@ -202,8 +293,8 @@ const Subscription = () => {
             onRequestClose={() => setModalVisible(false)}
           >
             <View style={styles.modalOverlay}>
-              <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>Notification</Text>
+              <Animated.View entering={FadeInDown.duration(400)} style={styles.modalContent}>
+                <Text style={styles.modalTitle}>Subscription Status</Text>
                 <Text style={styles.modalText}>{modalMessage}</Text>
                 <Pressable
                   style={styles.modalButton}
@@ -211,80 +302,13 @@ const Subscription = () => {
                   activeOpacity={0.7}
                 >
                   <LinearGradient
-                    colors={['#5A8DEE', '#7B9FFF']}
+                    colors={['#1E40AF', '#3B82F6']}
                     style={styles.modalButtonGradient}
                   >
                     <Text style={styles.modalButtonText}>OK</Text>
                   </LinearGradient>
                 </Pressable>
-              </View>
-            </View>
-          </Modal>
-
-          <Modal
-            animationType="slide"
-            transparent
-            visible={planDetailsModal}
-            onRequestClose={() => setPlanDetailsModal(false)}
-          >
-            <View style={styles.planModalOverlay}>
-              <View style={styles.planModalContent}>
-                <Text style={styles.modalTitle}>Plan Comparison</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={styles.tableContainer}>
-                    <View style={styles.tableRow}>
-                      <Text style={[styles.tableHeader, styles.featureColumn]}>Feature</Text>
-                      <Text style={[styles.tableHeader, styles.planColumn]}>Regular</Text>
-                      <Text style={[styles.tableHeader, styles.planColumn]}>Standard</Text>
-                      <Text style={[styles.tableHeader, styles.planColumn]}>Premium</Text>
-                    </View>
-                    {allFeatures.map((feature) => (
-                      <View key={feature} style={styles.tableRow}>
-                        <Text
-                          style={[styles.tableCell, styles.featureColumn]}
-                          numberOfLines={2}
-                          ellipsizeMode="tail"
-                        >
-                          {feature}
-                        </Text>
-                        <View style={[styles.tableCell, styles.planColumn, styles.iconCell]}>
-                          {PLAN_DETAILS.regular.included.includes(feature) ? (
-                            <MaterialIcons name="check-circle" size={20} color="#28A745" />
-                          ) : (
-                            <MaterialIcons name="cancel" size={20} color="#DC3545" />
-                          )}
-                        </View>
-                        <View style={[styles.tableCell, styles.planColumn, styles.iconCell]}>
-                          {PLAN_DETAILS.standard.included.includes(feature) ? (
-                            <MaterialIcons name="check-circle" size={20} color="#28A745" />
-                          ) : (
-                            <MaterialIcons name="cancel" size={20} color="#DC3545" />
-                          )}
-                        </View>
-                        <View style={[styles.tableCell, styles.planColumn, styles.iconCell]}>
-                          {PLAN_DETAILS.premium.included.includes(feature) ? (
-                            <MaterialIcons name="check-circle" size={20} color="#28A745" />
-                          ) : (
-                          <MaterialIcons name="cancel" size={20} color="#DC3545" />
-                          )}
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-                </ScrollView>
-                <TouchableOpacity
-                  style={styles.closeButton}
-                  onPress={() => setPlanDetailsModal(false)}
-                  activeOpacity={0.7}
-                >
-                  <LinearGradient
-                    colors={['#5A8DEE', '#7B9FFF']}
-                    style={styles.closeButtonGradient}
-                  >
-                    <Text style={styles.closeButtonText}>Close</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
+              </Animated.View>
             </View>
           </Modal>
         </ScrollView>
@@ -298,61 +322,61 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 16,
-    paddingHorizontal: 12,
-    backgroundColor: "#3A7BD5",
-    borderBottomLeftRadius: 35,
-    borderBottomRightRadius: 35,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 6,
+    paddingHorizontal: 16,
+    backgroundColor: '#1E40AF',
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 10,
   },
   backButton: {
-    padding: 5,
+    padding: 10,
     borderRadius: 12,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#FFFFFF",
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#FFFFFF',
     flex: 1,
-    textAlign: "center",
+    textAlign: 'center',
   },
   headerSpacer: {
-    width: 42,
+    width: 48,
   },
   scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 40,
+    paddingHorizontal: 16,
+    paddingVertical: 24,
+    paddingBottom: 64,
   },
   planCard: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 24,
-    marginBottom: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
     shadowColor: '#000',
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.15,
     shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
   },
   cardTitle: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#1A1F36',
+    color: '#1F2A44',
     marginBottom: 16,
     textAlign: 'center',
   },
   planInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: 12,
   },
   planInfoText: {
     flex: 1,
@@ -366,24 +390,141 @@ const styles = StyleSheet.create({
   planValue: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1A1F36',
+    color: '#1F2A44',
     marginTop: 4,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '700',
-    color: '#1A1F36',
-    marginVertical: 20,
+    color: '#1F2A44',
+    marginVertical: 16,
+    textAlign: 'center',
+  },
+  planInstruction: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#4B5563',
+    marginBottom: 16,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  swipeIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  swipeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1E40AF',
+    marginLeft: 8,
   },
   planContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 24,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
     shadowColor: '#000',
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.15,
     shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
+  },
+  planScroll: {
+    marginBottom: 16,
+  },
+  planScrollContent: {
+    flexDirection: 'row',
+    paddingRight: 16,
+  },
+  planCardOption: {
+    width: 260,
+    marginRight: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  selectedPlanCard: {
+    borderColor: '#1E40AF',
+    transform: [{ scale: 1.02 }],
+  },
+  planCardGradient: {
+    padding: 20,
+  },
+  planHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  planCardTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1F2A44',
+  },
+  premiumBadge: {
+    backgroundColor: '#FBBF24',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  premiumBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#1F2A44',
+  },
+  planCardPrice: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1F2A44',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  planCardOriginalPrice: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#6B7280',
+    textDecorationLine: 'line-through',
+    textAlign: 'center',
+  },
+  planCardDiscount: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#22C55E',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  featuresList: {
+    gap: 12,
+  },
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  featureText: {
+    fontSize: 14,
+    color: '#1F2A44',
+    flex: 1,
+    lineHeight: 20,
+  },
+  carouselDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginHorizontal: 4,
+  },
+  activeDot: {
+    backgroundColor: '#1E40AF',
+  },
+  inactiveDot: {
+    backgroundColor: '#D1D5DB',
   },
   pickerContainer: {
     backgroundColor: '#F9FAFB',
@@ -394,35 +535,20 @@ const styles = StyleSheet.create({
     borderColor: '#E5E7EB',
   },
   picker: {
-    height: 50,
-    color: '#1A1F36',
+    height: 48,
+    color: '#1F2A44',
   },
   pickerItem: {
     fontSize: 16,
-    color: '#1A1F36',
+    color: '#1F2A44',
     fontWeight: '500',
-  },
-  planDetailsButton: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  planDetailsButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#5A8DEE',
   },
   purchaseButton: {
     borderRadius: 12,
     overflow: 'hidden',
-    marginTop: 8,
   },
   disabledButton: {
-    opacity: 0.6,
+    opacity: 0.5,
   },
   buttonGradient: {
     paddingVertical: 16,
@@ -431,43 +557,30 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#fff',
+    color: '#FFFFFF',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     padding: 24,
-    width: '85%',
+    width: '90%',
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.25,
     shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
-  },
-  planModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'flex-end',
-  },
-  planModalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    width: '100%',
-    maxHeight: '85%',
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
   },
   modalTitle: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#1A1F36',
+    color: '#1F2A44',
     marginBottom: 16,
     textAlign: 'center',
   },
@@ -490,66 +603,7 @@ const styles = StyleSheet.create({
   modalButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#fff',
-  },
-  tableContainer: {
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: '#fff',
-    marginBottom: 16,
-  },
-  tableRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
-    minHeight: 48,
-  },
-  tableHeader: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1A1F36',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    textAlign: 'center',
-    backgroundColor: '#F9FAFB',
-  },
-  tableCell: {
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  featureColumn: {
-    width: 200,
-    textAlign: 'left',
-    paddingLeft: 16,
-  },
-  planColumn: {
-    width: 80,
-    textAlign: 'center',
-  },
-  iconCell: {
-    width: 80,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeButton: {
-    borderRadius: 12,
-    overflow: 'hidden',
-    marginTop: 16,
-    alignSelf: 'center',
-    width: '50%',
-  },
-  closeButtonGradient: {
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  closeButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
+    color: '#FFFFFF',
   },
 });
 

@@ -10,7 +10,11 @@ import {
   ActivityIndicator,
   Keyboard,
   Platform,
-  KeyboardAvoidingView, StatusBar
+  KeyboardAvoidingView,
+  StatusBar,
+  Clipboard,
+  Alert,
+  ToastAndroid,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import axios from "axios";
@@ -26,8 +30,9 @@ import Animated, {
   useAnimatedStyle,
   withTiming,
   withSpring,
-  Easing,
+  Easing, FadeInUp
 } from "react-native-reanimated";
+import { getFullUrl } from "../../utils/imageUtils"; // Adjust path as needed
 
 const CACHE_KEY = "EditProfile_Cache";
 
@@ -39,6 +44,7 @@ const EditProfileScreen = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [focused, setFocused] = useState(null);
+  const [copied, setCopied] = useState(false);
   const params = useLocalSearchParams();
   const { shopId, prevRoute } = params;
   const router = useRouter();
@@ -49,6 +55,7 @@ const EditProfileScreen = () => {
   const cardScale = useSharedValue(0.95);
   const buttonScale = useSharedValue(1);
   const iconScale = useSharedValue(1);
+  const copyButtonScale = useSharedValue(1);
 
   // Load cached data and session ID
   const loadCachedData = useCallback(async () => {
@@ -58,8 +65,8 @@ const EditProfileScreen = () => {
         const data = JSON.parse(cachedUser);
         setUser(data);
         setPhoneNo(data.phone_no || "");
-        setImage(data.image || "");
-        console.log("Loaded cached profile data");
+        setImage(getFullUrl(data.image) || ""); // Use getFullUrl for cached image
+        console.log("Loaded cached profile data:", data);
       }
     } catch (error) {
       console.error("Error loading cached data:", error);
@@ -81,8 +88,9 @@ const EditProfileScreen = () => {
   // Save to cache
   const saveToCache = useCallback(async (data) => {
     try {
-      await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(data));
-      console.log("Cached profile data saved");
+      const cachedData = { ...data, image: getFullUrl(data.image) }; // Cache signed URL
+      await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cachedData));
+      console.log("Cached profile data saved:", cachedData);
     } catch (error) {
       console.error("Error saving to cache:", error);
     }
@@ -106,11 +114,12 @@ const EditProfileScreen = () => {
           },
         }
       );
-      setUser(response.data);
-      setPhoneNo(response.data.phone_no || "");
-      setImage(response.data.image || "");
-      saveToCache(response.data);
-      console.log("Fetched profile:", response.data);
+      const data = response.data;
+      setUser(data);
+      setPhoneNo(data.phone_no || "");
+      setImage(getFullUrl(data.image) || ""); // Use getFullUrl for signed URL
+      saveToCache(data);
+      console.log("Fetched profile:", data);
     } catch (error) {
       console.error("Error fetching profile:", error);
       setError("Failed to fetch profile. Using cached data if available.");
@@ -126,7 +135,7 @@ const EditProfileScreen = () => {
 
     loadCachedData().then(() => {
       if (sessionId) {
-        fetchProfile(); // Always fetch fresh data
+        fetchProfile();
       }
     });
   }, [sessionId, loadCachedData, fetchProfile]);
@@ -157,7 +166,7 @@ const EditProfileScreen = () => {
   const handleUpdate = async () => {
     if (!sessionId) {
       console.error("Session ID is missing!");
-      alert("Please log in to update your profile.");
+      Alert.alert("Error", "Please log in to update your profile.");
       return;
     }
 
@@ -169,25 +178,26 @@ const EditProfileScreen = () => {
       hasChanges = true;
     }
 
-    if (image && image !== user.image) {
+    if (image && image !== getFullUrl(user.image)) {
       try {
         const response = await fetch(image);
         const blob = await response.blob();
+        const fileName = image.split("/").pop() || "profile.jpg";
         formData.append("image", {
           uri: image,
-          type: "image/jpeg",
-          name: "profile.jpg",
+          type: blob.type || "image/jpeg",
+          name: fileName,
         });
         hasChanges = true;
       } catch (error) {
         console.error("Error processing image:", error);
-        alert("Failed to process image. Please try again.");
+        Alert.alert("Error", "Failed to process image. Please try again.");
         return;
       }
     }
 
     if (!hasChanges) {
-      alert("No changes made to update.");
+      Alert.alert("Info", "No changes made to update.");
       return;
     }
 
@@ -204,15 +214,17 @@ const EditProfileScreen = () => {
       );
 
       if (response.status === 200) {
-        setUser({ ...user, phone_no: phoneNo, image });
-        saveToCache({ ...user, phone_no: phoneNo, image });
-        alert("Profile updated successfully!");
+        const updatedData = { ...user, phone_no: phoneNo, image: response.data.image };
+        setUser(updatedData);
+        setImage(getFullUrl(response.data.image) || "");
+        saveToCache(updatedData);
+        Alert.alert("Success", "Profile updated successfully!");
       } else {
-        alert("Failed to update profile.");
+        Alert.alert("Error", "Failed to update profile.");
       }
     } catch (error) {
       console.error("Update error:", error);
-      alert("An error occurred while updating the profile.");
+      Alert.alert("Error", "An error occurred while updating the profile.");
     }
   };
 
@@ -227,8 +239,26 @@ const EditProfileScreen = () => {
       quality: 1,
     });
     if (!result.canceled) {
-      setImage(result.assets[0].uri);
-      console.log("Image picked:", result.assets[0].uri);
+      const uri = result.assets[0].uri;
+      setImage(uri);
+      console.log("Image picked:", uri);
+      // Prefetch the image to verify
+      Image.prefetch(uri).catch((error) => console.error("Prefetch error:", error));
+    }
+  };
+
+  const copyToClipboard = () => {
+    if (user?.user_id) {
+      Clipboard.setString(user.user_id);
+      setCopied(true);
+
+      if (Platform.OS === "android") {
+        ToastAndroid.show("Customer ID copied!", ToastAndroid.SHORT);
+      } else {
+        Alert.alert("Copied", "Customer ID copied to clipboard!");
+      }
+
+      setTimeout(() => setCopied(false), 2000);
     }
   };
 
@@ -246,12 +276,24 @@ const EditProfileScreen = () => {
     transform: [{ scale: iconScale.value }],
   }));
 
+  const animatedCopyButtonStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: copyButtonScale.value }],
+  }));
+
   const handleButtonPressIn = () => {
     buttonScale.value = withTiming(0.95, { duration: 100 });
   };
 
   const handleButtonPressOut = () => {
     buttonScale.value = withTiming(1, { duration: 100 });
+  };
+
+  const handleCopyPressIn = () => {
+    copyButtonScale.value = withTiming(0.95, { duration: 100 });
+  };
+
+  const handleCopyPressOut = () => {
+    copyButtonScale.value = withTiming(1, { duration: 100 });
   };
 
   const handleFocus = (field) => {
@@ -274,16 +316,16 @@ const EditProfileScreen = () => {
 
   if (loading && !user) {
     return (
-      <View style={styles.loadingContainer}>
+      <LinearGradient colors={["#F7FAFC", "#E5E7EB"]} style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#3A7BD5" />
         <Text style={styles.loadingText}>Loading profile...</Text>
-      </View>
+      </LinearGradient>
     );
   }
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
-      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
+      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
       <LinearGradient colors={["#F7FAFC", "#E5E7EB"]} style={styles.container}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
@@ -295,9 +337,9 @@ const EditProfileScreen = () => {
               onPress={() => router.navigate("(tabs)/profile")}
               style={styles.backButton}
             >
-              <MaterialIcons name="arrow-back" size={26} color="white" />
+              <MaterialIcons name="arrow-back" size={28} color="white" />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Profile Edit</Text>
+            <Text style={styles.headerTitle}>Edit Profile</Text>
             <View style={styles.headerSpacer} />
           </View>
           <ScrollView
@@ -308,24 +350,43 @@ const EditProfileScreen = () => {
               <Text style={styles.errorText}>{error}</Text>
             )}
             {user && (
-              <Animated.View style={[styles.profileCard, animatedCardStyle]}>
+              <Animated.View style={[styles.profileCard, animatedCardStyle]} entering={FadeInUp}>
                 <View style={styles.imageContainer}>
                   <Text style={styles.imageLabel}>Profile Picture</Text>
                   <TouchableOpacity onPress={pickImage}>
                     <Image
-                      source={{ uri: image || user.image || "https://via.placeholder.com/150" }}
+                      source={{
+                        uri: image || getFullUrl(user.image) || "https://via.placeholder.com/150",
+                      }}
                       style={styles.profileImage}
+                      onError={(e) => console.error("Image load error:", e.nativeEvent.error, "URL:", getFullUrl(user.image))}
                     />
                   </TouchableOpacity>
                   <Animated.View style={[styles.uploadIcon, animatedIconStyle]}>
                     <TouchableOpacity onPress={pickImage}>
-                      <Ionicons name="camera" size={26} color="#FFFFFF" />
+                      <Ionicons name="camera" size={28} color="#FFFFFF" />
                     </TouchableOpacity>
                   </Animated.View>
                   <Text style={styles.uploadHint}>Tap to upload new image</Text>
                 </View>
 
-                <Text style={styles.profileId}>Profile ID: {user.user_id}</Text>
+                <View style={styles.profileIdContainer}>
+                  <Text style={styles.profileId}>Customer ID: {user.user_id}</Text>
+                  <TouchableOpacity
+                    onPress={copyToClipboard}
+                    onPressIn={handleCopyPressIn}
+                    onPressOut={handleCopyPressOut}
+                    style={styles.copyButton}
+                  >
+                    <Animated.View style={animatedCopyButtonStyle}>
+                      <Ionicons
+                        name={copied ? "checkmark-circle" : "copy-outline"}
+                        size={24}
+                        color={copied ? "#4CAF50" : "#007AFF"}
+                      />
+                    </Animated.View>
+                  </TouchableOpacity>
+                </View>
 
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>First Name</Text>
@@ -341,6 +402,7 @@ const EditProfileScreen = () => {
                   <Text style={styles.label}>Email</Text>
                   <Text style={styles.input}>{user.email}</Text>
                 </View>
+
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Phone Number</Text>
                   <TextInput
@@ -354,23 +416,6 @@ const EditProfileScreen = () => {
                     placeholderTextColor="#6B7280"
                     onFocus={() => handleFocus("phoneNo")}
                     onBlur={() => handleBlur("phoneNo")}
-                    blurOnSubmit={true}
-                    onSubmitEditing={() => Keyboard.dismiss()}
-                  />
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Confirm Phone Number</Text>
-                  <TextInput
-                    style={[
-                      styles.inputField,
-                      focused === "confirmPhone" && styles.inputFieldFocused,
-                    ]}
-                    placeholder="Enter verification code"
-                    keyboardType="number-pad"
-                    placeholderTextColor="#6B7280"
-                    onFocus={() => handleFocus("confirmPhone")}
-                    onBlur={() => handleBlur("confirmPhone")}
                     blurOnSubmit={true}
                     onSubmitEditing={() => Keyboard.dismiss()}
                   />
@@ -395,6 +440,7 @@ const EditProfileScreen = () => {
   );
 };
 
+// Styles remain unchanged
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -414,155 +460,219 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   backButton: {
-    padding: 8,
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
+    fontSize: 22,
+    fontWeight: "700",
     color: "#FFFFFF",
     flex: 1,
     textAlign: "center",
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
+    letterSpacing: 0.5,
   },
   headerSpacer: {
-    width: 42,
+    width: 50,
   },
   scrollContainer: {
-    paddingVertical: 18,
-    paddingHorizontal: 16,
+    paddingVertical: 24,
+    paddingHorizontal: 20,
     alignItems: "center",
   },
   profileCard: {
     width: "100%",
-    backgroundColor: "white",
-    padding: 28,
-    borderRadius: 28,
+    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    padding: 32,
+    borderRadius: 24,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
     alignItems: "center",
-    borderWidth: 0.5,
-    borderColor: "rgba(0, 0, 0, 0.03)",
+    borderWidth: 1,
+    borderColor: "rgba(0, 0, 0, 0.05)",
+    overflow: "hidden",
   },
   imageContainer: {
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
-    marginBottom: 16,
-    backgroundColor: "#EFF6FF",
-    borderRadius: 16,
-    padding: 16,
+    marginBottom: 24,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 20,
+    padding: 20,
     width: "100%",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
   },
   imageLabel: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "700",
-    color: "#111827",
+    color: "#1F2937",
     marginBottom: 16,
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
+    letterSpacing: 0.5,
   },
   profileImage: {
-    width: 170,
-    height: 170,
-    borderRadius: 85,
-    borderWidth: 4.5,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    borderWidth: 5,
     borderColor: "#3A7BD5",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   uploadIcon: {
     position: "absolute",
-    bottom: 12,
-    right: 12,
+    bottom: 20,
+    right: 20,
     backgroundColor: "#3A7BD5",
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
-    borderColor: "white",
+    borderColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   uploadHint: {
-    fontSize: 15,
-    color: "#4B5563",
+    fontSize: 16,
+    color: "#6B7280",
     fontWeight: "500",
-    marginTop: 12,
+    marginTop: 16,
     textAlign: "center",
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
+  },
+  profileIdContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    width: "100%",
+    justifyContent: "space-between",
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
   },
   profileId: {
-    fontSize: 20,
-    fontWeight: "700",
-    textAlign: "center",
-    marginVertical: 16,
-    color: "#111827",
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#1F2937",
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
     letterSpacing: 0.5,
+  },
+  copyButton: {
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: "#E6F0FA",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   inputGroup: {
     width: "100%",
-    marginBottom: 20,
+    marginBottom: 24,
   },
   label: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#111827",
-    marginBottom: 10,
+    color: "#1F2937",
+    marginBottom: 12,
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
+    letterSpacing: 0.5,
   },
   input: {
     backgroundColor: "#F3F4F6",
-    padding: 18,
-    borderRadius: 14,
+    padding: 16,
+    borderRadius: 12,
     fontSize: 18,
-    color: "#111827",
+    color: "#1F2937",
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
   },
   inputField: {
     backgroundColor: "#F3F4F6",
-    padding: 18,
-    borderRadius: 14,
+    padding: 16,
+    borderRadius: 12,
     fontSize: 18,
-    color: "#111827",
-    borderWidth: 0.5,
-    borderColor: "transparent",
+    color: "#1F2937",
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   inputFieldFocused: {
-    borderColor: "rgba(0, 0, 0, 0.05)",
+    borderColor: "#3A7BD5",
+    borderWidth: 2,
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
   },
   buttonContainer: {
     width: "100%",
-    marginTop: 28,
+    marginTop: 32,
   },
   updateButton: {
     backgroundColor: "#3A7BD5",
     borderRadius: 16,
     paddingVertical: 16,
     paddingHorizontal: 24,
-    shadowColor: "#3A7BD5",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 4,
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
   },
   updateButtonText: {
-    fontSize: 19,
+    fontSize: 20,
     fontWeight: "700",
     color: "#FFFFFF",
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
     letterSpacing: 0.5,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#F7FAFC",
   },
   loadingText: {
-    marginTop: 10,
+    marginTop: 12,
     fontSize: 18,
     color: "#4B5563",
-    fontWeight: "500",
+    fontWeight: "600",
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
   },
   errorText: {
     fontSize: 16,
-    color: "#f44336",
+    color: "#EF4444",
     textAlign: "center",
-    marginVertical: 20,
+    marginVertical: 24,
+    fontWeight: "600",
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
+    backgroundColor: "#FEF2F2",
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FECACA",
   },
 });
 

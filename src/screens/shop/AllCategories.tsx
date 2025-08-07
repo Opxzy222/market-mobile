@@ -1,31 +1,57 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View,
-  Text,
+  ActivityIndicator,
   FlatList,
-  TouchableOpacity,
   Image,
+  StatusBar,
   StyleSheet,
-  ActivityIndicator, StatusBar
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import axios from 'axios';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 
 const categoryIconMap = {
-  vehicles: require('../../../assets/Image/car-icon.svg'),
-  electronics: require('../../../assets/Image/computer-icon.png'),
-  phone: require('../../../assets/Image/phone-icon.png'),
-  furniture: require('../../../assets/Image/furniture-icon.png'),
-  '': require('../../../assets/Image/home-appliance-icon.png'),
-  fashion: require('../../../assets/Image/wear-icon.png'),
-  property: require('../../../assets/Image/property-icon.png'),
-  'health & beauty': require('../../../assets/Image/health-beauty-icon2.png'),
-  services: require('../../../assets/Image/services-icon.jpg'),
-  'babies & kiddies': require('../../../assets/Image/babies-icon.jpg'),
-  'agriculture & food': require('../../../assets/Image/agric-icon.jpg'),
+  'Agriculture & Food': require('../../../assets/G-images/Agriculture.jpg'),
+  'Babies & Kiddies': require('../../../assets/G-images/Babies.jpg'),
+  'Books & Stationery': require('../../../assets/G-images/Books.jpg'),
+  'Commercial Equipments & Tools': require('../../../assets/G-images/Commercial.jpg'),
+  'Construction Tools & Materials': require('../../../assets/G-images/Construction.jpg'),
+  'Custom & Personalized': require('../../../assets/G-images/Custom.jpg'),
+  'Electronics': require('../../../assets/G-images/Electronics.jpg'),
+  'Fashion': require('../../../assets/G-images/Fashion.jpg'),
+  'Food & Restaurants': require('../../../assets/G-images/Food.jpg'),
+  'Fuel & Automotive Retail': require('../../../assets/G-images/Fuel.jpg'),
+  'Furniture': require('../../../assets/G-images/Furniture.jpg'),
+  'Green & Eco-friendly': require('../../../assets/G-images/Green.jpg'),
+  'Grocery & Supermarkets': require('../../../assets/G-images/Grocery.jpg'),
+  'Health & Beauty': require('../../../assets/G-images/Health.jpg'),
+  'Hospitality & Accommodations': require('../../../assets/G-images/Hospitality.jpg'),
+  'Industrial & Scientific': require('../../../assets/G-images/Industrial.jpg'),
+  'Luxury & Designer': require('../../../assets/G-images/Luxury.jpg'),
+  'Medical & Healthcare': require('../../../assets/G-images/Medical.jpg'),
+  'Music & Audio': require('../../../assets/G-images/Music.jpg'),
+  'Office & School Supplies': require('../../../assets/G-images/Office.jpg'),
+  'Party & Event Supplies': require('../../../assets/G-images/Party.jpg'),
+  'Pets': require('../../../assets/G-images/Pets.jpg'),
+  'Printing & Publishing': require('../../../assets/G-images/Printing.jpg'),
+  'Promotional Products': require('../../../assets/G-images/Promotional.jpg'),
+  'Property': require('../../../assets/G-images/Property.jpg'),
+  'Seasonal & Holiday': require('../../../assets/G-images/Seasonal.jpg'),
+  'Services': require('../../../assets/G-images/Services.jpg'),
+  'Spiritual & Wellness': require('../../../assets/G-images/Spiritual.jpg'),
+  'Sports, Arts & outdoors': require('../../../assets/G-images/Sports.jpg'),
+  'Textiles & Fabrics': require('../../../assets/G-images/Textile.jpg'),
+  'Toys & Hobbies': require('../../../assets/G-images/Toys.jpg'),
+  'Travel & Luggage': require('../../../assets/G-images/Travel.jpg'),
+  'Vehicles': require('../../../assets/G-images/Vehicle.jpg'),
+  'Vintage & Thrift': require('../../../assets/G-images/Vintage.jpg'),
+  // Fallback for unknown categories
+  '': require('../../../assets/G-images/default.jpg'),
 };
 
 const AllCategories = () => {
@@ -44,9 +70,10 @@ const AllCategories = () => {
         setLoading(true);
         const response = await axios.get('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/all-shop-categories/');
         const categoryArray = Object.values(response.data);
-        setCategories(categoryArray);
+        const sortedCategories = categoryArray.sort((a, b) => a.name.localeCompare(b.name));
+        setCategories(sortedCategories);
         if (__DEV__) {
-          console.log('Fetched categories:', categoryArray);
+          console.log('Fetched categories:', sortedCategories.map(item => item.name));
         }
       } catch (error) {
         console.error('Error fetching categories:', error);
@@ -66,24 +93,36 @@ const AllCategories = () => {
     });
   };
 
-  const renderCategoryItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.categoryItem}
-      onPress={() => handleCategoryClick(item.id, item.name)}
-    >
-      <LinearGradient
-        colors={['#E3F2FD', '#BBDEFB']}
-        style={styles.iconContainer}
+  const renderCategoryItem = ({ item, index }) => {
+    const normalizedName = item.name.trim();
+    const imageSource = categoryIconMap[normalizedName] || categoryIconMap[''];
+    
+    if (!categoryIconMap[normalizedName]) {
+      console.warn(`No image found for category: ${normalizedName}, using fallback`);
+    }
+
+    // Check if this is the last item and the total number of categories is odd
+    const isLastAndOdd = index === categories.length - 1 && categories.length % 2 !== 0;
+
+    return (
+      <TouchableOpacity
+        style={[styles.categoryItem, isLastAndOdd && styles.lastCategoryItem]}
+        onPress={() => handleCategoryClick(item.id, item.name)}
       >
-        <Image
-          source={categoryIconMap[item.name.trim().toLowerCase()]}
-          style={styles.icon}
-          resizeMode="contain"
-        />
-      </LinearGradient>
-      <Text style={styles.categoryName}>{item.name}</Text>
-    </TouchableOpacity>
-  );
+        <LinearGradient
+          colors={['#FFFFFF', '#F5F8FA']}
+          style={styles.iconContainer}
+        >
+          <Image
+            source={imageSource}
+            style={styles.icon}
+            resizeMode="contain"
+          />
+        </LinearGradient>
+        <Text style={styles.categoryName}>{item.name}</Text>
+      </TouchableOpacity>
+    );
+  };
 
   if (loading) {
     return (
@@ -161,6 +200,8 @@ const AllCategories = () => {
           numColumns={2}
           contentContainerStyle={styles.listContainer}
           columnWrapperStyle={styles.row}
+          initialNumToRender={6}
+          windowSize={5}
         />
       </LinearGradient>
     </SafeAreaView>
@@ -214,7 +255,7 @@ const styles = StyleSheet.create({
   categoryItem: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 12,
+    padding: 16,
     marginBottom: 16,
     alignItems: 'center',
     flex: 1,
@@ -225,14 +266,20 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 4,
   },
+  lastCategoryItem: {
+    maxWidth: '48%', // Ensure the last item doesn't stretch across both columns
+  },
   iconContainer: {
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
+    borderRadius: 20,
+    padding: 7,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#FFFFFF',
   },
   icon: {
-    width: 48,
-    height: 48,
+    width: 100,
+    height: 100,
   },
   categoryName: {
     fontSize: 14,

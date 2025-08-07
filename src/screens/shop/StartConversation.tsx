@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useState, useRef, memo } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
@@ -15,7 +15,8 @@ import {
   KeyboardAvoidingView,
   Keyboard,
   Platform,
-  StatusBar, Image
+  StatusBar,
+  Image,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
@@ -23,23 +24,27 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
-import { storeData, getData, initializeDatabase } from '../../storage/storage';
+import {
+  storeData,
+  getData,
+  initializeDatabase,
+  getSingletonSQLiteDatabase,
+} from '../../storage/storage';
 import SendImage from '../../components/shop/SendImage';
 import SendVideo from '../../components/shop/SendVideo';
 import SendPDF from '../../components/shop/SendPdf';
 import ChatImage from '../../components/shop/ChatImage';
-import ChatVideo from '../../components/shop/ChatVideo';
+import ChatVideo from "../../components/shop/ChatVideo";
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from "expo-linear-gradient";
+import { LinearGradient } from 'expo-linear-gradient';
 
 const isWeb = Constants.platform?.web;
-
-
+const CACHE_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 
 const StartConversation = () => {
   const [userId, setUserId] = useState(null);
   const [menuVisible, setMenuVisible] = useState(false);
-  const [inputMessage, setInputMessage] = useState('');
+  const [inputMessage, setInputMessage] = useState("");
   const [messages, setMessages] = useState([]);
   const [conversationId, setConversationId] = useState(null);
   const [sessionId, setSessionId] = useState(null);
@@ -55,53 +60,288 @@ const StartConversation = () => {
   const receivedMessagesRef = useRef(new Set());
   const isScreenFocused = useRef(false);
   const hasFetchedMessages = useRef(false);
+  const isDatabaseInitialized = useRef(false);
 
   const params = useLocalSearchParams();
   const { shopId, name } = params;
   const router = useRouter();
 
-  // Initialize database
+  // Initialize database and clean up corrupted data
   useEffect(() => {
     const setupDatabase = async () => {
+      if (isDatabaseInitialized.current) {
+        console.log("Database already initialized, skipping...");
+        return;
+      }
+
       try {
-        console.log('Initializing database...');
+        console.log("Initializing database...");
         await initializeDatabase();
-        console.log('Database initialized in StartConversation');
+        isDatabaseInitialized.current = true;
+        console.log("Database initialized in StartConversation");
+
+        // One-time cleanup of corrupted SQLite data
+        const db = await getSingletonSQLiteDatabase();
+        const rows = await db.getAllAsync<{ key: string; value: string }>(
+          "SELECT key, value FROM secure_data WHERE key LIKE 'messages_%' OR key LIKE 'conversation_id_%';"
+        );
+        for (const row of rows) {
+          const isValid = /^[A-Za-z0-9+/=]+$/.test(row.value) && row.value.length % 4 === 0;
+          if (!isValid) {
+            console.error(`Found corrupted SQLite data for key: ${row.key}, value: ${row.value}`);
+            await db.runAsync("DELETE FROM secure_data WHERE key = ?;", [row.key]);
+            console.log(`Removed corrupted SQLite data: ${row.key}`);
+          }
+        }
+
+        // Debug SQLite contents
+        await debugStorage();
       } catch (error) {
-        console.error('Failed to initialize database:', error);
+        console.error("Failed to initialize database or clear data:", error);
       }
     };
     setupDatabase();
   }, []);
 
+  // Debug SQLite contents
+  const debugStorage = async () => {
+    try {
+      const db = await getSingletonSQLiteDatabase();
+      const rows = await db.getAllAsync<{ key: string; value: string }>(
+        "SELECT key, value FROM secure_data;"
+      );
+      for (const row of rows) {
+        console.log(`SQLite key: ${row.key}, Value: ${row.value}`);
+        if (row.value && /^[A-Za-z0-9+/=]+$/.test(row.value) && row.value.length % 4 === 0) {
+          try {
+            console.log(`Decoded SQLite value: ${decodeURIComponent(atob(row.value))}`);
+          } catch (error) {
+            console.error(`Error decoding SQLite key ${row.key}:`, error);
+          }
+        } else {
+          console.error(`Invalid SQLite data for key ${row.key}:`, row.value);
+        }
+      }
+    } catch (error) {
+      console.error("Error debugging storage:", error);
+    }
+  };
+
+  // Clear messages when shopId changes
+  useEffect(() => {
+    console.log("Shop ID changed:", shopId);
+    setMessages([]);
+    setConversationId(null);
+    setConversationStarted(false);
+    setMessagesLoaded(false);
+    receivedMessagesRef.current.clear();
+  }, [shopId]);
+
+  // Clean up old caches in SQLite
+  const cleanOldCaches = async () => {
+    try {
+      const now = Date.now();
+      const db = await getSingletonSQLiteDatabase();
+
+      // Query all keys in secure_data table
+      const rows = await db.getAllAsync<{ key: string }>(
+        "SELECT key FROM secure_data WHERE key LIKE 'messages_%' OR key LIKE 'conversation_id_%';"
+      );
+      const cacheKeys = rows.map((row) => row.key);
+
+      for (const key of cacheKeys) {
+        const cachedData = await getData(key);
+        if (cachedData) {
+          try {
+            if (!cachedData.match(/^{.*}$|^\[.*\]$/)) {
+              console.error(`Invalid JSON for key ${key}:`, cachedData);
+              await db.runAsync("DELETE FROM secure_data WHERE key = ?;", [key]);
+              console.log(`Removed invalid cache from SQLite: ${key}`);
+              continue;
+            }
+            const { timestamp } = JSON.parse(cachedData);
+            if (!timestamp || now - timestamp > CACHE_EXPIRATION_MS) {
+              await db.runAsync("DELETE FROM secure_data WHERE key = ?;", [key]);
+              console.log(`Removed expired cache from SQLite: ${key}`);
+            }
+          } catch (parseError) {
+            console.error(`Error parsing JSON for ${key}:`, parseError, "Data:", cachedData);
+            await db.runAsync("DELETE FROM secure_data WHERE key = ?;", [key]);
+            console.log(`Removed corrupted cache from SQLite: ${key}`);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error cleaning old caches:", error);
+    }
+  };
+
+  // Cache conversation ID with timestamp
+  const cacheConversationId = async (shopId, conversationId) => {
+    const cacheKey = `conversation_id_${shopId}`;
+    try {
+      const cacheData = {
+        timestamp: Date.now(),
+        conversationId,
+      };
+      await storeData(cacheKey, JSON.stringify(cacheData));
+      console.log(`Cached conversationId in SQLite: ${conversationId} for shopId: ${shopId}, timestamp: ${new Date(cacheData.timestamp).toISOString()}`);
+    } catch (error) {
+      console.error(`Error caching conversationId for ${cacheKey}:`, error);
+    }
+  };
+
+  // Load cached conversation ID
+  const loadCachedConversationId = async (shopId) => {
+    const cacheKey = `conversation_id_${shopId}`;
+    try {
+      const cached = await getData(cacheKey);
+      if (cached) {
+        try {
+          if (!cached.match(/^{.*}$/)) {
+            console.error(`Invalid JSON for key ${cacheKey}:`, cached);
+            const db = await getSingletonSQLiteDatabase();
+            await db.runAsync("DELETE FROM secure_data WHERE key = ?;", [cacheKey]);
+            console.log(`Removed invalid cache from SQLite: ${cacheKey}`);
+            return null;
+          }
+          const { timestamp, conversationId } = JSON.parse(cached);
+          const now = Date.now();
+          if (timestamp && now - timestamp <= CACHE_EXPIRATION_MS) {
+            console.log(`Loaded cached conversationId from SQLite: ${conversationId} for ${cacheKey}, timestamp: ${new Date(timestamp).toISOString()}`);
+            return conversationId;
+          } else {
+            const db = await getSingletonSQLiteDatabase();
+            await db.runAsync("DELETE FROM secure_data WHERE key = ?;", [cacheKey]);
+            console.log(`Removed expired conversationId cache from SQLite: ${cacheKey}`);
+            return null;
+          }
+        } catch (parseError) {
+          console.error(`Error parsing conversationId for ${cacheKey}:`, parseError, "Data:", cached);
+          const db = await getSingletonSQLiteDatabase();
+          await db.runAsync("DELETE FROM secure_data WHERE key = ?;", [cacheKey]);
+          console.log(`Removed corrupted cache from SQLite: ${cacheKey}`);
+          return null;
+        }
+      }
+      return null;
+    } catch (error) {
+      console.error(`Error loading cached conversationId for ${cacheKey}:`, error);
+      return null;
+    }
+  };
+
+  // Load cached messages
+  const loadCachedMessages = async (localConversationId) => {
+    const cacheKey = `messages_${localConversationId}`;
+    try {
+      console.log("Loading cached messages for key:", cacheKey);
+      const cached = await getData(cacheKey);
+      if (cached) {
+        try {
+          if (!cached.match(/^{.*}$/)) {
+            console.error(`Invalid JSON for key ${cacheKey}:`, cached);
+            const db = await getSingletonSQLiteDatabase();
+            await db.runAsync("DELETE FROM secure_data WHERE key = ?;", [cacheKey]);
+            console.log(`Removed invalid cache from SQLite: ${cacheKey}`);
+            return [];
+          }
+          const { timestamp, messages } = JSON.parse(cached);
+          const now = Date.now();
+          if (timestamp && now - timestamp <= CACHE_EXPIRATION_MS) {
+            const recentMessages = messages.filter(
+              (msg) =>
+                now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+                msg.conversation_id === localConversationId
+            );
+            recentMessages.forEach((msg) => receivedMessagesRef.current.add(Number(msg.id)));
+            console.log(
+              `Loaded cached messages from SQLite for ${cacheKey}, timestamp: ${new Date(
+                timestamp
+              ).toISOString()}, messageCount: ${recentMessages.length}`
+            );
+            return recentMessages;
+          } else {
+            const db = await getSingletonSQLiteDatabase();
+            await db.runAsync("DELETE FROM secure_data WHERE key = ?;", [cacheKey]);
+            console.log(`Removed expired cache from SQLite: ${cacheKey}`);
+            return [];
+          }
+        } catch (parseError) {
+          console.error(`Error parsing cached messages for ${cacheKey}:`, parseError, "Data:", cached);
+          const db = await getSingletonSQLiteDatabase();
+          await db.runAsync("DELETE FROM secure_data WHERE key = ?;", [cacheKey]);
+          console.log(`Removed corrupted cache from SQLite: ${cacheKey}`);
+          return [];
+        }
+      }
+      console.log("No cached messages found for key:", cacheKey);
+      return [];
+    } catch (error) {
+      console.error("Error loading cached messages:", error);
+      return [];
+    }
+  };
+
+  // Cache messages with timestamp
+  const cacheMessages = async (messagesToCache, localConversationId) => {
+    const cacheKey = `messages_${localConversationId}`;
+    try {
+      const now = Date.now();
+      const recentMessages = messagesToCache.filter(
+        (msg) =>
+          now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+          msg.conversation_id === localConversationId
+      );
+      const cacheData = {
+        timestamp: now,
+        messages: recentMessages,
+      };
+      await storeData(cacheKey, JSON.stringify(cacheData));
+      console.log(
+        `Cached messages in SQLite for ${cacheKey}, timestamp: ${new Date(
+          now
+        ).toISOString()}, messageCount: ${recentMessages.length}`
+      );
+    } catch (error) {
+      console.error("Error caching messages:", error);
+    }
+  };
+
   // Load session data, cached conversationId, and messages, then fetch if necessary
   useEffect(() => {
     const loadData = async () => {
-      if (!shopId) return;
+      if (!shopId) {
+        console.warn("No shopId provided, skipping data load");
+        return;
+      }
 
       try {
-        // Load sessionId and userId
+        // Clean up old caches
+        await cleanOldCaches();
+
+        // Load sessionId and userId from AsyncStorage
         const [sessionIdString, userIdString] = await Promise.all([
-          AsyncStorage.getItem('sessionToken'),
-          AsyncStorage.getItem('user_id'),
+          AsyncStorage.getItem("sessionToken"),
+          AsyncStorage.getItem("user_id"),
         ]);
-        console.log('Fetched session ID:', sessionIdString, 'user ID:', userIdString);
+        console.log("Fetched session ID from AsyncStorage:", sessionIdString, "user ID:", userIdString);
         setSessionId(sessionIdString);
         if (userIdString) {
           setUserId(parseInt(userIdString, 10));
         }
 
         // Load cached conversationId
-        const cachedId = await AsyncStorage.getItem(`conversation_id_${shopId}`);
-        console.log('Loaded cached conversationId:', cachedId, 'for shopId:', shopId);
+        const cachedId = await loadCachedConversationId(shopId);
         if (cachedId) {
           setConversationId(cachedId);
           setConversationStarted(true);
           const cachedMessages = await loadCachedMessages(cachedId);
-          console.log('Setting messages from cache:', {
+          console.log("Setting messages from SQLite cache:", {
             messageCount: cachedMessages.length,
             messages: cachedMessages.map((msg) => ({
               id: msg.id,
+              conversation_id: msg.conversation_id,
               content: msg.content,
               type: msg.type,
               thumbnail_url: msg.thumbnail_url,
@@ -117,7 +357,7 @@ const StartConversation = () => {
           await fetchMessages(sessionIdString, parseInt(userIdString, 10));
         }
       } catch (error) {
-        console.error('Error loading data:', error);
+        console.error("Error loading data:", error);
       }
     };
     loadData();
@@ -126,85 +366,32 @@ const StartConversation = () => {
   // Handle screen focus for marking messages as read and scrolling
   useFocusEffect(
     useCallback(() => {
-      console.log('Screen focused, conversationId:', conversationId);
+      console.log("Screen focused, conversationId:", conversationId);
       isScreenFocused.current = true;
       if (conversationId && messages.length > 0) {
         markMessagesAsRead();
         InteractionManager.runAfterInteractions(() => {
           if (messages.length > 0 && !loading) {
-            console.log('Scrolling to last message on screen focus');
+            console.log("Scrolling to last message on screen focus");
             flatListRef.current?.scrollToEnd({ animated: false });
           }
         });
       }
       return () => {
-        console.log('Screen unfocused');
+        console.log("Screen unfocused");
         isScreenFocused.current = false;
       };
     }, [conversationId, messages, loading])
   );
 
-  // Cache messages
-  const cacheMessages = async (messagesToCache, localConversationId) => {
-    const cacheKey = `messages_${localConversationId}`;
-    try {
-      console.log('Caching messages:', {
-        key: cacheKey,
-        messageCount: messagesToCache.length,
-        messages: messagesToCache.map((msg) => ({
-          id: msg.id,
-          content: msg.content,
-          type: msg.type,
-          attachment: msg.attachment,
-          thumbnail_url: msg.thumbnail_url,
-          pending: msg.pending,
-        })),
-      });
-      await storeData(cacheKey, JSON.stringify(messagesToCache));
-      console.log('Messages cached for conversation:', localConversationId);
-    } catch (error) {
-      console.error('Error caching messages:', error);
-    }
-  };
-
-  // Load cached messages
-  const loadCachedMessages = async (localConversationId) => {
-    const cacheKey = `messages_${localConversationId}`;
-    try {
-      console.log('Loading cached messages for key:', cacheKey);
-      const cached = await getData(cacheKey);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        console.log('Loaded cached messages:', {
-          key: cacheKey,
-          messageCount: parsed.length,
-          messages: parsed.map((msg) => ({
-            id: msg.id,
-            content: msg.content,
-            type: msg.type,
-            attachment: msg.attachment,
-            thumbnail_url: msg.thumbnail_url,
-            pending: msg.pending,
-          })),
-        });
-        parsed.forEach((msg) => receivedMessagesRef.current.add(Number(msg.id)));
-        return parsed;
-      }
-      console.log('No cached messages found for key:', cacheKey);
-    } catch (error) {
-      console.error('Error loading cached messages:', error);
-    }
-    return [];
-  };
-
   // Fetch messages
   const fetchMessages = async (sessionId, userId) => {
     if (!userId || !shopId || !sessionId) {
-      console.warn('Cannot fetch messages: missing required params', { userId, shopId, sessionId });
+      console.warn("Cannot fetch messages: missing required params", { userId, shopId, sessionId });
       return;
     }
 
-    console.log('Starting fetchMessages, userId:', userId, 'shopId:', shopId);
+    console.log("Starting fetchMessages, userId:", userId, "shopId:", shopId);
     setLoading(true);
     setFetchError(false);
     receivedMessagesRef.current.clear();
@@ -215,100 +402,110 @@ const StartConversation = () => {
         { headers: { Authorization: sessionId } }
       );
 
-      console.log('API response:', response.data);
-      console.log('Fetched messages:', response.data.messages?.length || 0);
+      console.log("API response:", response.data);
+      console.log("Fetched messages:", response.data.messages?.length || 0);
 
       const newConversationId = response.data.conversation_id ? String(response.data.conversation_id) : null;
-      console.log('Setting conversationId:', newConversationId);
+      console.log("Setting conversationId:", newConversationId);
       setConversationId(newConversationId);
 
       if (newConversationId) {
-        await AsyncStorage.setItem(`conversation_id_${shopId}`, newConversationId);
-        console.log('Cached conversationId:', newConversationId, 'for shopId:', shopId);
+        await cacheConversationId(shopId, newConversationId);
         setConversationStarted(true);
       }
 
       if (response.data.messages?.length > 0) {
         console.log(
-          'Setting senderId:',
+          "Setting senderId:",
           response.data.messages[0].sender_user_id,
-          'shopOwner:',
+          "shopOwner:",
           response.data.messages[0].receiver_id
         );
         setSenderId(response.data.messages[0].sender_user_id);
         setShopOwner(response.data.messages[0].receiver_id);
       }
 
-      const uniqueMessages = response.data.messages.filter(
-        (msg) => !receivedMessagesRef.current.has(Number(msg.id))
-      );
+      const now = Date.now();
+      const uniqueMessages = response.data.messages
+        .filter(
+          (msg) =>
+            !receivedMessagesRef.current.has(Number(msg.id)) &&
+            now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS
+        )
+        .map((msg) => ({
+          ...msg,
+          conversation_id: newConversationId, // Add conversation_id
+        }));
 
-      console.log('Unique messages:', uniqueMessages.length);
+      console.log("Unique messages:", uniqueMessages.length);
       uniqueMessages.forEach((msg) => receivedMessagesRef.current.add(Number(msg.id)));
 
       const normalizedMessages = uniqueMessages.map((msg) => {
-        let normalizedType = msg.type || msg.msg_type || 'text';
+        let normalizedType = msg.type || msg.msg_type || "text";
         if (
-          normalizedType === 'photo' ||
-          normalizedType === 'image/jpeg' ||
-          normalizedType === 'image/png' ||
-          normalizedType === 'jpg' ||
-          normalizedType === 'jpeg' ||
-          normalizedType === 'png'
+          ["photo", "image/jpeg", "image/png", "jpg", "jpeg", "png"].includes(normalizedType)
         ) {
-          normalizedType = 'image';
+          normalizedType = "image";
         } else if (
-          normalizedType === 'video/mp4' ||
-          normalizedType === 'mp4' ||
-          normalizedType === 'video' ||
-          normalizedType?.toLowerCase().includes('video')
+          ["video/mp4", "mp4", "video"].includes(normalizedType) ||
+          normalizedType?.toLowerCase().includes("video")
         ) {
-          normalizedType = 'video';
-        } else if (normalizedType === 'application/pdf') {
-          normalizedType = 'pdf';
+          normalizedType = "video";
+        } else if (normalizedType === "application/pdf") {
+          normalizedType = "pdf";
         }
 
         if (msg.attachment) {
           const lowerAttachment = msg.attachment.toLowerCase();
           if (lowerAttachment.match(/\.(jpg|jpeg|png|gif)$/)) {
-            normalizedType = 'image';
+            normalizedType = "image";
           } else if (lowerAttachment.match(/\.mp4$/)) {
-            normalizedType = 'video';
+            normalizedType = "video";
           } else if (lowerAttachment.match(/\.pdf$/)) {
-            normalizedType = 'pdf';
+            normalizedType = "pdf";
           }
         }
 
         const attachmentPath = msg.attachment
-          ? msg.attachment.replace(/conversation_attachments/g, 'chat_attachments')
+          ? msg.attachment.replace(/conversation_attachments/g, "chat_attachments")
           : null;
         const thumbnailPath = msg.thumbnail_url
-          ? msg.thumbnail_url.replace(/conversation_thumbnails/g, 'chat_thumbnails')
+          ? msg.thumbnail_url.replace(/conversation_thumbnails/g, "chat_thumbnails")
           : null;
 
         return {
           ...msg,
           id: Number(msg.id),
+          conversation_id: newConversationId, // Ensure conversation_id
           type: normalizedType,
-          name: msg.attachment?.split('/').pop(),
+          name: msg.attachment?.split("/").pop(),
           attachment: attachmentPath,
           thumbnail_url: thumbnailPath,
-          pending: !!(msg.pending === true || msg.pending === 'true'),
-          read: !!(msg.read === true || msg.read === 'true'),
+          pending: !!(msg.pending === true || msg.pending === "true"),
+          read: !!(msg.read === true || msg.read === "true"),
         };
       });
 
       setMessages((prev) => {
+        const now = Date.now();
         const merged = [
           ...prev.filter(
-            (msg) => !normalizedMessages.some((newMsg) => newMsg.id === msg.id || (newMsg.attachment && newMsg.attachment === msg.attachment))
+            (msg) =>
+              !normalizedMessages.some(
+                (newMsg) =>
+                  newMsg.id === msg.id ||
+                  (newMsg.attachment && newMsg.attachment === msg.attachment)
+              ) &&
+              now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+              msg.conversation_id === newConversationId
           ),
           ...normalizedMessages,
         ].sort((a, b) => a.id - b.id);
-        console.log('Setting merged messages:', {
+        console.log("Setting merged messages:", {
           messageCount: merged.length,
           messages: merged.map((msg) => ({
             id: msg.id,
+            conversation_id: msg.conversation_id,
             content: msg.content,
             type: msg.type,
             attachment: msg.attachment,
@@ -324,14 +521,14 @@ const StartConversation = () => {
       });
 
       if (isScreenFocused.current && uniqueMessages.length > 0) {
-        console.log('Marking messages as read after fetch');
+        console.log("Marking messages as read after fetch");
         markMessagesAsRead(newConversationId);
       }
     } catch (error) {
-      console.error('Error fetching messages:', error);
+      console.error("Error fetching messages:", error);
       setFetchError(true);
     } finally {
-      console.log('Fetch complete, setting loading to false');
+      console.log("Fetch complete, setting loading to false");
       setLoading(false);
     }
   };
@@ -339,7 +536,7 @@ const StartConversation = () => {
   // Mark messages as read
   const markMessagesAsRead = async (localConversationId = conversationId) => {
     if (!localConversationId || !sessionId || messages.length === 0) {
-      console.warn('Cannot mark messages as read:', {
+      console.warn("Cannot mark messages as read:", {
         conversationId: localConversationId,
         sessionId,
         messageCount: messages.length,
@@ -348,42 +545,51 @@ const StartConversation = () => {
     }
 
     try {
-      console.log('Marking messages as read for conversationId:', localConversationId);
+      console.log("Marking messages as read for conversationId:", localConversationId);
       await axios.post(
-        'https://retail-alvinia-goza-f6a0e4f7.koyeb.app/mark-messages-read/',
+        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/mark-messages-read/",
         { conversation_id: localConversationId },
-        { headers: { 'Content-Type': 'application/json', Authorization: sessionId } }
+        { headers: { "Content-Type": "application/json", Authorization: sessionId } }
       );
-      console.log('Messages marked as read');
+      console.log("Messages marked as read");
     } catch (error) {
-      console.error('Error marking messages as read:', error);
+      console.error("Error marking messages as read:", error);
     }
   };
 
   // Send message via HTTP (fallback for starting conversation)
   const sendMessage = async () => {
     if (!inputMessage.trim()) {
-      console.warn('Cannot send empty message');
+      console.warn("Cannot send empty message");
       return;
     }
 
     const tempId = Date.now();
+    const now = Date.now();
     const tempMessage = {
       id: tempId,
       sender_id: userId,
       shop_id: shopId,
       content: inputMessage,
       timestamp: new Date().toISOString(),
-      type: 'text',
+      type: "text",
       read: false,
       pending: true,
       attachment: null,
       thumbnail_url: null,
+      conversation_id: conversationId || `temp_${shopId}`, // Temporary conversation_id
     };
 
     setMessages((prevMessages) => {
-      const newMessages = [...prevMessages, tempMessage];
-      console.log('Adding temp message:', tempId);
+      const newMessages = [
+        ...prevMessages.filter(
+          (msg) =>
+            now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+            msg.conversation_id === (conversationId || `temp_${shopId}`)
+        ),
+        tempMessage,
+      ];
+      console.log("Adding temp message:", tempId);
       if (conversationId) {
         cacheMessages(newMessages, conversationId);
       }
@@ -391,9 +597,9 @@ const StartConversation = () => {
     });
 
     try {
-      console.log('Sending HTTP message:', inputMessage);
+      console.log("Sending HTTP message:", inputMessage);
       const response = await axios.post(
-        'https://retail-alvinia-goza-f6a0e4f7.koyeb.app/messages/',
+        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/messages/",
         { sender_id: userId, shop_id: shopId, content: inputMessage },
         { headers: { Authorization: sessionId } }
       );
@@ -401,30 +607,38 @@ const StartConversation = () => {
       const newConversationId = String(response.data.conversation_id);
       setConversationId(newConversationId);
       setConversationStarted(true);
-      await AsyncStorage.setItem(`conversation_id_${shopId}`, newConversationId);
-      console.log('Cached conversationId:', newConversationId, 'for shopId:', shopId);
+      await cacheConversationId(shopId, newConversationId);
+      console.log("Cached conversationId in SQLite:", newConversationId, "for shopId:", shopId);
 
       const serverMessage = {
         ...response.data,
         id: Number(response.data.id),
-        type: 'text',
+        conversation_id: newConversationId, // Add conversation_id
+        type: "text",
         read: false,
         pending: false,
-        name: response.data.attachment?.split('/').pop(),
+        name: response.data.attachment?.split("/").pop(),
         attachment: response.data.attachment
-          ? response.data.attachment.replace(/conversation_attachments/g, 'chat_attachments')
+          ? response.data.attachment.replace(/conversation_attachments/g, "chat_attachments")
           : null,
         thumbnail_url: response.data.thumbnail_url
-          ? response.data.thumbnail_url.replace(/conversation_thumbnails/g, 'chat_thumbnails')
+          ? response.data.thumbnail_url.replace(/conversation_thumbnails/g, "chat_thumbnails")
           : null,
       };
 
       setMessages((prevMessages) => {
+        const now = Date.now();
         const updatedMessages = [
-          ...prevMessages.filter((msg) => msg.id !== tempId && !(msg.attachment && msg.attachment === serverMessage.attachment)),
+          ...prevMessages.filter(
+            (msg) =>
+              (msg.id !== tempId &&
+               !(msg.attachment && msg.attachment === serverMessage.attachment)) &&
+              now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+              msg.conversation_id === newConversationId
+          ),
           serverMessage,
         ].sort((a, b) => a.id - b.id);
-        console.log('Replacing temp message with server message:', serverMessage.id);
+        console.log("Replacing temp message with server message:", serverMessage.id);
         cacheMessages(updatedMessages, newConversationId);
         return updatedMessages;
       });
@@ -432,70 +646,102 @@ const StartConversation = () => {
       setSenderId(response.data.sender_user_id);
       setShopOwner(response.data.receiver_id);
 
-      setInputMessage('');
+      setInputMessage("");
       setIsAtBottom(true);
       InteractionManager.runAfterInteractions(() => {
         if (messages.length > 0) {
-          console.log('Scrolling to bottom after sending HTTP message');
+          console.log("Scrolling to bottom after sending HTTP message");
           flatListRef.current?.scrollToEnd({ animated: true });
         }
       });
       setMessagesLoaded(true);
     } catch (error) {
-      console.error('Error sending message:', error);
+      console.error("Error sending message:", error);
       setMessages((prevMessages) => {
-        const updatedMessages = prevMessages.filter((msg) => msg.id !== tempId);
-        console.log('Removing failed temp message:', tempId);
+        const now = Date.now();
+        const updatedMessages = prevMessages.filter(
+          (msg) =>
+            msg.id !== tempId &&
+            now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+            msg.conversation_id === (conversationId || `temp_${shopId}`)
+        );
+        console.log("Removing failed temp message:", tempId);
         if (conversationId) {
           cacheMessages(updatedMessages, conversationId);
         }
         return updatedMessages;
       });
-      Alert.alert('Message Failed', 'Unable to send message. Please try again.');
+      Alert.alert("Message Failed", "Unable to send message. Please try again.");
     }
   };
 
   // WebSocket connection
   useEffect(() => {
     if (!conversationId) {
-      console.warn('Cannot connect WebSocket: conversationId is null', { conversationId });
+      console.warn("Cannot connect WebSocket: conversationId is null", { conversationId });
       return;
     }
 
-    console.log('Connecting WebSocket for conversationId:', conversationId);
+    console.log("Connecting WebSocket for conversationId:", conversationId);
     const connectWebSocket = () => {
-      const websocketUrl = `wss://retail-alvinia-goza-f6a0e4f7.koyeb.app/ws/chat/${conversationId}/`;
+      const websocketUrl = `wss://retail-alvinia-goza-f6a0e4f7.koyeb.app/ws/chat/${conversationId}/?user_id=${userId}`;
       websocketRef.current = new WebSocket(websocketUrl);
 
       websocketRef.current.onopen = () => {
-        console.log('WebSocket connected');
+        console.log("WebSocket connected");
       };
 
       websocketRef.current.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        console.log('WebSocket received:', {
+        let data;
+        try {
+          data = JSON.parse(event.data);
+        } catch (error) {
+          console.error("Error parsing WebSocket message:", error, "Data:", event.data);
+          return;
+        }
+        console.log("WebSocket received:", {
           message_id: data.message_id,
           temp_id: data.temp_id,
+          conversation_id: data.conversation_id,
           attachment: data.attachment,
           thumbnail_url: data.thumbnail_url,
           type: data.type,
         });
 
-        if (data.type === 'read_update') {
+        // Validate conversation_id
+        if (data.conversation_id && data.conversation_id !== conversationId) {
+          console.log(`Ignoring message for different conversation: ${data.conversation_id}`);
+          return;
+        }
+
+        const now = Date.now();
+        const messageTime = new Date(data.timestamp || new Date().toISOString()).getTime();
+        if (now - messageTime > CACHE_EXPIRATION_MS) {
+          console.log(`Skipping old WebSocket message: ${data.message_id}`);
+          return;
+        }
+
+        if (data.type === "read_update") {
           setMessages((prevMessages) => {
-            const updatedMessages = prevMessages.map((msg) =>
-              data.message_ids.includes(Number(msg.id)) ? { ...msg, read: true } : msg
-            );
-            console.log('Updating read status for messages:', data.message_ids);
+            const updatedMessages = prevMessages
+              .filter(
+                (msg) =>
+                  now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+                  msg.conversation_id === conversationId
+              )
+              .map((msg) =>
+                data.message_ids.includes(Number(msg.id)) ? { ...msg, read: true } : msg
+              );
+            console.log("Updating read status for messages:", data.message_ids);
             cacheMessages(updatedMessages, conversationId);
             return updatedMessages;
           });
         } else {
           let messageId = Number(data.message_id);
-          let tempId = Number(data.temp_id);
+          let tempId = data.temp_id;
 
           if (!messageId || isNaN(messageId)) {
-            console.warn('Invalid message ID, ignoring:', messageId);
+            console.warn("Invalid message ID, ignoring:", messageId);
             return;
           }
 
@@ -506,48 +752,31 @@ const StartConversation = () => {
 
           receivedMessagesRef.current.add(messageId);
 
-          let normalizedType = data.msg_type || data.type || 'text';
-          if (
-            normalizedType === 'photo' ||
-            normalizedType === 'image/jpeg' ||
-            normalizedType === 'image/png' ||
-            normalizedType === 'jpg' ||
-            normalizedType === 'jpeg' ||
-            normalizedType === 'png'
-          ) {
-            normalizedType = 'image';
-          } else if (
-            normalizedType === 'video/mp4' ||
-            normalizedType === 'mp4' ||
-            normalizedType === 'video' ||
-            normalizedType?.toLowerCase().includes('video')
-          ) {
-            normalizedType = 'video';
-          } else if (normalizedType === 'application/pdf') {
-            normalizedType = 'pdf';
-          }
-
+          let normalizedType = data.msg_type || data.type || "text";
           if (data.attachment) {
             const lowerAttachment = data.attachment.toLowerCase();
             if (lowerAttachment.match(/\.(jpg|jpeg|png|gif)$/)) {
-              normalizedType = 'image';
-            } else if (lowerAttachment.match(/\.mp4$/)) {
-              normalizedType = 'video';
+              normalizedType = "image";
+            } else if (lowerAttachment.match(/\.(mp4|mov)$/)) {
+              normalizedType = "video";
             } else if (lowerAttachment.match(/\.pdf$/)) {
-              normalizedType = 'pdf';
+              normalizedType = "pdf";
             }
           }
 
           const attachmentPath = data.attachment
-            ? data.attachment.replace(/conversation_attachments/g, 'chat_attachments')
+            ? data.attachment.replace(/conversation_attachments/g, "chat_attachments")
             : null;
           const thumbnailPath = data.thumbnail_url
-            ? data.thumbnail_url.replace(/conversation_thumbnails/g, 'chat_thumbnails')
+            ? data.thumbnail_url.replace(/conversation_thumbnails/g, "chat_thumbnails")
             : null;
 
           setMessages((prevMessages) => {
             const existingIndex = prevMessages.findIndex(
-              (msg) => msg.id === tempId || (msg.attachment && msg.attachment === attachmentPath && msg.type === normalizedType)
+              (msg) =>
+                msg.id === tempId ||
+                msg.id === messageId ||
+                (tempId && msg.temp_id === tempId)
             );
 
             let updatedMessages;
@@ -556,59 +785,73 @@ const StartConversation = () => {
               updatedMessages[existingIndex] = {
                 ...updatedMessages[existingIndex],
                 id: messageId,
+                conversation_id: conversationId, // Ensure conversation_id
                 attachment: attachmentPath || updatedMessages[existingIndex].attachment,
                 content: data.message || null,
                 type: normalizedType,
                 thumbnail_url: thumbnailPath || updatedMessages[existingIndex].thumbnail_url,
                 pending: false,
-                read: false,
-                name: data.attachment?.split('/').pop() || updatedMessages[existingIndex].name,
+                read: data.read || false,
+                name: data.attachment?.split("/").pop() || updatedMessages[existingIndex].name,
+                sender_id: data.sender_id,
+                timestamp: data.timestamp || updatedMessages[existingIndex].timestamp,
+                temp_id: tempId,
               };
-              console.log('Replacing existing message:', { oldId: prevMessages[existingIndex].id, newId: messageId });
+              console.log("Replacing existing message:", {
+                oldId: prevMessages[existingIndex].id,
+                newId: messageId,
+                conversation_id: conversationId,
+              });
             } else {
               updatedMessages = [
-                ...prevMessages,
+                ...prevMessages.filter(
+                  (msg) =>
+                    now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+                    msg.conversation_id === conversationId
+                ),
                 {
                   id: messageId,
+                  conversation_id: conversationId, // Ensure conversation_id
                   content: data.message || null,
                   sender_id: data.sender_id,
                   timestamp: data.timestamp || new Date().toISOString(),
                   attachment: attachmentPath,
                   type: normalizedType,
                   thumbnail_url: thumbnailPath,
-                  read: false,
+                  read: data.read || false,
                   pending: false,
-                  name: data.attachment?.split('/').pop(),
+                  name: data.attachment?.split("/").pop(),
+                  temp_id: tempId,
                 },
               ];
-              console.log('Adding new WebSocket message:', messageId);
+              console.log("Adding new WebSocket message:", messageId);
             }
             cacheMessages(updatedMessages, conversationId);
-            return updatedMessages;
+            return updatedMessages.sort((a, b) => a.id - b.id);
           });
 
           if (isAtBottom) {
             InteractionManager.runAfterInteractions(() => {
               if (messages.length > 0) {
-                console.log('Scrolling to bottom after WebSocket message');
+                console.log("Scrolling to bottom after WebSocket message");
                 flatListRef.current?.scrollToEnd({ animated: true });
               }
             });
           }
 
           if (isScreenFocused.current) {
-            console.log('Marking messages as read after WebSocket message');
+            console.log("Marking messages as read after WebSocket message");
             markMessagesAsRead();
           }
         }
       };
 
       websocketRef.current.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        console.error("WebSocket error:", error);
       };
 
       websocketRef.current.onclose = (event) => {
-        console.log('WebSocket closed:', { code: event.code, reason: event.reason });
+        console.log("WebSocket closed:", { code: event.code, reason: event.reason });
         setTimeout(connectWebSocket, 3000); // Reconnect after 3 seconds
       };
     };
@@ -616,20 +859,20 @@ const StartConversation = () => {
     connectWebSocket();
 
     return () => {
-      console.log('Closing WebSocket...');
+      console.log("Closing WebSocket...");
       websocketRef.current?.close();
     };
-  }, [conversationId]);
+  }, [conversationId, userId]);
 
   // Send message via WebSocket
   const handleSendMessage = useCallback(() => {
     if (!inputMessage.trim()) {
-      console.warn('Cannot send empty message');
+      console.warn("Cannot send empty message");
       return;
     }
 
     if (!websocketRef.current || !conversationId || websocketRef.current.readyState !== WebSocket.OPEN) {
-      console.warn('Cannot send WebSocket message: WebSocket not ready', {
+      console.warn("Cannot send WebSocket message: WebSocket not ready", {
         inputMessage: !!inputMessage.trim(),
         websocket: !!websocketRef.current,
         conversationId,
@@ -639,10 +882,15 @@ const StartConversation = () => {
     }
 
     const tempId = Date.now();
+    const now = Date.now();
 
     setMessages((prevMessages) => {
       const newMessages = [
-        ...prevMessages,
+        ...prevMessages.filter(
+          (msg) =>
+            now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+            msg.conversation_id === conversationId
+        ),
         {
           id: tempId,
           content: inputMessage,
@@ -650,18 +898,20 @@ const StartConversation = () => {
           timestamp: new Date().toISOString(),
           attachment: null,
           thumbnail_url: null,
-          type: 'text',
+          type: "text",
           read: false,
           pending: true,
+          conversation_id: conversationId, // Add conversation_id
+          temp_id: tempId,
         },
       ];
-      console.log('Adding temp WebSocket message:', tempId);
+      console.log("Adding temp WebSocket message:", tempId);
       cacheMessages(newMessages, conversationId);
       return newMessages;
     });
 
     try {
-      console.log('Sending WebSocket message:', inputMessage);
+      console.log("Sending WebSocket message:", inputMessage);
       websocketRef.current.send(
         JSON.stringify({
           content: inputMessage,
@@ -671,21 +921,27 @@ const StartConversation = () => {
           timestamp: new Date().toISOString(),
         })
       );
-      setInputMessage('');
+      setInputMessage("");
       setIsAtBottom(true);
       InteractionManager.runAfterInteractions(() => {
         if (messages.length > 0) {
-          console.log('Scrolling to bottom after sending WebSocket message');
+          console.log("Scrolling to bottom after sending WebSocket message");
           flatListRef.current?.scrollToEnd({ animated: true });
         }
       });
     } catch (error) {
-      console.error('Error sending message:', error);
-      Alert.alert('Message Failed', 'Unable to send message. Please try again.');
+      console.error("Error sending message:", error);
+      Alert.alert("Message Failed", "Unable to send message. Please try again.");
 
       setMessages((prevMessages) => {
-        const updatedMessages = prevMessages.filter((msg) => msg.id !== tempId);
-        console.log('Removing failed WebSocket temp message:', tempId);
+        const now = Date.now();
+        const updatedMessages = prevMessages.filter(
+          (msg) =>
+            (msg.id !== tempId && msg.temp_id !== tempId) &&
+            now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+            msg.conversation_id === conversationId
+        );
+        console.log("Removing failed WebSocket temp message:", tempId);
         cacheMessages(updatedMessages, conversationId);
         return updatedMessages;
       });
@@ -696,21 +952,37 @@ const StartConversation = () => {
   const handleSendAttachment = useCallback(
     async (file, type) => {
       if (!file?.uri || !userId || !shopId) {
-        console.error('Invalid file, userId, or shopId:', {
+        console.error("Invalid file, userId, or shopId:", {
           fileUri: file?.uri,
           userId,
           shopId,
         });
+        Alert.alert("Error", "Invalid file or user details.");
         return;
       }
 
-      const tempId = Date.now();
+      const tempId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      const fileExtension = file.name?.split(".").pop()?.toLowerCase() || file.uri.split(".").pop()?.toLowerCase();
       const normalizedType =
-        type === 'photo' ? 'image' : type === 'video' ? 'video' : 'pdf';
+        type === "photo" || (fileExtension && ["jpg", "jpeg", "png", "gif"].includes(fileExtension))
+          ? "image"
+          : type === "video" || (fileExtension && ["mp4", "mov"].includes(fileExtension))
+          ? "video"
+          : type === "pdf" || fileExtension === "pdf"
+          ? "pdf"
+          : "image";
+      const now = Date.now();
+      const fileName =
+        file.name ||
+        `file_${Date.now()}.${normalizedType === "video" ? "mp4" : normalizedType === "pdf" ? "pdf" : "jpg"}`;
 
       setMessages((prevMessages) => {
         const newMessages = [
-          ...prevMessages,
+          ...prevMessages.filter(
+            (msg) =>
+              now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+              msg.conversation_id === (conversationId || `temp_${shopId}`)
+          ),
           {
             id: tempId,
             content: null,
@@ -721,132 +993,287 @@ const StartConversation = () => {
             thumbnail_url: null,
             read: false,
             pending: true,
-            name: file.name,
+            name: fileName,
+            conversation_id: conversationId || `temp_${shopId}`, // Temporary conversation_id
+            temp_id: tempId,
           },
         ];
-        console.log('Adding temp attachment message:', tempId);
+        console.log("Adding temp attachment message:", tempId);
         cacheMessages(newMessages, conversationId || `temp_${shopId}`);
         return newMessages;
       });
 
-      const formData = new FormData();
-      formData.append('sender_id', String(userId));
-      formData.append('shop_id', String(shopId));
-
-      let newFile;
-
       try {
-        if (file.uri.startsWith('blob:')) {
-          console.log('Processing blob URI for attachment');
-          const response = await fetch(file.uri);
-          if (!response.ok) throw new Error('Failed to fetch blob data');
+        const formData = new FormData();
+        formData.append("sender_id", String(userId));
+        formData.append("shop_id", String(shopId));
+        formData.append("type", normalizedType);
 
+        let fileUri = file.uri;
+        let mimeType =
+          file.mimeType ||
+          (normalizedType === "video" ? "video/mp4" : normalizedType === "pdf" ? "application/pdf" : "image/jpeg");
+
+        if (Platform.OS === "ios" && !fileUri.startsWith("file://")) {
+          fileUri = `file://${fileUri}`;
+        }
+
+        let newFile;
+        if (fileUri.startsWith("blob:")) {
+          const response = await fetch(fileUri);
+          if (!response.ok) throw new Error("Failed to fetch blob data");
           const blob = await response.blob();
-          newFile = new File([blob], file.name || `file_${Date.now()}`, {
-            type: blob.type || 'application/octet-stream',
+          newFile = new File([blob], fileName, {
+            type: mimeType || blob.type || "application/octet-stream",
           });
         } else {
           newFile = {
-            uri: file.uri.startsWith('file://') ? file.uri : `file://${file.uri}`,
-            type:
-              type === 'photo'
-                ? 'image/jpeg'
-                : type === 'video'
-                ? 'video/mp4'
-                : 'application/pdf',
-            name:
-              file.name ||
-              `file_${Date.now()}.${type === 'photo' ? 'jpg' : type === 'video' ? 'mp4' : 'pdf'}`,
+            uri: fileUri,
+            type: mimeType,
+            name: fileName,
           };
         }
 
-        formData.append('file', newFile);
+        formData.append("file", newFile);
 
-        console.log('Uploading attachment:', newFile.name);
+        console.log("Uploading attachment:", { type: normalizedType, fileName });
         const response = await axios.post(
-          `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/upload-conversation/`,
+          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/messages/",
           formData,
-          { headers: { 'Content-Type': 'multipart/form-data' } }
+          {
+            headers: {
+              Authorization: sessionId,
+              "Content-Type": "multipart/form-data",
+            },
+            timeout: 30000,
+          }
         );
 
-        const data = response.data;
-        if (!data.file_url) throw new Error('File upload failed');
-        console.log('Attachment uploaded:', {
-          file_url: data.file_url,
-          thumbnail_url: data.thumbnail_url,
-          conversation_id: data.conversation_id,
-        });
+        const newConversationId = String(response.data.conversation_id);
+        setConversationId(newConversationId);
+        setConversationStarted(true);
+        await cacheConversationId(shopId, newConversationId);
+        console.log("Cached conversationId in SQLite:", newConversationId, "for shopId:", shopId);
 
-        // Set conversationId if not already set
-        if (!conversationId) {
-          setConversationId(String(data.conversation_id));
-          setConversationStarted(true);
-          await AsyncStorage.setItem(`conversation_id_${shopId}`, String(data.conversation_id));
-          console.log('Cached conversationId:', data.conversation_id, 'for shopId:', shopId);
-        }
+        const serverMessage = {
+          ...response.data,
+          id: Number(response.data.id),
+          conversation_id: newConversationId, // Add conversation_id
+          type: normalizedType,
+          read: false,
+          pending: false,
+          name: response.data.attachment?.split("/").pop(),
+          attachment: response.data.attachment
+            ? response.data.attachment.replace(/conversation_attachments/g, "chat_attachments")
+            : null,
+          thumbnail_url: response.data.thumbnail_url
+            ? response.data.thumbnail_url.replace(/conversation_thumbnails/g, "chat_thumbnails")
+            : null,
+          temp_id: tempId,
+        };
 
         setMessages((prevMessages) => {
-          const filteredMessages = prevMessages.filter(
-            (msg) => msg.id !== tempId && !(msg.attachment && msg.attachment === data.file_url)
-          );
+          const now = Date.now();
           const updatedMessages = [
-            ...filteredMessages,
-            {
-              id: Number(data.message_id || tempId),
-              content: null,
-              sender_id: userId,
-              timestamp: new Date().toISOString(),
-              attachment: data.file_url.replace(/conversation_attachments/g, 'chat_attachments'),
-              type: normalizedType,
-              thumbnail_url: data.thumbnail_url
-                ? data.thumbnail_url.replace(/conversation_thumbnails/g, 'chat_thumbnails')
-                : null,
-              read: false,
-              pending: false,
-              name: newFile.name,
-            },
+            ...prevMessages.filter(
+              (msg) =>
+                (msg.id !== tempId &&
+                 msg.temp_id !== tempId &&
+                 !(msg.attachment && msg.attachment === serverMessage.attachment)) &&
+                now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+                msg.conversation_id === newConversationId
+            ),
+            serverMessage,
           ].sort((a, b) => a.id - b.id);
-          console.log('Updated messages with uploaded attachment:', { messageId: data.message_id || tempId });
-          cacheMessages(updatedMessages, data.conversation_id);
+          console.log("Replacing temp attachment message with server message:", serverMessage.id);
+          cacheMessages(updatedMessages, newConversationId);
           return updatedMessages;
         });
 
-        if (websocketRef.current) {
-          websocketRef.current.send(
-            JSON.stringify({
-              sender_id: userId,
-              conversation_id: data.conversation_id,
-              type: 'message',
-              timestamp: new Date().toISOString(),
-              content: null,
-              attachment: data.file_url,
-              thumbnail_url: data.thumbnail_url,
-              temp_id: tempId,
-              message_id: data.message_id || tempId,
-            })
-          );
-        }
+        setSenderId(response.data.sender_user_id);
+        setShopOwner(response.data.receiver_id);
+
         setIsAtBottom(true);
         InteractionManager.runAfterInteractions(() => {
           if (messages.length > 0) {
-            console.log('Scrolling to bottom after attachment upload');
+            console.log("Scrolling to bottom after sending attachment");
             flatListRef.current?.scrollToEnd({ animated: true });
           }
         });
-      } catch (error) {
-        console.error('Error uploading file:', error);
-        Alert.alert('Upload Failed', 'Failed to upload file. Please try again.');
+        setMessagesLoaded(true);
 
+        if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
+          websocketRef.current.send(
+            JSON.stringify({
+              sender_id: userId,
+              conversation_id: newConversationId,
+              type: normalizedType,
+              timestamp: new Date().toISOString(),
+              content: null,
+              attachment: serverMessage.attachment,
+              thumbnail_url: serverMessage.thumbnail_url || null,
+              temp_id: tempId,
+              receiver_id: shopId,
+              message_id: serverMessage.id,
+            })
+          );
+        }
+      } catch (error) {
+        console.error("Error sending attachment:", error);
         setMessages((prevMessages) => {
-          const updatedMessages = prevMessages.filter((msg) => msg.id !== tempId);
-          console.log('Removing failed attachment message:', tempId);
-          cacheMessages(updatedMessages, conversationId || `temp_${shopId}`);
+          const now = Date.now();
+          const updatedMessages = prevMessages.filter(
+            (msg) =>
+              (msg.id !== tempId && msg.temp_id !== tempId) &&
+              now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+              msg.conversation_id === (conversationId || `temp_${shopId}`)
+          );
+          console.log("Removing failed temp attachment message:", tempId);
+          if (conversationId) {
+            cacheMessages(updatedMessages, conversationId);
+          }
           return updatedMessages;
         });
+        Alert.alert("Attachment Failed", "Unable to send attachment. Please try again.");
       }
     },
-    [userId, shopId, conversationId, messages]
+    [userId, shopId, sessionId, conversationId, messages]
   );
+
+  // Handle keyboard
+  useEffect(() => {
+    const keyboardDidShow = Keyboard.addListener("keyboardDidShow", () => {
+      if (messages.length > 0) {
+        setIsAtBottom(true);
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
+    });
+    return () => keyboardDidShow.remove();
+  }, [messages]);
+
+  // Render message item (copied from Conversation component with React.memo)
+  const MessageItem = memo(
+    ({ item, userId, sessionId }) => {
+      console.log("renderItem item:", JSON.stringify(item));
+      const isImage =
+        item.msg_type === "image" ||
+        (item.attachment &&
+          !item.msg_type?.includes("video") &&
+          !item.msg_type?.includes("pdf") &&
+          item.attachment.match(/\.(jpg|jpeg|png|gif)(\?|$)/i));
+      const isVideo =
+        item.msg_type === "video" ||
+        (item.attachment &&
+          !item.msg_type?.includes("image") &&
+          !item.msg_type?.includes("pdf") &&
+          item.attachment.match(/\.mp4(\?|$)/i));
+      const isPdf = item.msg_type === "pdf";
+      const mediaUri = item.pending ? item.attachment : item.attachment || null;
+      const thumbnailUri = item.thumbnail_url || null;
+
+      const formattedTime = new Date(item.timestamp).toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      });
+
+      return (
+        <View style={styles.messageWrapper}>
+          {item.attachment ? (
+            <View
+              style={[
+                styles.mediaContainer,
+                item.sender_id === userId ? { alignSelf: "flex-end" } : { alignSelf: "flex-start" },
+              ]}
+            >
+              {isImage ? (
+                <View style={item.pending ? styles.pendingContainer : null}>
+                  <ChatImage uri={mediaUri} messageId={item.id} sessionId={sessionId} />
+                  {item.pending && (
+                    <View style={styles.loadingOverlay}>
+                      <Text style={styles.loadingText}>Uploading...</Text>
+                    </View>
+                  )}
+                </View>
+              ) : isVideo ? (
+                <View style={item.pending ? styles.pendingContainer : null}>
+                  <ChatVideo
+                    uri={mediaUri}
+                    name={item.name}
+                    thumbnailUrl={thumbnailUri}
+                    pending={!!item.pending}
+                    messageId={item.id}
+                    sessionId={sessionId}
+                  />
+                  {item.pending && (
+                    <View style={styles.loadingOverlay}>
+                      <Text style={styles.loadingText}>Uploading...</Text>
+                    </View>
+                  )}
+                </View>
+              ) : isPdf ? (
+                <Text style={styles.attachmentText}>PDF Document: {item.name}</Text>
+              ) : (
+                <Text style={styles.attachmentText}>Unsupported file type</Text>
+              )}
+              <View style={styles.timestampContainer}>
+                <Text style={styles.timestampText}>{formattedTime}</Text>
+                {item.sender_id === userId && (
+                  <MaterialIcons
+                    name={item.read ? "done-all" : "done"}
+                    size={18}
+                    color={item.read ? "#007BFF" : "gray"}
+                    style={styles.checkmark}
+                  />
+                )}
+              </View>
+            </View>
+          ) : (
+            <View
+              style={[
+                styles.message,
+                item.sender_id === userId ? styles.userMessage : styles.shopMessage,
+              ]}
+            >
+              <View style={styles.messageContent}>
+                <Text style={styles.messageText}>{item.content}</Text>
+                <View style={styles.timestampContainer}>
+                  <Text style={styles.timestampText}>{formattedTime}</Text>
+                  {item.sender_id === userId && (
+                    <MaterialIcons
+                      name={item.read ? "done-all" : "done"}
+                      size={18}
+                      color={item.read ? "#007BFF" : "gray"}
+                      style={styles.checkmark}
+                    />
+                  )}
+                </View>
+              </View>
+            </View>
+          )}
+        </View>
+      );
+    },
+    (prevProps, nextProps) => {
+      return (
+        prevProps.item.id === nextProps.item.id &&
+        prevProps.item.read === nextProps.item.read &&
+        prevProps.item.pending === nextProps.item.pending &&
+        prevProps.item.attachment === nextProps.item.attachment &&
+        prevProps.item.thumbnail_url === nextProps.item.thumbnail_url &&
+        prevProps.userId === nextProps.userId &&
+        prevProps.sessionId === nextProps.sessionId
+      );
+    }
+  );
+
+  const renderItem = useCallback(
+    ({ item }) => <MessageItem item={item} userId={userId} sessionId={sessionId} />,
+    [userId, sessionId]
+  );
+
 
   // Scroll to bottom on mount or when messages load
   useEffect(() => {
@@ -901,132 +1328,6 @@ const StartConversation = () => {
       flatListRef.current?.scrollToEnd({ animated: true });
     });
   };
-
-  // Render message item
-  const renderItem = useCallback(
-    ({ item }) => {
-      const isImage = item.type === 'image';
-      const isVideo = item.type === 'video';
-      const isPdf = item.type === 'pdf';
-      const isImageFallback =
-        item.attachment &&
-        !isImage &&
-        !isVideo &&
-        !isPdf &&
-        item.attachment.match(/\.(jpg|jpeg|png|gif)$/i);
-      const isVideoFallback =
-        item.attachment &&
-        !isImage &&
-        !isVideo &&
-        !isPdf &&
-        item.attachment.match(/\.mp4$/i);
-
-      console.log('Render item:', {
-        id: item.id,
-        type: item.type,
-        attachment: item.attachment,
-        thumbnail_url: item.thumbnail_url,
-        pending: item.pending,
-        pendingType: typeof item.pending,
-        name: item.name,
-        full_thumbnail_uri: item.thumbnail_url ? `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${item.thumbnail_url}` : null,
-      });
-
-      const formattedTime = new Date(item.timestamp).toLocaleTimeString('en-US', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-      });
-
-      const mediaUri = item.pending
-        ? item.attachment
-        : item.attachment
-        ? `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${item.attachment.replace(/conversation_attachments/g, 'chat_attachments')}`
-        : null;
-
-      const thumbnailUri = item.thumbnail_url
-        ? `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${item.thumbnail_url.replace(/conversation_thumbnails/g, 'chat_thumbnails')}`
-        : null;
-
-      return (
-        <View style={styles.messageWrapper}>
-          {item.attachment ? (
-            <View
-              style={[
-                styles.mediaContainer,
-                item.sender_id === userId ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' },
-              ]}
-            >
-              {isImage || isImageFallback ? (
-                <View style={item.pending ? styles.pendingContainer : null}>
-                  <ChatImage uri={mediaUri} />
-                  {item.pending && (
-                    <View style={styles.loadingOverlay}>
-                      <Text style={styles.loadingText}>Uploading...</Text>
-                    </View>
-                  )}
-                </View>
-              ) : isVideo || isVideoFallback ? (
-                <View style={item.pending ? styles.pendingContainer : null}>
-                  <ChatVideo
-                    uri={mediaUri}
-                    name={item.name}
-                    thumbnailUrl={thumbnailUri}
-                    pending={!!(item.pending === true || item.pending === 'true')}
-                    messageId={item.id}
-                    sessionId={sessionId}
-                  />
-                  {item.pending && (
-                    <View style={styles.loadingOverlay}>
-                      <Text style={styles.loadingText}>Uploading...</Text>
-                    </View>
-                  )}
-                </View>
-              ) : isPdf ? (
-                <Text style={styles.attachmentText}>PDF Document: {item.name}</Text>
-              ) : (
-                <Text style={styles.attachmentText}>Unsupported file type</Text>
-              )}
-              <View style={styles.timestampContainer}>
-                <Text style={styles.timestampText}>{formattedTime}</Text>
-                {item.sender_id === userId && (
-                  <MaterialIcons
-                    name={item.read ? 'done-all' : 'done'}
-                    size={18}
-                    color={item.read ? '#007BFF' : 'gray'}
-                    style={styles.checkmark}
-                  />
-                )}
-              </View>
-            </View>
-          ) : (
-            <View
-              style={[
-                styles.message,
-                item.sender_id === userId ? styles.userMessage : styles.shopMessage,
-              ]}
-            >
-              <View style={styles.messageContent}>
-                <Text style={styles.messageText}>{item.content}</Text>
-                <View style={styles.timestampContainer}>
-                  <Text style={styles.timestampText}>{formattedTime}</Text>
-                  {item.sender_id === userId && (
-                    <MaterialIcons
-                      name={item.read ? 'done-all' : 'done'}
-                      size={18}
-                      color={item.read ? '#007BFF' : 'gray'}
-                      style={styles.checkmark}
-                    />
-                  )}
-                </View>
-              </View>
-            </View>
-          )}
-        </View>
-      );
-    },
-    [userId, sessionId]
-  );
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#E3F2FD", }} edges={["top", "left", "right"]}>

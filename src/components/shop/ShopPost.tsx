@@ -1,5 +1,4 @@
-// src/components/shop/ShopPosts.tsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -15,11 +14,15 @@ import {
 import { useVideoPlayer, VideoView } from 'expo-video';
 import ImageViewer from 'react-native-image-zoom-viewer';
 import { Ionicons } from '@expo/vector-icons';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+const BASE_URL = 'https://retail-alvinia-goza-f6a0e4f7.koyeb.app';
+const FALLBACK_IMAGE = 'https://via.placeholder.com/150';
+
 const getFullUrl = (url) => {
-  const BASE_URL = 'https://retail-alvinia-goza-f6a0e4f7.koyeb.app';
   return url && url.startsWith('http') ? url : `${BASE_URL}${url || ''}`;
 };
 
@@ -28,7 +31,8 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isVideoLoading, setIsVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState(null);
-  const [isFullscreen, setIsFullscreen] = useState(true); // Default to fullscreen
+  const [isFullscreen, setIsFullscreen] = useState(true);
+  const [mediaUrls, setMediaUrls] = useState({}); // Cache regenerated URLs
 
   const playerRef = useRef(null);
   const player = useVideoPlayer(null, (p) => {
@@ -43,11 +47,38 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
     return ['mp4', 'mov', 'avi', 'mkv'].includes(extension);
   };
 
+  const regenerateMediaUrl = useCallback(async (mediaId) => {
+    try {
+      const sessionToken = await AsyncStorage.getItem('sessionToken');
+      if (!sessionToken) throw new Error('No session token');
+
+      const response = await axios.get(`${BASE_URL}/posts/regenerate-url/`, {
+        params: { post_media_id: mediaId },
+        headers: { Authorization: sessionToken },
+      });
+
+      console.log(`Regenerated URL for media ID ${mediaId}:`, response.data);
+      setMediaUrls((prev) => ({
+        ...prev,
+        [mediaId]: {
+          url: response.data.url,
+          thumbnail_url: response.data.thumbnail_url,
+          type: response.data.type,
+        },
+      }));
+      return response.data;
+    } catch (error) {
+      console.error(`Error regenerating URL for media ID ${mediaId}:`, error.message);
+      return null;
+    }
+  }, []);
+
   useEffect(() => {
     if (selectedPost && selectedPost.items && selectedPost.items[currentIndex]) {
       const media = selectedPost.items[currentIndex];
-      const fullUrl = getFullUrl(media.url);
-      const isVideo = isVideoFile(media);
+      const mediaId = media.id;
+      const fullUrl = mediaUrls[mediaId]?.url || getFullUrl(media.url);
+      const isVideo = isVideoFile(mediaUrls[mediaId] || media);
 
       if (isVideo && playerRef.current) {
         const loadVideo = async () => {
@@ -59,14 +90,26 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
             playerRef.current.play();
           } catch (error) {
             console.error('Video load error:', fullUrl, error.message);
-            setIsVideoLoading(false);
-            setVideoError('Failed to load video');
+            if (error.message.includes('403')) {
+              const newUrls = await regenerateMediaUrl(mediaId);
+              if (newUrls) {
+                await playerRef.current.replaceAsync({ uri: newUrls.url });
+                setIsVideoLoading(false);
+                playerRef.current.play();
+              } else {
+                setIsVideoLoading(false);
+                setVideoError('Failed to load video: Unauthorized access');
+              }
+            } else {
+              setIsVideoLoading(false);
+              setVideoError('Failed to load video');
+            }
           }
         };
         loadVideo();
       }
     }
-  }, [selectedPost, currentIndex]);
+  }, [selectedPost, currentIndex, mediaUrls, regenerateMediaUrl]);
 
   const pausePlayer = () => {
     if (playerRef.current && typeof playerRef.current.pause === 'function') {
@@ -79,7 +122,18 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
   };
 
   const renderThumbnail = (media) => {
-    const thumbnailUri = media && media.thumbnail_url ? getFullUrl(media.thumbnail_url) : null;
+    const mediaId = media.id;
+    let thumbnailUri;
+    // Prioritize regenerated thumbnail_url, then backend thumbnail_url, then FALLBACK_IMAGE for videos
+    if (mediaUrls[mediaId]?.thumbnail_url) {
+      thumbnailUri = getFullUrl(mediaUrls[mediaId].thumbnail_url);
+    } else if (media.thumbnail_url) {
+      thumbnailUri = getFullUrl(media.thumbnail_url);
+    } else {
+      thumbnailUri = isVideoFile(media) ? FALLBACK_IMAGE : getFullUrl(media.url);
+    }
+
+    console.log('Rendering thumbnail for:', thumbnailUri, 'Media:', JSON.stringify(media, null, 2));
 
     if (thumbnailUri) {
       return (
@@ -87,7 +141,12 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
           source={{ uri: thumbnailUri }}
           style={styles.thumbnail}
           resizeMode="cover"
-          onError={(e) => console.error('Thumbnail load error:', thumbnailUri, e.nativeEvent.error)}
+          onError={async (e) => {
+            console.error('Thumbnail load error:', thumbnailUri, e.nativeEvent.error);
+            if (e.nativeEvent.error.includes('403') && mediaId) {
+              await regenerateMediaUrl(mediaId);
+            }
+          }}
         />
       );
     }
@@ -109,8 +168,9 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
     }
 
     const media = selectedPost.items[currentIndex];
-    const fullUrl = getFullUrl(media.url);
-    const isVideo = isVideoFile(media);
+    const mediaId = media.id;
+    const fullUrl = mediaUrls[mediaId]?.url || getFullUrl(media.url);
+    const isVideo = isVideoFile(mediaUrls[mediaId] || media);
 
     if (isVideo) {
       return (
@@ -132,9 +192,19 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
               allowsFullscreen={true}
               allowsPictureInPicture={false}
               nativeControls={true}
-              onError={(error) => {
+              onError={async (error) => {
                 console.error('VideoView error:', fullUrl, error);
-                setVideoError('Video playback failed');
+                if (error.includes('403') && mediaId) {
+                  const newUrls = await regenerateMediaUrl(mediaId);
+                  if (newUrls) {
+                    await playerRef.current.replaceAsync({ uri: newUrls.url });
+                    playerRef.current.play();
+                  } else {
+                    setVideoError('Video playback failed: Unauthorized access');
+                  }
+                } else {
+                  setVideoError('Video playback failed');
+                }
               }}
             />
           )}
@@ -142,11 +212,11 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
       );
     }
 
-    const imageItems = selectedPost.items.filter((item) => !isVideoFile(item));
+    const imageItems = selectedPost.items.filter((item) => !isVideoFile(mediaUrls[item.id] || item));
     const imageUrls = imageItems.map((item) => ({
-      url: getFullUrl(item.url),
+      url: mediaUrls[item.id]?.url || getFullUrl(item.url),
     }));
-    const currentImageIndex = imageItems.findIndex((item) => getFullUrl(item.url) === fullUrl);
+    const currentImageIndex = imageItems.findIndex((item) => (mediaUrls[item.id]?.url || getFullUrl(item.url)) === fullUrl);
 
     if (imageUrls.length === 0) {
       return (
@@ -168,6 +238,12 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
           backgroundColor="transparent"
           renderIndicator={() => null}
           style={[styles.imageViewer, isFullscreen && styles.fullscreenImageViewer]}
+          onError={async (e) => {
+            console.error('ImageViewer error:', fullUrl, e);
+            if (e.includes('403') && mediaId) {
+              await regenerateMediaUrl(mediaId);
+            }
+          }}
         />
       </View>
     );
@@ -177,7 +253,7 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
     if (post && post.media && post.media.length > 0) {
       setSelectedPost({ items: post.media, description: post.description });
       setCurrentIndex(0);
-      setIsFullscreen(true); // Start in fullscreen
+      setIsFullscreen(true);
     }
   };
 
@@ -214,7 +290,7 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
           scrollEnabled={scrollEnabled}
           renderItem={({ item }) => {
             const firstMedia = item.media && item.media.length > 0 ? item.media[0] : null;
-            const isVideo = firstMedia ? isVideoFile(firstMedia) : false;
+            const isVideo = firstMedia ? isVideoFile(mediaUrls[firstMedia.id] || firstMedia) : false;
 
             return (
               <TouchableOpacity style={styles.postItem} onPress={() => handleMediaClick(item)}>
@@ -228,10 +304,15 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
                     </View>
                   ) : (
                     <Image
-                      source={{ uri: getFullUrl(firstMedia.url) }}
+                      source={{ uri: mediaUrls[firstMedia.id]?.url || getFullUrl(firstMedia.url) }}
                       style={styles.thumbnail}
                       resizeMode="cover"
-                      onError={(e) => console.error('Post image error:', firstMedia.url, e.nativeEvent.error)}
+                      onError={async (e) => {
+                        console.error('Post image error:', firstMedia.url, e.nativeEvent.error);
+                        if (e.nativeEvent.error.includes('403') && firstMedia.id) {
+                          await regenerateMediaUrl(firstMedia.id);
+                        }
+                      }}
                     />
                   )
                 ) : (

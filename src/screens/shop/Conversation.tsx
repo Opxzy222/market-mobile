@@ -24,7 +24,7 @@ import { useLocalSearchParams, useRouter, usePathname } from "expo-router";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import { Ionicons } from "@expo/vector-icons";
 import Constants from "expo-constants";
-import { storeData, getData, initializeDatabase } from "../../storage/storage";
+import { storeData, getData, initializeDatabase, getSingletonSQLiteDatabase } from "../../storage/storage";
 import SendImage from "../../components/shop/SendImage";
 import SendVideo from "../../components/shop/SendVideo";
 import SendPDF from "../../components/shop/SendPdf";
@@ -34,6 +34,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const isWeb = Constants.platform?.web;
+const CACHE_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 
 const Conversation = () => {
   const [userId, setUserId] = useState(null);
@@ -52,7 +53,8 @@ const Conversation = () => {
   const receivedMessagesRef = useRef(new Set());
   const isScreenFocused = useRef(false);
   const lastCacheAttempt = useRef(0);
-  const lastMessagesLength = useRef(0); // Track message length to avoid unnecessary scrolls
+  const lastMessagesLength = useRef(0);
+  const isDatabaseInitialized = useRef(false);
 
   const params = useLocalSearchParams();
   const router = useRouter();
@@ -60,13 +62,35 @@ const Conversation = () => {
   const { conversation_id, shop_id, prevRoute, name, shop_is_active, shopId } = params;
   const isShopActive = shop_is_active === "true";
 
-  // Initialize database
+  // Initialize database and clean up corrupted data
   useEffect(() => {
     const setupDatabase = async () => {
+      if (isDatabaseInitialized.current) {
+        console.log("Database already initialized, skipping...");
+        return;
+      }
+
       try {
+        console.log("Initializing database...");
         await initializeDatabase();
+        isDatabaseInitialized.current = true;
+        console.log("Database initialized in Conversation");
+
+        // One-time cleanup of corrupted SQLite data
+        const db = await getSingletonSQLiteDatabase();
+        const rows = await db.getAllAsync<{ key: string; value: string }>(
+          "SELECT key, value FROM secure_data WHERE key LIKE 'messages_%';"
+        );
+        for (const row of rows) {
+          const isValid = /^[A-Za-z0-9+/=]+$/.test(row.value) && row.value.length % 4 === 0;
+          if (!isValid) {
+            console.error(`Found corrupted SQLite data for key: ${row.key}, value: ${row.value}`);
+            await db.runAsync("DELETE FROM secure_data WHERE key = ?;", [row.key]);
+            console.log(`Removed corrupted SQLite data: ${row.key}`);
+          }
+        }
       } catch (error) {
-        console.error("Failed to initialize database:", error);
+        console.error("Failed to initialize database or clear data:", error);
       }
     };
     setupDatabase();
@@ -91,26 +115,110 @@ const Conversation = () => {
     loadSessionData();
   }, []);
 
+  // Clear messages when conversation_id changes
+  useEffect(() => {
+    console.log("Conversation ID changed:", conversation_id);
+    setMessages([]);
+    setMessagesLoaded(false);
+    receivedMessagesRef.current.clear();
+  }, [conversation_id]);
+
+  // Clean up old caches in SQLite
+  const cleanOldCaches = async () => {
+    try {
+      const now = Date.now();
+      const db = await getSingletonSQLiteDatabase();
+      
+      // Query all message keys in secure_data table
+      const rows = await db.getAllAsync<{ key: string }>(
+        "SELECT key FROM secure_data WHERE key LIKE 'messages_%';"
+      );
+      const messageKeys = rows.map((row) => row.key);
+
+      for (const key of messageKeys) {
+        const cachedData = await getData(key);
+        if (cachedData) {
+          try {
+            if (!cachedData.match(/^{.*}$|^\[.*\]$/)) {
+              console.error(`Invalid JSON for key ${key}:`, cachedData);
+              await db.runAsync("DELETE FROM secure_data WHERE key = ?;", [key]);
+              console.log(`Removed invalid cache from SQLite: ${key}`);
+              continue;
+            }
+            const { timestamp } = JSON.parse(cachedData);
+            if (!timestamp || now - timestamp > CACHE_EXPIRATION_MS) {
+              await db.runAsync("DELETE FROM secure_data WHERE key = ?;", [key]);
+              console.log(`Removed expired cache from SQLite: ${key}`);
+            }
+          } catch (parseError) {
+            console.error(`Error parsing JSON for ${key}:`, parseError, "Data:", cachedData);
+            await db.runAsync("DELETE FROM secure_data WHERE key = ?;", [key]);
+            console.log(`Removed corrupted cache from SQLite: ${key}`);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error cleaning old caches:", error);
+    }
+  };
+
   // Load cached messages
   const loadCachedMessages = async () => {
     const cacheKey = `messages_${conversation_id}`;
     try {
+      console.log("Loading cached messages for key:", cacheKey);
       const cached = await getData(cacheKey);
       if (cached) {
-        const parsed = JSON.parse(cached);
-        parsed.forEach((msg) => receivedMessagesRef.current.add(Number(msg.id)));
-        return parsed;
+        try {
+          if (!cached.match(/^{.*}$|^\[.*\]$/)) {
+            console.error(`Invalid JSON for key ${cacheKey}:`, cached);
+            const db = await getSingletonSQLiteDatabase();
+            await db.runAsync("DELETE FROM secure_data WHERE key = ?;", [cacheKey]);
+            console.log(`Removed invalid cache from SQLite: ${cacheKey}`);
+            return [];
+          }
+          const { timestamp, messages } = JSON.parse(cached);
+          const now = Date.now();
+          if (timestamp && now - timestamp <= CACHE_EXPIRATION_MS) {
+            const recentMessages = messages.filter(
+              (msg) =>
+                now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+                msg.conversation_id === conversation_id
+            );
+            recentMessages.forEach((msg) => receivedMessagesRef.current.add(Number(msg.id)));
+            console.log(
+              `Loaded cached messages from SQLite for ${cacheKey}, timestamp: ${new Date(
+                timestamp
+              ).toISOString()}, messageCount: ${recentMessages.length}`
+            );
+            return recentMessages;
+          } else {
+            const db = await getSingletonSQLiteDatabase();
+            await db.runAsync("DELETE FROM secure_data WHERE key = ?;", [cacheKey]);
+            console.log(`Removed expired cache from SQLite: ${cacheKey}`);
+            return [];
+          }
+        } catch (parseError) {
+          console.error(`Error parsing cached messages for ${cacheKey}:`, parseError, "Data:", cached);
+          const db = await getSingletonSQLiteDatabase();
+          await db.runAsync("DELETE FROM secure_data WHERE key = ?;", [cacheKey]);
+          console.log(`Removed corrupted cache from SQLite: ${cacheKey}`);
+          return [];
+        }
       }
+      console.log("No cached messages found for key:", cacheKey);
+      return [];
     } catch (error) {
       console.error("Error loading cached messages:", error);
+      return [];
     }
-    return [];
   };
 
   useEffect(() => {
     const loadCachedData = async () => {
       if (!conversation_id) return;
       try {
+        await cleanOldCaches();
         const cachedMessages = await loadCachedMessages();
         setMessages(cachedMessages);
         setMessagesLoaded(!!cachedMessages.length);
@@ -121,11 +229,22 @@ const Conversation = () => {
     loadCachedData();
   }, [conversation_id]);
 
-  // Cache messages
+  // Cache messages with timestamp
   const cacheMessages = async (messagesToCache, localConversationId = conversation_id) => {
     const cacheKey = `messages_${localConversationId}`;
+    const now = Date.now();
     try {
-      await storeData(cacheKey, JSON.stringify(messagesToCache));
+      const recentMessages = messagesToCache.filter(
+        (msg) =>
+          now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+          msg.conversation_id === localConversationId
+      );
+      const cacheData = {
+        timestamp: now,
+        messages: recentMessages,
+      };
+      await storeData(cacheKey, JSON.stringify(cacheData));
+      console.log(`Cached messages for ${cacheKey}, timestamp: ${new Date(now).toISOString()}`);
     } catch (error) {
       console.error("Error caching messages:", error);
     }
@@ -152,6 +271,7 @@ const Conversation = () => {
         setShopOwner(response.data[0].receiver_id);
       }
 
+      const now = Date.now();
       const uniqueMessages = response.data
         .reduce((acc, msg) => {
           const key = `${msg.id}-${msg.attachment || ""}`;
@@ -160,22 +280,18 @@ const Conversation = () => {
           }
           return acc;
         }, [])
-        .filter((msg) => !receivedMessagesRef.current.has(Number(msg.id)));
+        .filter((msg) => {
+          const messageTime = new Date(msg.timestamp).getTime();
+          return !receivedMessagesRef.current.has(Number(msg.id)) && now - messageTime <= CACHE_EXPIRATION_MS;
+        });
 
       uniqueMessages.forEach((msg) => receivedMessagesRef.current.add(Number(msg.id)));
 
       const normalizedMessages = uniqueMessages.map((msg) => {
         let normalizedType = msg.type || msg.msg_type || "text";
-        if (
-          ["photo", "image/jpeg", "image/png", "jpg", "jpeg", "png"].includes(
-            normalizedType
-          )
-        ) {
+        if (["photo", "image/jpeg", "image/png", "jpg", "jpeg", "png"].includes(normalizedType)) {
           normalizedType = "image";
-        } else if (
-          ["video/mp4", "mp4", "video"].includes(normalizedType) ||
-          normalizedType?.toLowerCase().includes("video")
-        ) {
+        } else if (["video/mp4", "mp4", "video"].includes(normalizedType) || normalizedType?.toLowerCase().includes("video")) {
           normalizedType = "video";
         } else if (normalizedType === "application/pdf") {
           normalizedType = "pdf";
@@ -196,15 +312,13 @@ const Conversation = () => {
           ? msg.attachment.replace(/conversation_attachments/g, "chat_attachments")
           : null;
         const thumbnailPath = msg.thumbnail_url
-          ? msg.thumbnail_url.replace(
-              /conversation_thumbnails/g,
-              "chat_thumbnails"
-            )
+          ? msg.thumbnail_url.replace(/conversation_thumbnails/g, "chat_thumbnails")
           : null;
 
         return {
           ...msg,
           id: Number(msg.id),
+          conversation_id, // Add conversation_id
           type: normalizedType,
           name: msg.attachment?.split("/").pop(),
           attachment: attachmentPath,
@@ -221,13 +335,14 @@ const Conversation = () => {
               !normalizedMessages.some(
                 (newMsg) =>
                   newMsg.id === msg.id ||
-                  (newMsg.attachment &&
-                    newMsg.attachment === msg.attachment)
-              )
+                  (newMsg.attachment && newMsg.attachment === msg.attachment)
+              ) &&
+              now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+              msg.conversation_id === conversation_id
           ),
           ...normalizedMessages,
         ].sort((a, b) => a.id - b.id);
-        cacheMessages(merged);
+        cacheMessages(merged, conversation_id);
         setMessagesLoaded(true);
         return merged;
       });
@@ -269,128 +384,149 @@ const Conversation = () => {
     }
   };
 
-  // WebSocket connection with debouncing
+  // WebSocket connection
   useEffect(() => {
     if (!conversation_id) return;
 
     const connectWebSocket = () => {
-      const websocketUrl = `wss://retail-alvinia-goza-f6a0e4f7.koyeb.app/ws/chat/${conversation_id}/`;
+      const websocketUrl = `wss://retail-alvinia-goza-f6a0e4f7.koyeb.app/ws/chat/${conversation_id}/?user_id=${userId}`;
       websocketRef.current = new WebSocket(websocketUrl);
 
       websocketRef.current.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        if (data.type === "read_update") {
-          setMessages((prevMessages) => {
-            const updatedMessages = prevMessages.map((msg) =>
-              data.message_ids.includes(Number(msg.id))
-                ? { ...msg, read: true }
-                : msg
-            );
-            cacheMessages(updatedMessages);
-            return updatedMessages;
-          });
-        } else {
-          let messageId = Number(data.message_id);
-          let tempId = Number(data.temp_id);
+        try {
+          const data = JSON.parse(event.data);
+          console.log("WebSocket message received:", JSON.stringify(data));
 
-          if (!messageId || isNaN(messageId)) return;
-
-          if (receivedMessagesRef.current.has(messageId)) return;
-
-          receivedMessagesRef.current.add(messageId);
-
-          let normalizedType = data.msg_type || data.type || "text";
-          if (
-            ["photo", "image/jpeg", "image/png", "jpg", "jpeg", "png"].includes(
-              normalizedType
-            )
-          ) {
-            normalizedType = "image";
-          } else if (
-            ["video/mp4", "mp4", "video"].includes(normalizedType) ||
-            normalizedType?.toLowerCase().includes("video")
-          ) {
-            normalizedType = "video";
-          } else if (normalizedType === "application/pdf") {
-            normalizedType = "pdf";
+          // Validate conversation_id
+          if (data.conversation_id && data.conversation_id !== conversation_id) {
+            console.log(`Ignoring message for different conversation: ${data.conversation_id}`);
+            return;
           }
 
-          if (data.attachment) {
-            const lowerAttachment = data.attachment.toLowerCase();
-            if (lowerAttachment.match(/\.(jpg|jpeg|png|gif)$/)) {
-              normalizedType = "image";
-            } else if (lowerAttachment.match(/\.mp4$/)) {
-              normalizedType = "video";
-            } else if (lowerAttachment.match(/\.pdf$/)) {
-              normalizedType = "pdf";
-            }
-          }
-
-          const attachmentPath = data.attachment
-            ? data.attachment.replace(/conversation_attachments/g, "chat_attachments")
-            : null;
-          const thumbnailPath = data.thumbnail_url
-            ? data.thumbnail_url.replace(
-                /conversation_thumbnails/g,
-                "chat_thumbnails"
-              )
-            : null;
-
-          setMessages((prevMessages) => {
-            const existingIndex = prevMessages.findIndex(
-              (msg) =>
-                msg.id === tempId ||
-                (msg.attachment &&
-                  msg.attachment === attachmentPath &&
-                  msg.type === normalizedType)
-            );
-
-            let updatedMessages;
-            if (existingIndex !== -1) {
-              updatedMessages = [...prevMessages];
-              updatedMessages[existingIndex] = {
-                ...updatedMessages[existingIndex],
-                id: messageId,
-                attachment: attachmentPath || updatedMessages[existingIndex].attachment,
-                content: data.message || null,
-                type: normalizedType,
-                thumbnail_url: thumbnailPath || updatedMessages[existingIndex].thumbnail_url,
-                pending: false,
-                read: false,
-                name: data.attachment?.split("/").pop() || updatedMessages[existingIndex].name,
-              };
-            } else {
-              updatedMessages = [
-                ...prevMessages,
-                {
-                  id: messageId,
-                  content: data.message || null,
-                  sender_id: data.sender_id,
-                  timestamp: data.timestamp || new Date().toISOString(),
-                  attachment: attachmentPath,
-                  type: normalizedType,
-                  thumbnail_url: thumbnailPath,
-                  read: false,
-                  pending: false,
-                  name: data.attachment?.split("/").pop(),
-                },
-              ];
-            }
-            cacheMessages(updatedMessages);
-            return updatedMessages;
-          });
-
-          if (isAtBottom) {
-            InteractionManager.runAfterInteractions(() => {
-              if (messages.length > 0) {
-                flatListRef.current?.scrollToEnd({ animated: true });
-              }
+          if (data.type === "read_update") {
+            setMessages((prevMessages) => {
+              const updatedMessages = prevMessages
+                .filter(
+                  (msg) =>
+                    Date.now() - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+                    msg.conversation_id === conversation_id
+                )
+                .map((msg) =>
+                  data.message_ids.includes(Number(msg.id))
+                    ? { ...msg, read: true }
+                    : msg
+                );
+              cacheMessages(updatedMessages, conversation_id);
+              return updatedMessages;
             });
-          }
+          } else if (data.type === "chat_message") {
+            const messageId = Number(data.message_id);
+            const tempId = data.temp_id;
 
-          if (isScreenFocused.current) {
-            markMessagesAsRead();
+            if (!messageId || isNaN(messageId)) {
+              console.log("Invalid message_id:", data.message_id);
+              return;
+            }
+
+            if (receivedMessagesRef.current.has(messageId)) {
+              console.log("Duplicate message ignored by message_id:", messageId);
+              return;
+            }
+
+            const messageTime = new Date(data.timestamp || new Date().toISOString()).getTime();
+            if (Date.now() - messageTime > CACHE_EXPIRATION_MS) {
+              console.log(`Skipping old WebSocket message: ${messageId}`);
+              return;
+            }
+
+            receivedMessagesRef.current.add(messageId);
+
+            let normalizedType = data.msg_type || data.type || "text";
+            if (data.attachment) {
+              const lowerAttachment = data.attachment.toLowerCase();
+              if (lowerAttachment.match(/\.(jpg|jpeg|png|gif)$/)) {
+                normalizedType = "image";
+              } else if (lowerAttachment.match(/\.(mp4|mov)$/)) {
+                normalizedType = "video";
+              } else if (lowerAttachment.match(/\.pdf$/)) {
+                normalizedType = "pdf";
+              }
+            }
+
+            const attachmentPath = data.attachment
+              ? data.attachment.replace(/conversation_attachments/g, "chat_attachments")
+              : null;
+            const thumbnailPath = data.thumbnail_url
+              ? data.thumbnail_url.replace(/conversation_thumbnails/g, "chat_thumbnails")
+              : null;
+
+            setMessages((prevMessages) => {
+              const existingIndex = prevMessages.findIndex(
+                (msg) =>
+                  msg.id === messageId ||
+                  (tempId && msg.temp_id === tempId)
+              );
+
+              let updatedMessages;
+              if (existingIndex !== -1) {
+                console.log("Updating existing message:", { messageId, tempId, conversation_id });
+                updatedMessages = [...prevMessages];
+                updatedMessages[existingIndex] = {
+                  ...updatedMessages[existingIndex],
+                  id: messageId,
+                  conversation_id, // Ensure conversation_id
+                  attachment: attachmentPath || updatedMessages[existingIndex].attachment,
+                  content: data.message || null,
+                  msg_type: normalizedType,
+                  thumbnail_url: thumbnailPath || updatedMessages[existingIndex].thumbnail_url,
+                  pending: false,
+                  read: data.read || false,
+                  name: data.attachment?.split("/").pop() || updatedMessages[existingIndex].name,
+                  sender_id: data.sender_id,
+                  timestamp: data.timestamp || updatedMessages[existingIndex].timestamp,
+                };
+              } else {
+                console.log("Adding new message:", { messageId, tempId, conversation_id });
+                updatedMessages = [
+                  ...prevMessages.filter(
+                    (msg) =>
+                      Date.now() - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+                      msg.conversation_id === conversation_id
+                  ),
+                  {
+                    id: messageId,
+                    conversation_id, // Ensure conversation_id
+                    content: data.message || null,
+                    sender_id: data.sender_id,
+                    timestamp: data.timestamp || new Date().toISOString(),
+                    attachment: attachmentPath,
+                    msg_type: normalizedType,
+                    thumbnail_url: thumbnailPath,
+                    read: data.read || false,
+                    pending: false,
+                    name: data.attachment?.split("/").pop(),
+                    temp_id: tempId,
+                  },
+                ];
+              }
+              cacheMessages(updatedMessages, conversation_id);
+              return updatedMessages.sort((a, b) => a.id - b.id);
+            });
+
+            if (isAtBottom) {
+              InteractionManager.runAfterInteractions(() => {
+                if (flatListRef.current) {
+                  flatListRef.current.scrollToEnd({ animated: true });
+                }
+              });
+            }
+
+            if (isScreenFocused.current) {
+              markMessagesAsRead();
+            }
           }
+        } catch (error) {
+          console.error("WebSocket message error:", error);
         }
       };
 
@@ -408,7 +544,7 @@ const Conversation = () => {
     return () => {
       websocketRef.current?.close();
     };
-  }, [conversation_id]);
+  }, [conversation_id, userId]);
 
   // Send message via WebSocket
   const handleSendMessage = useCallback(() => {
@@ -420,10 +556,15 @@ const Conversation = () => {
     if (!inputMessage.trim() || !websocketRef.current || !conversation_id) return;
 
     const tempId = Date.now();
+    const now = Date.now();
 
     setMessages((prevMessages) => {
       const newMessages = [
-        ...prevMessages,
+        ...prevMessages.filter(
+          (msg) =>
+            now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+            msg.conversation_id === conversation_id
+        ),
         {
           id: tempId,
           content: inputMessage,
@@ -434,9 +575,10 @@ const Conversation = () => {
           type: "text",
           read: false,
           pending: true,
+          conversation_id, // Add conversation_id
         },
       ];
-      cacheMessages(newMessages);
+      cacheMessages(newMessages, conversation_id);
       return newMessages;
     });
 
@@ -462,8 +604,10 @@ const Conversation = () => {
       Alert.alert("Message Failed", "Unable to send message. Please try again.");
 
       setMessages((prevMessages) => {
-        const updatedMessages = prevMessages.filter((msg) => msg.id !== tempId);
-        cacheMessages(updatedMessages);
+        const updatedMessages = prevMessages.filter(
+          (msg) => (msg.id !== tempId && msg.temp_id !== tempId) && msg.conversation_id === conversation_id
+        );
+        cacheMessages(updatedMessages, conversation_id);
         return updatedMessages;
       });
     }
@@ -482,27 +626,47 @@ const Conversation = () => {
         return;
       }
 
-      const tempId = Date.now();
+      const tempId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      const fileExtension = file.fileName?.split(".").pop()?.toLowerCase() || file.uri.split(".").pop()?.toLowerCase();
       const normalizedType =
-        type === "photo" ? "image" : type === "video" ? "video" : "pdf";
+        type === "image" || (fileExtension && ["jpg", "jpeg", "png", "gif"].includes(fileExtension))
+          ? "image"
+          : type === "video" || (fileExtension && ["mp4", "mov"].includes(fileExtension))
+          ? "video"
+          : type === "pdf" || fileExtension === "pdf"
+          ? "pdf"
+          : "image";
+
+      const now = Date.now();
+      const fileName =
+        file.fileName ||
+        file.name ||
+        `file_${Date.now()}.${normalizedType === "video" ? "mp4" : normalizedType === "pdf" ? "pdf" : "jpg"}`;
 
       setMessages((prevMessages) => {
+        console.log("Adding temporary message:", { tempId, attachment: file.uri, conversation_id });
         const newMessages = [
-          ...prevMessages,
+          ...prevMessages.filter(
+            (msg) =>
+              now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+              msg.conversation_id === conversation_id
+          ),
           {
             id: tempId,
             content: null,
             sender_id: userId,
             timestamp: new Date().toISOString(),
             attachment: file.uri,
-            type: normalizedType,
+            msg_type: normalizedType,
             thumbnail_url: null,
             read: false,
             pending: true,
-            name: file.name || `file_${tempId}`,
+            name: fileName,
+            temp_id: tempId,
+            conversation_id, // Add conversation_id
           },
         ];
-        cacheMessages(newMessages);
+        cacheMessages(newMessages, conversation_id);
         return newMessages;
       });
 
@@ -511,13 +675,12 @@ const Conversation = () => {
         formData.append("sender_id", String(userId));
         formData.append("shop_id", String(shopId));
         formData.append("conversation_id", conversation_id);
+        formData.append("msg_type", normalizedType);
 
-        const fileName =
-          file.name ||
-          `file_${Date.now()}.${type === "photo" ? "jpg" : type === "video" ? "mp4" : "pdf"}`;
         let fileUri = file.uri;
-
-        let mimeType = file.type || (type === "video" ? "video/mp4" : type === "pdf" ? "application/pdf" : "image/jpeg");
+        let mimeType =
+          file.mimeType ||
+          (normalizedType === "video" ? "video/mp4" : normalizedType === "pdf" ? "application/pdf" : "image/jpeg");
 
         if (Platform.OS === "ios" && !fileUri.startsWith("file://")) {
           fileUri = `file://${fileUri}`;
@@ -554,8 +717,18 @@ const Conversation = () => {
         if (!data.file_url) throw new Error("File upload failed");
 
         setMessages((prevMessages) => {
+          console.log("Updating with server response:", {
+            message_id: data.message_id,
+            file_url: data.file_url,
+            tempId,
+            conversation_id,
+          });
           const filteredMessages = prevMessages.filter(
-            (msg) => msg.id !== tempId && !(msg.attachment && msg.attachment === data.file_url)
+            (msg) =>
+              (msg.id !== tempId &&
+               msg.temp_id !== tempId &&
+               msg.id !== Number(data.message_id)) &&
+              msg.conversation_id === conversation_id
           );
           const updatedMessages = [
             ...filteredMessages,
@@ -564,18 +737,18 @@ const Conversation = () => {
               content: null,
               sender_id: userId,
               timestamp: new Date().toISOString(),
-              attachment: data.file_url.replace(/conversation_attachments/g, "chat_attachments"),
-              type: normalizedType,
-              thumbnail_url: data.thumbnail_url
-                ? data.thumbnail_url.replace(/conversation_thumbnails/g, "chat_thumbnails")
-                : null,
+              attachment: data.file_url,
+              msg_type: data.msg_type || normalizedType,
+              thumbnail_url: data.thumbnail_url || null,
               read: false,
               pending: false,
               name: fileName,
+              temp_id: tempId,
+              conversation_id, // Add conversation_id
             },
           ];
-          cacheMessages(updatedMessages);
-          return updatedMessages;
+          cacheMessages(updatedMessages, conversation_id);
+          return updatedMessages.sort((a, b) => a.id - b.id);
         });
 
         if (websocketRef.current) {
@@ -583,12 +756,13 @@ const Conversation = () => {
             JSON.stringify({
               sender_id: userId,
               conversation_id: conversation_id,
-              type: "message",
+              type: normalizedType,
               timestamp: new Date().toISOString(),
               content: null,
               attachment: data.file_url,
-              thumbnail_url: data.thumbnail_url,
+              thumbnail_url: data.thumbnail_url || null,
               temp_id: tempId,
+              receiver_id: shopId,
               message_id: data.message_id,
             })
           );
@@ -605,8 +779,12 @@ const Conversation = () => {
         Alert.alert("Upload Failed", "Failed to upload file. Please try again.");
 
         setMessages((prevMessages) => {
-          const updatedMessages = prevMessages.filter((msg) => msg.id !== tempId);
-          cacheMessages(updatedMessages);
+          const updatedMessages = prevMessages.filter(
+            (msg) =>
+              (msg.id !== tempId && msg.temp_id !== tempId) &&
+              msg.conversation_id === conversation_id
+          );
+          cacheMessages(updatedMessages, conversation_id);
           return updatedMessages;
         });
       }
@@ -614,11 +792,11 @@ const Conversation = () => {
     [userId, shopId, conversation_id, messages, isShopActive, sessionId]
   );
 
-  // Handle screen focus with optimized logic
+  // Handle screen focus
   useFocusEffect(
     useCallback(() => {
       isScreenFocused.current = true;
-      if (conversation_id && messages.length > 0 && messages.length !== lastMessagesLength.current) {
+      if (conversation_id && messages.length > 0) {
         markMessagesAsRead();
         InteractionManager.runAfterInteractions(() => {
           if (!loading && messages.length > 0) {
@@ -630,7 +808,7 @@ const Conversation = () => {
       return () => {
         isScreenFocused.current = false;
       };
-    }, [conversation_id, messages.length, loading])
+    }, [conversation_id, messages, loading])
   );
 
   // Scroll to bottom on messages load
@@ -683,24 +861,24 @@ const Conversation = () => {
     });
   };
 
-  // Render message item
-  const renderItem = useCallback(
-    ({ item }) => {
-      const isImage = item.type === "image";
-      const isVideo = item.type === "video";
-      const isPdf = item.type === "pdf";
-      const isImageFallback =
-        item.attachment &&
-        !isImage &&
-        !isVideo &&
-        !isPdf &&
-        item.attachment.match(/\.(jpg|jpeg|png|gif)$/i);
-      const isVideoFallback =
-        item.attachment &&
-        !isImage &&
-        !isVideo &&
-        !isPdf &&
-        item.attachment.match(/\.mp4$/i);
+  const MessageItem = memo(
+    ({ item, userId, sessionId }) => {
+      console.log("renderItem item:", JSON.stringify(item));
+      const isImage =
+        item.msg_type === "image" ||
+        (item.attachment &&
+          !item.msg_type?.includes("video") &&
+          !item.msg_type?.includes("pdf") &&
+          item.attachment.match(/\.(jpg|jpeg|png|gif)(\?|$)/i));
+      const isVideo =
+        item.msg_type === "video" ||
+        (item.attachment &&
+          !item.msg_type?.includes("image") &&
+          !item.msg_type?.includes("pdf") &&
+          item.attachment.match(/\.mp4(\?|$)/i));
+      const isPdf = item.msg_type === "pdf";
+      const mediaUri = item.pending ? item.attachment : item.attachment || null;
+      const thumbnailUri = item.thumbnail_url || null;
 
       const formattedTime = new Date(item.timestamp).toLocaleTimeString("en-US", {
         hour: "2-digit",
@@ -708,43 +886,31 @@ const Conversation = () => {
         hour12: true,
       });
 
-      const mediaUri = item.pending
-        ? item.attachment
-        : item.attachment
-        ? `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${item.attachment.replace(/conversation_attachments/g, "chat_attachments")}`
-        : null;
-
-      const thumbnailUri = item.thumbnail_url
-        ? `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${item.thumbnail_url.replace(/conversation_thumbnails/g, "chat_thumbnails")}`
-        : null;
-
       return (
         <View style={styles.messageWrapper}>
           {item.attachment ? (
             <View
               style={[
                 styles.mediaContainer,
-                item.sender_id === userId
-                  ? { alignSelf: "flex-end" }
-                  : { alignSelf: "flex-start" },
+                item.sender_id === userId ? { alignSelf: "flex-end" } : { alignSelf: "flex-start" },
               ]}
             >
-              {isImage || isImageFallback ? (
+              {isImage ? (
                 <View style={item.pending ? styles.pendingContainer : null}>
-                  <ChatImage uri={mediaUri} />
+                  <ChatImage uri={mediaUri} messageId={item.id} sessionId={sessionId} />
                   {item.pending && (
                     <View style={styles.loadingOverlay}>
                       <Text style={styles.loadingText}>Uploading...</Text>
                     </View>
                   )}
                 </View>
-              ) : isVideo || isVideoFallback ? (
+              ) : isVideo ? (
                 <View style={item.pending ? styles.pendingContainer : null}>
                   <ChatVideo
                     uri={mediaUri}
                     name={item.name}
                     thumbnailUrl={thumbnailUri}
-                    pending={!!(item.pending === true || item.pending === "true")}
+                    pending={!!item.pending}
                     messageId={item.id}
                     sessionId={sessionId}
                   />
@@ -755,9 +921,7 @@ const Conversation = () => {
                   )}
                 </View>
               ) : isPdf ? (
-                <Text style={styles.attachmentText}>
-                  PDF Document: {item.name}
-                </Text>
+                <Text style={styles.attachmentText}>PDF Document: {item.name}</Text>
               ) : (
                 <Text style={styles.attachmentText}>Unsupported file type</Text>
               )}
@@ -777,9 +941,7 @@ const Conversation = () => {
             <View
               style={[
                 styles.message,
-                item.sender_id === userId
-                  ? styles.userMessage
-                  : styles.shopMessage,
+                item.sender_id === userId ? styles.userMessage : styles.shopMessage,
               ]}
             >
               <View style={styles.messageContent}>
@@ -801,8 +963,23 @@ const Conversation = () => {
         </View>
       );
     },
+    (prevProps, nextProps) => {
+      return (
+        prevProps.item.id === nextProps.item.id &&
+        prevProps.item.read === nextProps.item.read &&
+        prevProps.item.pending === nextProps.item.pending &&
+        prevProps.item.attachment === nextProps.item.attachment &&
+        prevProps.item.thumbnail_url === nextProps.item.thumbnail_url &&
+        prevProps.userId === nextProps.userId &&
+        prevProps.sessionId === nextProps.sessionId
+      );
+    }
+  );
+
+  const renderItem = useCallback(
+    ({ item }) => <MessageItem item={item} userId={userId} sessionId={sessionId} />,
     [userId, sessionId]
-  )
+  );
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
@@ -817,7 +994,7 @@ const Conversation = () => {
         <LinearGradient colors={["#F7FAFC", "#E5E7EB"]} style={styles.container}>
           <View style={styles.header}>
             <TouchableOpacity
-              onPress={() => router.navigate("(tabs)/placeholder")}
+              onPress={() => router.navigate("(tabs)/messages")}
               style={styles.backButton}
             >
               <MaterialIcons name="arrow-back" size={26} color="white" />
@@ -831,7 +1008,7 @@ const Conversation = () => {
                   });
                 }}
               >
-                <Text style={styles.headerText}>{name}</Text>
+                <Text style={styles.ShopheaderText}>{name}</Text>
               </TouchableOpacity>
             ) : (
               <Text style={styles.headerText}>{name}</Text>
@@ -1027,6 +1204,14 @@ const Conversation = () => {
       color: "#FFFFFF",
       textAlign: "center",
       flex: 1,
+    },
+    ShopheaderText: {
+      fontSize: 20,
+      fontWeight: "bold",
+      color: "#FFFFFF",
+      textAlign: "center",
+      flex: 1,
+      left: 20
     },
     headerSpacer: {
       width: 42,

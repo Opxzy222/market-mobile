@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, StatusBar } from 'react-native';
 import axios from 'axios';
 import { useRouter, usePathname } from 'expo-router';
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const RequestTokenScreen = () => {
   const [email, setEmail] = useState('');
@@ -42,7 +43,7 @@ const RequestTokenScreen = () => {
   };
 
   return (
-    <View>
+    <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
       <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <View style={{ padding: 20 }}>
         <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 10 }}>Enter Your Email</Text>
@@ -82,7 +83,7 @@ const RequestTokenScreen = () => {
           )}
         </TouchableOpacity>
       </View>
-    </View>
+    </SafeAreaView>
   );
 };
 

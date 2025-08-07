@@ -7,6 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
+    "sdkVersion": "53.0.0",
     "splash": {
       "image": "./assets/images/splash.png",
       "resizeMode": "contain",
@@ -90,13 +91,25 @@
           "color": "#ffffff",
           "androidMode": "default",
           "androidCollapsedTitle": "#{unread_notifications} new messages",
-          "defaultChannel": "high_priority_channel",
+          "defaultChannel": "chat_channel",
+          "sounds": [
+            "./assets/sounds/chat_notification.mp3",
+            "./assets/sounds/receipt_notification.mp3"
+          ],
           "channels": [
             {
-              "id": "high_priority_channel",
-              "name": "High Priority Notifications",
+              "id": "chat_channel",
+              "name": "Chat Notifications",
               "importance": "high",
-              "sound": "default",
+              "sound": "chat_notification",
+              "vibrationPattern": [100, 200, 300, 400],
+              "enableVibrate": true
+            },
+            {
+              "id": "receipt_channel",
+              "name": "Receipt Notifications",
+              "importance": "high",
+              "sound": "receipt_notification",
               "vibrationPattern": [100, 200, 300, 400],
               "enableVibrate": true
             }
@@ -115,7 +128,7 @@
           },
           "ios": {
             "deploymentTarget": "15.1",
-            "useFrameworks": "static" // Required for AdMob on iOS
+            "useFrameworks": "static"
           }
         }
       ],
@@ -152,6 +165,7 @@
       "eas": {
         "projectId": "f80ca8bf-7b1e-44db-999f-2b562f845d48"
       }
-    }
+    },
+    "assetBundlePatterns": ["**/*", "assets/sounds/**/*"]
   }
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef, memo } from "react";
+import React, { useEffect, useState, useCallback, useRef, memo } from 'react';
 import {
   FlatList,
   Text,
@@ -9,18 +9,19 @@ import {
   RefreshControl,
   Image,
   StatusBar,
-} from "react-native";
-import axios from "axios";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useRouter, usePathname, useFocusEffect } from "expo-router";
-import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
-import { storeData, getData } from "../../storage/storage";
+} from 'react-native';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter, usePathname, useFocusEffect } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons'; // Added MaterialIcons for fallback
+import { storeData, getData } from '../../storage/storage';
+import { getFullUrl } from '../../utils/imageUtils';
 
 const MessageList = () => {
   const [messages, setMessages] = useState([]);
   const [filteredMessages, setFilteredMessages] = useState([]);
-  const [activeTab, setActiveTab] = useState("All");
+  const [activeTab, setActiveTab] = useState('All');
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -28,11 +29,10 @@ const MessageList = () => {
   const isMountedRef = useRef(true);
   const isFetchingRef = useRef(false);
   const lastFetchTimeRef = useRef(0);
-  const lastMessagesRef = useRef([]); // Track messages to detect changes
+  const lastMessagesRef = useRef([]);
   const router = useRouter();
   const pathname = usePathname();
 
-  // Debug mount/unmount (only in __DEV__)
   useEffect(() => {
     if (__DEV__) {
       console.log(`MessageList mounted (pathname: ${pathname})`);
@@ -45,46 +45,42 @@ const MessageList = () => {
     };
   }, []);
 
-  // Fetch session ID
   const fetchSessionId = useCallback(async () => {
     try {
-      const sessionIdString = await AsyncStorage.getItem("sessionToken");
+      const sessionIdString = await AsyncStorage.getItem('sessionToken');
       setSessionId(sessionIdString);
       return sessionIdString;
     } catch (error) {
-      console.error("Error fetching session ID:", error);
+      console.error('Error fetching session ID:', error);
       return null;
     }
   }, []);
 
-  // Cache messages
   const cacheMessages = useCallback(async (messagesToCache) => {
     try {
-      await storeData("message_list", JSON.stringify(messagesToCache));
+      await storeData('message_list', JSON.stringify(messagesToCache));
     } catch (error) {
-      console.error("Error caching messages:", error);
+      console.error('Error caching messages:', error);
     }
   }, []);
 
-  // Load cached messages
   const loadCachedMessages = useCallback(async () => {
     try {
-      const cached = await getData("message_list");
+      const cached = await getData('message_list');
       if (cached) {
         const parsed = JSON.parse(cached);
         if (__DEV__) {
-          console.log("Loaded cached messages:", parsed);
+          console.log('Loaded cached messages:', parsed);
         }
         return parsed;
       }
       return [];
     } catch (error) {
-      console.error("Error loading cached messages:", error);
+      console.error('Error loading cached messages:', error);
       return [];
     }
   }, []);
 
-  // Fetch messages from backend
   const fetchMessages = useCallback(async (force = false) => {
     if (!sessionId) {
       return;
@@ -92,11 +88,10 @@ const MessageList = () => {
     if (isFetchingRef.current) {
       return;
     }
-    // Skip fetch if recent (within 30 seconds) unless forced
     const now = Date.now();
     if (!force && now - lastFetchTimeRef.current < 30_000 && messages.length > 0) {
       if (__DEV__) {
-        console.log("Skipping fetch: recent data available");
+        console.log('Skipping fetch: recent data available');
       }
       return;
     }
@@ -107,26 +102,35 @@ const MessageList = () => {
 
     try {
       const response = await axios.get(
-        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/message-list/",
+        'https://retail-alvinia-goza-f6a0e4f7.koyeb.app/message-list/',
         { headers: { Authorization: sessionId } }
       );
       const newMessages = response.data;
       if (__DEV__) {
-        console.log("Fetched messages:", newMessages);
+        console.log('Fetched messages:', newMessages);
       }
       if (isMountedRef.current) {
-        // Only update if messages have changed
         const messagesChanged = JSON.stringify(newMessages) !== JSON.stringify(lastMessagesRef.current);
         if (messagesChanged) {
           setMessages(newMessages);
           lastMessagesRef.current = newMessages;
           await cacheMessages(newMessages);
           filterMessages(newMessages, activeTab);
+          // Prefetch profile images
+          newMessages.forEach((msg) => {
+            if (msg.profile_image) {
+              const imageUrl = getFullUrl(msg.profile_image);
+              console.log(`Prefetching profile image for message ${msg.id}:`, imageUrl);
+              Image.prefetch(imageUrl).catch((error) =>
+                console.error(`Prefetch error for message ${msg.id}:`, error)
+              );
+            }
+          });
         }
         lastFetchTimeRef.current = now;
       }
     } catch (error) {
-      console.error("Error fetching messages:", error);
+      console.error('Error fetching messages:', error);
       if (isMountedRef.current) setFetchError(true);
     } finally {
       if (isMountedRef.current) setLoading(false);
@@ -134,14 +138,13 @@ const MessageList = () => {
     }
   }, [sessionId, cacheMessages, activeTab]);
 
-  // Filter messages
   const filterMessages = useCallback((messagesToFilter, tab) => {
     if (!isMountedRef.current) return;
     let filtered = messagesToFilter;
-    if (tab === "Space") {
-      filtered = messagesToFilter.filter((msg) => msg.role === "seller");
-    } else if (tab === "Customers") {
-      filtered = messagesToFilter.filter((msg) => msg.role === "buyer");
+    if (tab === 'Space') {
+      filtered = messagesToFilter.filter((msg) => msg.role === 'seller');
+    } else if (tab === 'Customers') {
+      filtered = messagesToFilter.filter((msg) => msg.role === 'buyer');
     }
     setFilteredMessages(filtered);
     if (__DEV__) {
@@ -149,33 +152,39 @@ const MessageList = () => {
     }
   }, []);
 
-  // Initialize messages on focus
   useFocusEffect(
     useCallback(() => {
       isMountedRef.current = true;
       const initializeMessages = async () => {
         setLoading(true);
-        setMessages([]); // Reset messages
-        setFilteredMessages([]); // Reset filtered messages
-        lastMessagesRef.current = []; // Reset ref
+        setMessages([]);
+        setFilteredMessages([]);
+        lastMessagesRef.current = [];
         try {
-          // Fetch session
           const session = await fetchSessionId();
           if (!session) {
             console.log('No session found, skipping message load');
             setLoading(false);
             return;
           }
-  
-          // Load cached messages only if session is valid
+
           const cachedMessages = await loadCachedMessages();
           if (cachedMessages.length > 0 && isMountedRef.current) {
             setMessages(cachedMessages);
             lastMessagesRef.current = cachedMessages;
             filterMessages(cachedMessages, activeTab);
+            // Prefetch cached images
+            cachedMessages.forEach((msg) => {
+              if (msg.profile_image) {
+                const imageUrl = getFullUrl(msg.profile_image);
+                console.log(`Prefetching cached profile image for message ${msg.id}:`, imageUrl);
+                Image.prefetch(imageUrl).catch((error) =>
+                  console.error(`Prefetch error for cached message ${msg.id}:`, error)
+                );
+              }
+            });
           }
-  
-          // Fetch new messages
+
           const fromConversation = pathname.includes('shop/Conversation') || pathname.includes('shop/StartConversation');
           await fetchMessages(fromConversation);
         } catch (error) {
@@ -192,7 +201,6 @@ const MessageList = () => {
     }, [loadCachedMessages, fetchSessionId, fetchMessages, activeTab, pathname])
   );
 
-  // Handle tab change
   const handleTabChange = useCallback(
     (tab) => {
       setActiveTab(tab);
@@ -201,18 +209,16 @@ const MessageList = () => {
     [messages, filterMessages]
   );
 
-  // Handle pull-to-refresh
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchMessages(true); // Force refresh
+    await fetchMessages(true);
     setRefreshing(false);
   }, [fetchMessages]);
 
-  // Handle navigation to Conversation
   const handleMessageClick = useCallback(
     (message) => {
       router.push({
-        pathname: "shop/Conversation",
+        pathname: 'shop/Conversation',
         params: {
           name: message.name,
           conversation_id: message.conversation_id,
@@ -227,21 +233,19 @@ const MessageList = () => {
     [router, pathname]
   );
 
-  // Render message item
   const renderItem = useCallback(
     ({ item }) => {
       const isUnread = item.is_unread_by_receiver;
       const isDeleted = !item.shop_is_active;
-      const formattedDate = new Date(item.date).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
+      const formattedDate = new Date(item.date).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
       });
-      // Check if last_message indicates a media attachment
-      const hasAttachment = item.last_message?.startsWith("chat_attachments/");
+      const hasAttachment = item.last_message?.startsWith('chat_attachments/');
       const isVideo = hasAttachment && /\.(mp4|mov|avi)$/i.test(item.last_message);
 
       if (__DEV__ && hasAttachment) {
-        console.log("Rendering message item with media:", {
+        console.log('Rendering message item with media:', {
           id: item.id,
           last_message: item.last_message,
           isVideo,
@@ -258,22 +262,31 @@ const MessageList = () => {
           onPress={() => handleMessageClick(item)}
           activeOpacity={0.85}
         >
-          <Image
-            source={{
-              uri:
-                item.profile_image ||
-                "https://via.placeholder.com/58?text=Profile",
-            }}
-            style={[
-              styles.profileImage,
-              isUnread && styles.unreadProfileImage,
-              isDeleted && styles.deletedProfileImage,
-            ]}
-            onError={(e) =>
-              console.error("Image Load Error:", e.nativeEvent.error)
-            }
-            defaultSource={{ uri: "https://via.placeholder.com/58?text=Profile" }}
-          />
+          {item.profile_image ? (
+            <Image
+              source={{ uri: getFullUrl(item.profile_image) }}
+              style={[
+                styles.profileImage,
+                isUnread && styles.unreadProfileImage,
+                isDeleted && styles.deletedProfileImage,
+              ]}
+              onError={(e) =>
+                console.error(`Image load error for message ${item.id}:`, e.nativeEvent.error)
+              }
+            />
+          ) : (
+            <LinearGradient
+              colors={['#E5E7EB', '#D1D5DB']}
+              style={[
+                styles.profileImage,
+                isUnread && styles.unreadProfileImage,
+                isDeleted && styles.deletedProfileImage,
+                { justifyContent: 'center', alignItems: 'center' },
+              ]}
+            >
+              <MaterialIcons name="store" size={30} color="#6B7280" />
+            </LinearGradient>
+          )}
           <View style={styles.textContainer}>
             <View style={styles.messageHeader}>
               <Text
@@ -285,8 +298,8 @@ const MessageList = () => {
                 numberOfLines={1}
                 ellipsizeMode="tail"
               >
-                {item.name || "Unknown"}
-                {isDeleted && " (Deleted)"}
+                {item.name || 'Unknown'}
+                {isDeleted && ' (Deleted)'}
               </Text>
               <Text
                 style={[
@@ -301,22 +314,22 @@ const MessageList = () => {
             <View style={styles.lastMessageContainer}>
               {hasAttachment ? (
                 <Ionicons
-                  name={isVideo ? "videocam-outline" : "image-outline"}
+                  name={isVideo ? 'videocam-outline' : 'image-outline'}
                   size={18}
-                  color={isUnread ? "#007AFF" : isDeleted ? "#D32F2F" : "#444"}
+                  color={isUnread ? '#007AFF' : isDeleted ? '#D32F2F' : '#444'}
                   style={styles.mediaIcon}
                 />
               ) : (
                 <Text
-                  style={[
-                    styles.lastMessage,
-                    isUnread && styles.unreadText,
-                    isDeleted && styles.deletedText,
-                  ]}
+                    style={[
+                      styles.lastMessage,
+                      isUnread && styles.unreadText,
+                      isDeleted && styles.deletedText,
+                    ]}
                   numberOfLines={1}
                   ellipsizeMode="tail"
                 >
-                  {item.last_message || "No message"}
+                  {item.last_message || 'No message'}
                 </Text>
               )}
             </View>
@@ -327,10 +340,9 @@ const MessageList = () => {
     [handleMessageClick]
   );
 
-  // Render navigation bar
   const renderNavBar = useCallback(
     () => {
-      const tabs = ["All", "Space", "Customers"];
+      const tabs = ['All', 'Space', 'Customers'];
       return (
         <View style={styles.navBar}>
           {tabs.map((tab) => (
@@ -360,10 +372,10 @@ const MessageList = () => {
   );
 
   return (
-    <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
+    <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
       <LinearGradient
-        colors={["#3A7BD5", "#3A6073"]}
+        colors={['#3A7BD5', '#3A6073']}
         style={styles.headerContainer}
       >
         <Text style={styles.header}>Messages</Text>
@@ -393,11 +405,11 @@ const MessageList = () => {
       ) : filteredMessages.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Text style={styles.noMessages}>
-            {activeTab === "Space"
-              ? "No shop messages found"
-              : activeTab === "Customers"
-              ? "No customer messages found"
-              : "No messages found"}
+            {activeTab === 'Space'
+              ? 'No shop messages found'
+              : activeTab === 'Customers'
+              ? 'No customer messages found'
+              : 'No messages found'}
           </Text>
           <TouchableOpacity
             style={styles.retryButtonLarge}
@@ -422,14 +434,14 @@ const MessageList = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F7FAFC" },
+  container: { flex: 1, backgroundColor: '#F7FAFC' },
   headerContainer: {
     paddingVertical: 45,
     borderBottomLeftRadius: 35,
     borderBottomRightRadius: 35,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 6,
@@ -437,21 +449,21 @@ const styles = StyleSheet.create({
   },
   header: {
     fontSize: 26,
-    fontWeight: "bold",
-    color: "#FFFFFF",
-    textAlign: "center",
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textAlign: 'center',
   },
   navBar: {
-    flexDirection: "row",
-    justifyContent: "space-around",
+    flexDirection: 'row',
+    justifyContent: 'space-around',
     paddingVertical: 10,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: "#E0E0E0",
+    borderBottomColor: '#E0E0E0',
     marginHorizontal: 16,
     marginTop: 8,
     borderRadius: 12,
-    shadowColor: "#000",
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -460,88 +472,88 @@ const styles = StyleSheet.create({
   navButton: {
     flex: 1,
     paddingVertical: 10,
-    alignItems: "center",
+    alignItems: 'center',
     borderRadius: 8,
   },
-  activeNavButton: { backgroundColor: "#3A7BD5" },
+  activeNavButton: { backgroundColor: '#3A7BD5' },
   navButtonText: {
     fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
+    fontWeight: '600',
+    color: '#333',
   },
-  activeNavButtonText: { color: "#FFFFFF" },
+  activeNavButtonText: { color: '#FFFFFF' },
   statusBar: {
     padding: 10,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
     borderRadius: 12,
     marginHorizontal: 16,
     marginTop: 8,
-    shadowColor: "#000",
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 6,
     elevation: 4,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   errorBar: {
-    backgroundColor: "rgba(211, 47, 47, 0.9)",
-    borderColor: "rgba(211, 47, 47, 0.3)",
+    backgroundColor: 'rgba(211, 47, 47, 0.9)',
+    borderColor: 'rgba(211, 47, 47, 0.3)',
   },
   statusContent: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 4,
     paddingHorizontal: 12,
   },
   statusText: {
-    color: "#333",
+    color: '#333',
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: '700',
     marginLeft: 10,
     marginRight: 12,
   },
   retryButton: {
-    backgroundColor: "#007AFF",
+    backgroundColor: '#007AFF',
     borderRadius: 6,
     paddingVertical: 6,
     paddingHorizontal: 12,
-    shadowColor: "#000",
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 3,
     elevation: 2,
   },
   retryButtonLarge: {
-    backgroundColor: "#007AFF",
+    backgroundColor: '#007AFF',
     borderRadius: 8,
     paddingVertical: 12,
     paddingHorizontal: 20,
     marginTop: 16,
-    shadowColor: "#000",
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 3,
     elevation: 2,
   },
   retryButtonText: {
-    color: "#fff",
+    color: '#fff',
     fontSize: 13,
-    fontWeight: "600",
-    textAlign: "center",
+    fontWeight: '600',
+    textAlign: 'center',
   },
   emptyContainer: {
     flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   noMessages: {
     fontSize: 18,
-    color: "#888",
-    textAlign: "center",
+    color: '#888',
+    textAlign: 'center',
     marginBottom: 10,
   },
   messageList: {
@@ -550,13 +562,13 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   messageItem: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: '#FFFFFF',
     borderRadius: 20,
     padding: 16,
     marginVertical: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    shadowColor: "#000",
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 10,
@@ -564,26 +576,26 @@ const styles = StyleSheet.create({
   },
   unreadMessage: {
     borderWidth: 1,
-    borderColor: "#007AFF",
+    borderColor: '#007AFF',
   },
   deletedMessage: {
-    backgroundColor: "#F5F5F5",
+    backgroundColor: '#F5F5F5',
     borderWidth: 1,
-    borderColor: "#D32F2F",
+    borderColor: '#D32F2F',
   },
-  unreadProfileImage: { borderColor: "#007AFF" },
+  unreadProfileImage: { borderColor: '#007AFF' },
   deletedProfileImage: {
-    borderColor: "#D32F2F",
+    borderColor: '#D32F2F',
     opacity: 0.6,
   },
   unreadText: {
-    fontWeight: "bold",
-    color: "#007AFF",
+    fontWeight: 'bold',
+    color: '#007AFF',
     fontSize: 16,
   },
   deletedText: {
-    color: "#D32F2F",
-    fontStyle: "italic",
+    color: '#D32F2F',
+    fontStyle: 'italic',
   },
   profileImage: {
     width: 58,
@@ -591,8 +603,8 @@ const styles = StyleSheet.create({
     borderRadius: 29,
     marginRight: 14,
     borderWidth: 3,
-    borderColor: "#3A7BD5",
-    shadowColor: "#000",
+    borderColor: '#3A7BD5',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 6,
@@ -600,32 +612,32 @@ const styles = StyleSheet.create({
   },
   textContainer: { flex: 1 },
   messageHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 4,
   },
   name: {
     flex: 1,
     fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
+    fontWeight: '600',
+    color: '#333',
     marginRight: 8,
   },
   date: {
     fontSize: 12,
-    color: "#666",
+    color: '#666',
     minWidth: 60,
-    textAlign: "right",
+    textAlign: 'right',
   },
   lastMessage: {
     fontSize: 15,
-    color: "#444",
+    color: '#444',
     opacity: 0.9,
   },
   lastMessageContainer: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   mediaIcon: {
     marginRight: 8,

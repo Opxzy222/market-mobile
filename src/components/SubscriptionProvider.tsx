@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+// components/SubscriptionProvider.tsx
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface SubscriptionContextType {
@@ -6,7 +7,8 @@ interface SubscriptionContextType {
   subscriptionStatus: string | null;
   loading: boolean;
   userId: number | null;
-  refreshSubscription: () => void; // Function to manually refresh
+  refreshSubscription: () => void;
+  resetSubscription: () => void; // Add resetSubscription
 }
 
 const SubscriptionContext = createContext<SubscriptionContextType>({
@@ -15,6 +17,7 @@ const SubscriptionContext = createContext<SubscriptionContextType>({
   loading: true,
   userId: null,
   refreshSubscription: () => {},
+  resetSubscription: () => {},
 });
 
 const CACHE_KEY = "subscription_cache";
@@ -41,12 +44,16 @@ const SubscriptionProvider = ({ children }) => {
     try {
       const userIdString = await AsyncStorage.getItem("user_id");
       if (!userIdString) {
+        setSubscription(null);
+        setUserId(null);
         setLoading(false);
         return;
       }
 
       const parsedUserId = parseInt(userIdString, 10);
       if (isNaN(parsedUserId)) {
+        setSubscription(null);
+        setUserId(null);
         setLoading(false);
         return;
       }
@@ -56,7 +63,6 @@ const SubscriptionProvider = ({ children }) => {
       const lastRefreshTime = lastRefresh ? parseInt(lastRefresh, 10) : 0;
       const currentTime = Date.now();
 
-      // Check if 10 minutes have passed since last refresh
       if (!forceRefresh && currentTime - lastRefreshTime < REFRESH_INTERVAL) {
         console.log("Using cached subscription data");
         setLoading(false);
@@ -71,8 +77,8 @@ const SubscriptionProvider = ({ children }) => {
 
       if (response.ok && data?.is_active !== undefined) {
         setSubscription(data);
-        await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(data)); // Cache subscription
-        await AsyncStorage.setItem(LAST_REFRESH_KEY, currentTime.toString()); // Update last refresh time
+        await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(data));
+        await AsyncStorage.setItem(LAST_REFRESH_KEY, currentTime.toString());
       } else {
         setSubscription(null);
       }
@@ -83,16 +89,27 @@ const SubscriptionProvider = ({ children }) => {
     }
   };
 
-  // Function to manually refresh the subscription (if 10 minutes have passed)
   const refreshSubscription = async () => {
     setLoading(true);
     await fetchUserIdAndSubscription(true);
   };
 
+  const resetSubscription = useCallback(async () => {
+    try {
+      setSubscription(null);
+      setUserId(null);
+      setLoading(false);
+      await AsyncStorage.multiRemove([CACHE_KEY, LAST_REFRESH_KEY]);
+      console.log("SubscriptionProvider reset: cleared state and cache");
+    } catch (error) {
+      console.error("Error resetting subscription:", error);
+    }
+  }, []);
+
   useEffect(() => {
     loadFromCache();
-    fetchUserIdAndSubscription(); // Fetch only if needed
-  }, []);
+    fetchUserIdAndSubscription();
+  }, [userId]); // Add userId dependency to refetch on userId change
 
   return (
     <SubscriptionContext.Provider
@@ -101,7 +118,8 @@ const SubscriptionProvider = ({ children }) => {
         subscriptionStatus: subscription ? (subscription.is_active ? subscription.plan : "inactive") : null,
         loading,
         userId,
-        refreshSubscription, // Expose function for manual refresh
+        refreshSubscription,
+        resetSubscription,
       }}
     >
       {children}

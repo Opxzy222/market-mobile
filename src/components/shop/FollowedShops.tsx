@@ -7,10 +7,10 @@ import {
   TouchableOpacity,
   FlatList
 } from 'react-native';
-import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, usePathname } from 'expo-router';
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '@expo/vector-icons';
+import { getFullUrl } from '../../utils/imageUtils';
 
 const FollowedShops = ({ shops }) => {
   const [sessionId, setSessionId] = useState(null);
@@ -19,19 +19,22 @@ const FollowedShops = ({ shops }) => {
 
   useEffect(() => {
     const fetchSessionId = async () => {
-      const sessionIdString = await AsyncStorage.getItem("sessionToken");
+      const sessionIdString = await AsyncStorage.getItem('sessionToken');
       setSessionId(sessionIdString);
     };
     fetchSessionId();
   }, []);
 
-  
   const renderShopItem = ({ item }) => (
     <TouchableOpacity
       style={styles.shopCard}
       onPress={() => router.push({ pathname: '/shop/shop-page', params: { shopId: item.id } })}
     >
-      <Image source={{ uri: `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${item.image}` }} style={styles.shopImage} />
+      <Image
+        source={{ uri: getFullUrl(item.image) }}
+        style={styles.shopImage}
+        onError={(e) => console.error(`Image load error for shop ${item.id}:`, e.nativeEvent.error)}
+      />
       <View style={styles.shopInfo}>
         <Text style={styles.shopName}>{item.name}</Text>
       </View>
@@ -43,7 +46,7 @@ const FollowedShops = ({ shops }) => {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Followed Space</Text>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.seeAllContainer}
           onPress={() => router.push({ pathname: '/shop/AllFollowedShops', params: { prevRoute: pathname } })}
         >

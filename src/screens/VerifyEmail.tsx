@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import axios from 'axios';
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 const VerifyEmailScreen = () => {
   const [code, setCode] = useState('');
@@ -83,6 +84,7 @@ const handleResendCode = async () => {
 };
 
   return (
+    <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
     <View style={{ padding: 20 }}>
       <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 10 }}>Enter Verification Code</Text>
       <Text style={{ color: '#666', marginBottom: 20 }}>
@@ -142,6 +144,7 @@ const handleResendCode = async () => {
         </Text>
       </TouchableOpacity>
     </View>
+    </SafeAreaView>
   );
 };
 

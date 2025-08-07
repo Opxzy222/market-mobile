@@ -1,322 +1,399 @@
-import React, { useState, useEffect, useCallback, useMemo, memo, useRef } from "react";
-import { Tabs } from "expo-router";
-import { Ionicons, MaterialIcons, FontAwesome5 } from "@expo/vector-icons";
-import SubscriptionProvider from "@/components/SubscriptionProvider";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as Linking from "expo-linking";
-import { SelectProvider } from "@mobile-reality/react-native-select-pro";
-import { SafeAreaProvider } from "react-native-safe-area-context";
-import { Platform, StyleSheet } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { usePathname } from "expo-router";
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  View,
+  TextInput,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+} from 'react-native';
+import debounce from 'lodash.debounce';
+import { Ionicons } from '@expo/vector-icons';
+import { initializeDatabase, getSuggestions, cacheSuggestions, getSuggestionsCount } from '../storage/storage';
 
-console.log("Skipping database initialization in layout");
+const TOTAL_SUGGESTIONS = 163000; // Total number of suggestions
+const PROCESSING_BATCH_SIZE = 1000; // Batch size for processing suggestions
 
-const linking = {
-  prefixes: [Linking.createURL("/")],
-  config: {
-    screens: {
-      index: "",
-      "(tabs)": {
-        path: "tabs",
-        screens: {
-          shop: "shop",
-          placeholder: "messages",
-          status: "status",
-          myshop: "myshop",
-          account: "account",
-          profile: "profile",
-        },
-      },
-      shop: {
-        path: "shop",
-        screens: {
-          Conversation: "conversation",
-          ShopProfile: "shop-profile",
-          AdminShopPage: "admin-shop-page",
-          AllCategories: "all-categories",
-          AllFollowedShops: "all-followed-shops",
-          AllRecentShops: "all-recent-shops",
-          ChildCategoryList: "child-category-list",
-          CreateShop: "create-shop",
-          CustomerReceipts: "customer-receipts",
-          Details: "details",
-          EditProfile: "edit-profile",
-          GenerateReceipt: "generate-receipt",
-          MessageList: "message-list",
-          ReceiptActions: "receipt-actions",
-          SearchResult: "search-result",
-          ShopProduct: "shop-product",
-          ShopReceipts: "shop-receipts",
-          ShopStatus: "shop-status",
-          Signature: "signature",
-          StartConversation: "start-conversation",
-          SubcategoryList: "subcategory-list",
-          Subscription: "subscription",
-          UpdateProduct: "update-product",
-          WelcomeWorkingHours: "welcome-working-hours",
-          WorkingHours: "working-hours",
-          "shop-page": "shop-page",
-        },
-      },
-      login: "login",
-      signup: "signup",
-      ChangePassword: "change-password",
-      RequestToken: "request-token",
-      ResetPassword: "reset-password",
-      VerifyEmail: "verify-email",
-      ForgotPassword: "forgot-password",
-      EnterOtp: "enter-otp",
-      notFound: "*",
-    },
-  },
-};
+// In-memory cache for suggestions
+const suggestionCache = new Map();
 
-const MemoizedTabs = memo(Tabs);
-
-const RootLayout = () => {
-  const [userId, setUserId] = useState<number | null>(null);
-  const [unreadCount, setUnreadCount] = useState<number>(0);
-  const [socket, setSocket] = useState<WebSocket | null>(null);
-  const insets = useSafeAreaInsets();
-  const reconnectAttemptsRef = useRef(0);
-  const maxReconnectAttempts = 5;
-  const lastUnreadCountRef = useRef(0);
-  const pathname = usePathname();
-
-  // Debug logging for pathname and tab state
-  if (__DEV__) {
-    console.log("RootLayout rendered", { pathname });
-  }
-
-  // Shop is active (shows "Home") on /, /tabs/shop, or /shop/*
-  const isShopActive = pathname === "/" || pathname === "" || pathname === "/index" || pathname === "/tabs/shop" || pathname.startsWith("/shop/");
+const AutocompleteInput = ({
+  value,
+  onChangeText,
+  onSubmit,
+  style,
+  onFocusChange,
+  inputRef,
+  onSuggestionsStateChange,
+  onSearch,
+  loading,
+  onPopulationStateChange,
+}) => {
+  const [state, setState] = useState({
+    suggestions: [],
+    isLoading: false,
+    error: null,
+    isFocused: false,
+    suggestionsHeight: 0,
+    isPopulating: false,
+    progress: 0,
+  });
+  const { suggestions, isLoading, error, isFocused, suggestionsHeight, isPopulating, progress } = state;
+  const scrollViewRef = useRef(null);
+  const textInputRef = useRef(null);
+  const lastProgressRef = useRef(0); // Track last reported progress
 
   useEffect(() => {
-    const fetchUserId = async () => {
+    const init = async () => {
       try {
-        const userIdString = await AsyncStorage.getItem("user_id");
-        if (userIdString) {
-          const parsedId = parseInt(userIdString, 10);
-          if (!isNaN(parsedId)) {
-            setUserId(parsedId);
-          }
+        await initializeDatabase(); // Assumes indexing on 'name' column
+        const count = await getSuggestionsCount();
+        console.log('Suggestions count:', count);
+        if (count < 160000) {
+          console.log('Populating initial suggestions');
+          await populateInitialSuggestions();
+        } else {
+          console.log('Suggestions sufficiently populated, count:', count);
         }
-      } catch (error) {
-        console.error("Error fetching user ID:", error);
+      } catch (err) {
+        console.error('Initialization failed:', err);
+        setState((prev) => ({ ...prev, error: 'Failed to initialize database' }));
+        await populateInitialSuggestions(true);
       }
     };
-    fetchUserId();
+    init();
   }, []);
 
-  const setupWebSocket = useCallback(() => {
-    if (!userId || reconnectAttemptsRef.current >= maxReconnectAttempts) {
-      if (__DEV__) {
-        console.log("Skipping WebSocket: no userId or max reconnects reached");
+  const populateInitialSuggestions = async (forceFetch = false) => {
+    try {
+      const count = await getSuggestionsCount();
+      console.log('Suggestions count:', count);
+      if (!forceFetch && count >= TOTAL_SUGGESTIONS) {
+        console.log('Suggestions sufficiently populated, skipping fetch');
+        return;
       }
-      return;
+
+      setState((prev) => ({ ...prev, isPopulating: true, progress: 0 }));
+      lastProgressRef.current = 0;
+      onPopulationStateChange?.({ isPopulating: true, progress: 0 });
+      console.log('Notified parent: Population started, progress: 0');
+
+      let offset = count;
+      while (offset < TOTAL_SUGGESTIONS) {
+        const response = await fetch(
+          `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/all-suggestions?offset=${offset}&limit=${PROCESSING_BATCH_SIZE}`,
+          {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'User-Agent': 'market-mobile/1.0.0',
+            },
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const batch = data.suggestions
+          .map((item, index) => {
+            const globalIndex = offset + index + 1;
+            const currentProgress = (globalIndex / TOTAL_SUGGESTIONS) * 100;
+            const roundedProgress = Math.min(Math.round(currentProgress * 10) / 10, 99);
+            if (roundedProgress > lastProgressRef.current + 0.099) {
+              // Notify parent first to ensure update is captured
+              onPopulationStateChange?.({ isPopulating: true, progress: roundedProgress });
+              console.log('Notified parent: Population progress:', roundedProgress);
+              setState((prev) => ({ ...prev, progress: roundedProgress }));
+              lastProgressRef.current = roundedProgress;
+            }
+            return item && typeof item.name === 'string' && item.name.trim().length > 0 ? item.name.trim() : null;
+          })
+          .filter((name) => name);
+
+        await cacheSuggestions(batch);
+        console.log(`Cached batch of ${batch.length} suggestions, offset: ${offset}`);
+        offset += batch.length;
+
+        // Yield to prevent UI blocking
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+
+      // Final progress update
+      onPopulationStateChange?.({ isPopulating: true, progress: 100 });
+      console.log('Notified parent: Population progress: 100');
+      setState((prev) => ({ ...prev, progress: 100 }));
+      lastProgressRef.current = 100;
+
+      // Reset state after completion
+      setTimeout(() => {
+        setState((prev) => ({ ...prev, isPopulating: false, progress: 0 }));
+        onPopulationStateChange?.({ isPopulating: false, progress: 0 });
+        lastProgressRef.current = 0;
+        console.log('Notified parent: Population completed, progress: 0');
+      }, 500);
+    } catch (error) {
+      console.error('Error populating suggestions:', error);
+      setState((prev) => ({
+        ...prev,
+        error: `Failed to load suggestions: ${error.message || 'Network error'}`,
+        isPopulating: false,
+        progress: 0,
+      }));
+      onPopulationStateChange?.({ isPopulating: false, progress: 0 });
+      lastProgressRef.current = 0;
+      console.log('Notified parent: Population failed, progress: 0');
     }
+  };
 
-    const ws = new WebSocket(
-      `wss://retail-alvinia-goza-f6a0e4f7.koyeb.app/ws/unread-messages/?userId=${userId}`
-    );
-
-    ws.onopen = () => {
-      if (__DEV__) {
-        console.log("WebSocket connected");
+  const fetchSuggestions = useCallback(
+    debounce(async (input) => {
+      if (!input || input.length < 1) {
+        setState((prev) => ({ ...prev, suggestions: [], isLoading: false, error: null }));
+        return;
       }
-      reconnectAttemptsRef.current = 0;
-      ws.send(JSON.stringify({ action: "get_unread_count" }));
-    };
 
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.unread_count !== undefined && data.unread_count !== lastUnreadCountRef.current) {
-        lastUnreadCountRef.current = data.unread_count;
-        if (__DEV__) {
-          console.log("Updating unread count:", data.unread_count);
+      const cacheKey = input.toLowerCase();
+      if (suggestionCache.has(cacheKey)) {
+        setState((prev) => ({ ...prev, suggestions: suggestionCache.get(cacheKey), isLoading: false, error: null }));
+        return;
+      }
+
+      setState((prev) => ({ ...prev, isLoading: true, error: null }));
+      try {
+        const results = await getSuggestions(input, 20, 0);
+        suggestionCache.set(cacheKey, results);
+        if (suggestionCache.size > 100) {
+          suggestionCache.delete(suggestionCache.keys().next().value);
         }
-        setUnreadCount(data.unread_count);
+        setState((prev) => ({ ...prev, suggestions: results, isLoading: false, error: null }));
+      } catch (error) {
+        console.error('Error fetching suggestions from SQLite:', error);
+        setState((prev) => ({ ...prev, suggestions: [], isLoading: false, error: null })); // No error shown to user
       }
-    };
-
-    ws.onerror = (error) => {
-      console.error("WebSocket error:", error);
-    };
-
-    ws.onclose = () => {
-      if (__DEV__) {
-        console.log("WebSocket closed");
-      }
-      if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-        reconnectAttemptsRef.current += 1;
-        if (__DEV__) {
-          console.log(`Reconnecting WebSocket (attempt ${reconnectAttemptsRef.current})`);
-        }
-        setTimeout(setupWebSocket, 10000);
-      } else {
-        if (__DEV__) {
-          console.log("Max WebSocket reconnect attempts reached");
-        }
-      }
-    };
-
-    setSocket(ws);
-
-    return () => {
-      ws.close();
-    };
-  }, [userId]);
-
-  useEffect(() => {
-    if (userId) {
-      return setupWebSocket();
-    }
-  }, [userId, setupWebSocket]);
-
-  const tabOptions = useMemo(
-    () => ({
-      headerShown: false,
-      tabBarShowLabel: true,
-      tabBarStyle: {
-        backgroundColor: "#E3F2FD",
-        borderTopWidth: 0,
-        elevation: 10,
-        height: 60 + (Platform.OS === "android" ? insets.bottom : 0),
-        paddingBottom: Platform.OS === "android" ? insets.bottom : 0,
-        display: "flex",
-      },
-      tabBarLabelStyle: {
-        fontSize: 12,
-        fontWeight: "600",
-        marginBottom: 5,
-        width: 70,
-      },
-      tabBarItemStyle: {
-        justifyContent: "center",
-        alignItems: "center",
-      },
-      tabBarActiveTintColor: "#007AFF",
-      tabBarInactiveTintColor: "#000000",
-      tabBarLabelPosition: "below-icon",
-    }),
-    [insets.bottom]
+    }, 100), // Reduced debounce delay
+    []
   );
 
+  const handleInput = (text) => {
+    onChangeText(text);
+    fetchSuggestions(text);
+  };
+
+  const handleSelectSuggestion = useCallback(
+    (suggestion) => {
+      onChangeText(suggestion);
+      setState((prev) => ({ ...prev, suggestions: [], suggestionsHeight: 0, isFocused: true }));
+      onSuggestionsStateChange?.({ showSuggestions: false, suggestions: [], suggestionsHeight: 0 });
+      onFocusChange?.(true);
+      onSubmit?.(suggestion);
+      textInputRef.current?.focus();
+    },
+    [onChangeText, onFocusChange, onSubmit, onSuggestionsStateChange]
+  );
+
+  const handleSubmitEditing = () => {
+    if (value) {
+      setState((prev) => ({ ...prev, suggestions: [], suggestionsHeight: 0, isFocused: true }));
+      onSuggestionsStateChange?.({ showSuggestions: false, suggestions: [], suggestionsHeight: 0 });
+      onFocusChange?.(true);
+      onSubmit?.(value);
+    }
+  };
+
+  const handleFocus = () => {
+    setState((prev) => ({ ...prev, isFocused: true }));
+    onFocusChange?.(true);
+    if (value) fetchSuggestions(value);
+  };
+
+  const handleBlur = () => {
+    setState((prev) => ({ ...prev, isFocused: false }));
+    onFocusChange?.(false);
+    setTimeout(() => {
+      if (!state.isFocused) {
+        setState((prev) => ({ ...prev, suggestions: [], suggestionsHeight: 0 }));
+        onSuggestionsStateChange?.({ showSuggestions: false, suggestions: [], suggestionsHeight: 0 });
+      }
+    }, 200);
+  };
+
+  const handleClear = () => {
+    onChangeText('');
+    setState((prev) => ({ ...prev, suggestions: [], suggestionsHeight: 0, isFocused: true }));
+    onSuggestionsStateChange?.({ showSuggestions: false, suggestions: [], suggestionsHeight: 0 });
+    onFocusChange?.(true);
+    textInputRef.current?.focus();
+  };
+
   return (
-    <GestureHandlerRootView style={styles.container}>
-      <SafeAreaProvider>
-        <SelectProvider>
-          <SubscriptionProvider userId={userId}>
-            <MemoizedTabs screenOptions={tabOptions} initialRouteName="index">
-              <Tabs.Screen
-                name="index"
-                options={{
-                  href: null,
+    <View style={[styles.container, style]}>
+      <View style={[styles.inputWrapper, isFocused && styles.inputWrapperFocused, { zIndex: 1000 }]}>
+        <TextInput
+          ref={inputRef || textInputRef}
+          style={styles.input}
+          value={value}
+          onChangeText={handleInput}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          onSubmitEditing={handleSubmitEditing}
+          placeholder="What are you looking for?"
+          placeholderTextColor="#5A5A5A"
+          returnKeyType="search"
+          autoFocus={false}
+          blurOnSubmit={true}
+        />
+        {value && (
+          <TouchableOpacity
+            style={styles.clearButton}
+            onPress={handleClear}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityLabel="Clear input"
+          >
+            <Ionicons name="close-circle" size={20} color="#777" />
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          style={[styles.searchButton, loading && styles.searchButtonDisabled]}
+          onPress={() => onSearch?.(value)}
+          disabled={loading}
+          activeOpacity={0.8}
+          accessibilityLabel="Search"
+        >
+          {loading ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Ionicons name="search" size={20} color="#fff" />
+          )}
+        </TouchableOpacity>
+        {/*{isLoading && <ActivityIndicator size="small" color="#007bff" style={styles.loader} />} */}
+      </View>
+      {error && <Text style={styles.errorText}>{error}</Text>}
+      {suggestions.length > 0 && (
+        <View style={[styles.suggestionsContainer, { height: suggestionsHeight, zIndex: 999 }]}>
+          <ScrollView
+            ref={scrollViewRef}
+            scrollEnabled={true}
+            nestedScrollEnabled={true}
+            showsVerticalScrollIndicator={true}
+            style={styles.suggestionsList}
+            contentContainerStyle={styles.suggestionsContent}
+            keyboardShouldPersistTaps="handled"
+            onScroll={(e) => console.log('Suggestions ScrollView scrolled:', e.nativeEvent.contentOffset)}
+            onContentSizeChange={(w, h) => {
+              console.log(`Suggestions content size: ${w}x${h}`);
+              setState((prev) => ({ ...prev, suggestionsHeight: Math.min(h, 240) }));
+              onSuggestionsStateChange?.({ showSuggestions: true, suggestions, suggestionsHeight: Math.min(h, 240) });
+            }}
+          >
+            {suggestions.map((item, index) => (
+              <TouchableOpacity
+                key={`${item}-${index}`}
+                style={styles.suggestionItem}
+                onPress={() => {
+                  console.log('TouchableOpacity pressed for suggestion:', item);
+                  handleSelectSuggestion(item);
                 }}
-              />
-              <Tabs.Screen
-                name="(tabs)/shop"
-                options={{
-                  title: isShopActive ? "Shop" : "Home",
-                  tabBarIcon: ({ color }) => (
-                    <Ionicons name={isShopActive ? "search-outline" : "home-outline"} color={color} size={22} />
-                  ),
-                  href: isShopActive ? "/tabs/shop" : "/",
-                }}
-              />
-              <Tabs.Screen
-                name="(tabs)/messages"
-                options={{
-                  title: "Messages",
-                  tabBarIcon: ({ color }) => <MaterialIcons name="message" color={color} size={22} />,
-                  tabBarBadge: unreadCount > 0 ? unreadCount : null,
-                  href: "/tabs/messages",
-                }}
-              />
-              <Tabs.Screen
-                name="(tabs)/status"
-                options={{
-                  title: "Status",
-                  tabBarIcon: ({ color }) => <Ionicons name="time-outline" color={color} size={22} />,
-                  href: "/tabs/status",
-                }}
-              />
-              <Tabs.Screen
-                name="(tabs)/myshop"
-                options={{
-                  title: "My Space",
-                  tabBarIcon: ({ color }) => <FontAwesome5 name="store" color={color} size={22} />,
-                  href: "/tabs/myshop",
-                }}
-              />
-              <Tabs.Screen
-                name="(tabs)/account"
-                options={{
-                  title: "Account",
-                  tabBarIcon: ({ color }) => <Ionicons name="card-outline" color={color} size={22} />,
-                  href: "/tabs/account",
-                }}
-              />
-              <Tabs.Screen
-                name="(tabs)/profile"
-                options={{
-                  title: "Profile",
-                  tabBarIcon: ({ color }) => <Ionicons name="person-circle-outline" color={color} size={22} />,
-                  href: "/tabs/profile",
-                }}
-              />
-              {/* Non-tab screens */}
-              <Tabs.Screen name="shop/Conversation" options={{ href: null }} />
-              <Tabs.Screen name="shop/ShopProfile" options={{ href: null }} />
-              <Tabs.Screen name="shop/AdminShopPage" options={{ href: null }} />
-              <Tabs.Screen name="shop/AllCategories" options={{ href: null }} />
-              <Tabs.Screen name="shop/AllFollowedShops" options={{ href: null }} />
-              <Tabs.Screen name="shop/AllRecentShops" options={{ href: null }} />
-              <Tabs.Screen name="shop/ChildCategoryList" options={{ href: null }} />
-              <Tabs.Screen name="shop/CreateShop" options={{ href: null }} />
-              <Tabs.Screen name="shop/CustomerReceipts" options={{ href: null }} />
-              <Tabs.Screen name="shop/Details" options={{ href: null }} />
-              <Tabs.Screen name="shop/EditProfile" options={{ href: null }} />
-              <Tabs.Screen name="shop/GenerateReceipt" options={{ href: null }} />
-              <Tabs.Screen name="shop/MessageList" options={{ href: null }} />
-              <Tabs.Screen name="shop/ReceiptActions" options={{ href: null }} />
-              <Tabs.Screen name="shop/SearchResult" options={{ href: null }} />
-              <Tabs.Screen name="shop/ShopProduct" options={{ href: null }} />
-              <Tabs.Screen name="shop/ShopReceipts" options={{ href: null }} />
-              <Tabs.Screen name="shop/ShopStatus" options={{ href: null }} />
-              <Tabs.Screen name="shop/Signature" options={{ href: null }} />
-              <Tabs.Screen name="shop/StartConversation" options={{ href: null }} />
-              <Tabs.Screen name="shop/SubcategoryList" options={{ href: null }} />
-              <Tabs.Screen name="shop/Subscription" options={{ href: null }} />
-              <Tabs.Screen name="shop/UpdateProduct" options={{ href: null }} />
-              <Tabs.Screen name="shop/WelcomeWorkingHours" options={{ href: null }} />
-              <Tabs.Screen name="shop/WorkingHours" options={{ href: null }} />
-              <Tabs.Screen name="shop/shop-page" options={{ href: null }} />
-              <Tabs.Screen name="homepage" options={{ href: null }} />
-              <Tabs.Screen name="shop" options={{ href: null }} />
-              <Tabs.Screen name="login" options={{ href: null, tabBarStyle: { display: "none" } }} />
-              <Tabs.Screen name="signup" options={{ href: null, tabBarStyle: { display: "none" } }} />
-              <Tabs.Screen name="ChangePassword" options={{ href: null, tabBarStyle: { display: "none" } }} />
-              <Tabs.Screen name="RequestToken" options={{ href: null, tabBarStyle: { display: "none" } }} />
-              <Tabs.Screen name="ResetPassword" options={{ href: null, tabBarStyle: { display: "none" } }} />
-              <Tabs.Screen name="VerifyEmail" options={{ href: null, tabBarStyle: { display: "none" } }} />
-              <Tabs.Screen name="ForgotPassword" options={{ href: null, tabBarStyle: { display: "none" } }} />
-              <Tabs.Screen name="EnterOtp" options={{ href: null, tabBarStyle: { display: "none" } }} />
-              <Tabs.Screen name="+not-found" options={{ href: null, tabBarStyle: { display: "none" } }} />
-            </MemoizedTabs>
-          </SubscriptionProvider>
-        </SelectProvider>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+                activeOpacity={0.7}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                onStartShouldSetResponder={() => true}
+                onResponderRelease={() => console.log('Suggestion touch captured:', item)}
+              >
+                <Text style={styles.suggestionText}>{item}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
+    width: '100%',
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    paddingHorizontal: 10,
+    height: 48,
+  },
+  inputWrapperFocused: {
+    borderColor: '#007bff',
+    shadowColor: '#007bff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 8,
+  },
+  input: {
     flex: 1,
+    height: 48,
+    fontSize: 16,
+    color: '#333',
+    paddingRight: 8,
+  },
+  clearButton: {
+    padding: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  searchButton: {
+    backgroundColor: '#007bff',
+    borderRadius: 6,
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 4,
+  },
+  searchButtonDisabled: {
+    backgroundColor: '#A7C7E7',
+  },
+  loader: {
+    marginLeft: 8,
+  },
+  suggestionsContainer: {
+    marginTop: 4,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 4,
+    overflow: 'visible',
+  },
+  suggestionsList: {
+    maxHeight: 240,
+  },
+  suggestionsContent: {
+    paddingBottom: 8,
+  },
+  suggestionItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    height: 48,
+  },
+  suggestionText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  errorText: {
+    color: '#ff4d4d',
+    fontSize: 12,
+    marginTop: 4,
   },
 });
 
-export default memo(RootLayout);
+export default React.memo(AutocompleteInput);

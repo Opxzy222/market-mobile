@@ -1,74 +1,80 @@
 import React, { useState } from 'react';
-import { View, TouchableOpacity, StyleSheet, Text, Animated } from 'react-native';
-import { useRouter, usePathname } from 'expo-router';
+import { View, TouchableOpacity, StyleSheet, Text, Animated, Platform } from 'react-native';
+import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import GeolocationSearch from './GeolocationSearch';
 import LocationSearch from './LocationSearch';
 import ShopIdSearch from './ShopIdSearch';
 import { LinearGradient } from 'expo-linear-gradient';
 
-export default function SearchBar({ onSuggestionsStateChange, onFocusChange }) {
+const FILTERS = [
+  { key: 'geolocation', label: 'Geolocation' },
+  { key: 'location', label: 'Location' },
+  { key: 'spaceId', label: 'Space ID' },
+];
+
+export default function SearchBar({ onSuggestionsStateChange, onFocusChange, onPopulationStateChange }) {
   const [activeFilter, setActiveFilter] = useState('geolocation');
   const [fadeAnim] = useState(new Animated.Value(1));
   const router = useRouter();
-  const pathname = usePathname();
 
   const handleSearch = async (searchData) => {
     try {
-      // Increment search count
       let count = parseInt(await AsyncStorage.getItem('searchCount') || '0', 10);
       count += 1;
       await AsyncStorage.setItem('searchCount', count.toString());
       console.log('Search count incremented:', count);
-
-      if (router) {
-        router.push({
-          pathname: '/shop/SearchResult',
-          params: { searchResults: JSON.stringify(searchData), prevRoute: pathname },
-        });
-      }
+      return { searchData, router };
     } catch (error) {
       console.error('Error incrementing search count:', error);
     }
   };
 
-  const switchFilter = (filter) => {
-    if (filter !== activeFilter) {
+  const switchFilter = (filterKey) => {
+    if (filterKey !== activeFilter) {
       Animated.sequence([
         Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
         Animated.timing(fadeAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
       ]).start();
-      setActiveFilter(filter);
+      setActiveFilter(filterKey);
     }
   };
 
-  return (
-    <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={[styles.container, { overflow: 'visible' }]}>
-      <View style={styles.filterContainer}>
-        {['geolocation', 'location', 'space ID'].map((filter) => (
-          <TouchableOpacity
-            key={filter}
-            style={[styles.filterButton, activeFilter === filter && styles.activeFilter]}
-            onPress={() => switchFilter(filter)}
-          >
-            <Text style={[styles.filterText, activeFilter === filter && styles.activeFilterText]}>
-              {filter.charAt(0).toUpperCase() + filter.slice(1)}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <Animated.View style={[styles.searchContainer, { opacity: fadeAnim, overflow: 'visible' }]}>
-        {activeFilter === 'geolocation' && (
+  const renderSearchComponent = () => {
+    switch (activeFilter) {
+      case 'geolocation':
+        return (
           <GeolocationSearch
             onSearch={handleSearch}
             onFocusChange={onFocusChange}
             onSuggestionsStateChange={onSuggestionsStateChange}
+            onPopulationStateChange={onPopulationStateChange} // Pass prop
           />
-        )}
-        {activeFilter === 'location' && <LocationSearch onSearch={handleSearch} />}
-        {activeFilter === 'space ID' && <ShopIdSearch onSearch={handleSearch} />}
-      </Animated.View>
+        );
+      case 'location':
+        return <LocationSearch onSearch={handleSearch} />;
+      case 'spaceId':
+        return <ShopIdSearch onSearch={handleSearch} />;
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.container}>
+      <View style={styles.filterContainer}>
+        {FILTERS.map(({ key, label }) => (
+          <TouchableOpacity
+            key={key}
+            style={[styles.filterButton, activeFilter === key && styles.activeFilter]}
+            onPress={() => switchFilter(key)}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.filterText, activeFilter === key && styles.activeFilterText]}>{label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      <Animated.View style={[styles.searchContainer, { opacity: fadeAnim }]}>{renderSearchComponent()}</Animated.View>
     </LinearGradient>
   );
 }
@@ -76,60 +82,60 @@ export default function SearchBar({ onSuggestionsStateChange, onFocusChange }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    borderRadius: 20,
     overflow: 'visible',
   },
   filterContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    flexWrap: 'wrap',
     backgroundColor: '#F2F7FC',
     padding: 10,
-    borderRadius: 25,
-    marginBottom: 15,
+    borderRadius: 30,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
   filterButton: {
     flex: 1,
-    paddingVertical: 14,
+    paddingVertical: Platform.OS === 'ios' ? 12 : 14,
     marginHorizontal: 4,
-    borderRadius: 25,
-    backgroundColor: 'white',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
     alignItems: 'center',
-    justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#A7C7E7',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 3,
   },
   activeFilter: {
-    backgroundColor: '#4785CC',
-    borderColor: '#356EB5',
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-    elevation: 5,
+    backgroundColor: '#2563EB',
+    borderColor: '#1E40AF',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 6,
   },
   filterText: {
-    fontSize: 16,
-    color: '#5A5A5A',
+    fontSize: 15,
+    color: '#4B5563',
     fontWeight: '500',
   },
   activeFilterText: {
-    color: '#fff',
+    color: '#FFFFFF',
     fontWeight: '700',
   },
   searchContainer: {
-    flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    padding: 18,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    padding: 16,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
     shadowRadius: 5,
-    elevation: 3,
-    overflow: 'visible',
+    elevation: 4,
   },
 });

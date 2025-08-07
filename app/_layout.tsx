@@ -1,19 +1,19 @@
-import React, { useState, useCallback, useMemo, memo, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, memo, useRef, useEffect, useContext } from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
-import SubscriptionProvider from '@/components/SubscriptionProvider';
+import SubscriptionProvider, { SubscriptionContext } from '@/components/SubscriptionProvider';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Linking from 'expo-linking';
 import { SelectProvider } from '@mobile-reality/react-native-select-pro';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Platform, StyleSheet, TouchableOpacity, Animated, View, Text } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { usePathname, useRouter, useSegments } from 'expo-router';
 import Toast from 'react-native-toast-message';
 import { setupNotificationHandlers } from '@/components/NotificationHandlers';
-import { initializeApp, getApp } from '@react-native-firebase/app';
+import { initializeApp } from 'firebase/app';
 import { AdProvider } from "@/context/AdContext";
+import { AppResetContext } from '@/context/AppResetContext';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 // Firebase configuration
 const firebaseConfig = {
@@ -25,16 +25,12 @@ const firebaseConfig = {
   appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
 
-// Initialize Firebase for web or if not already initialized
+// Initialize Firebase for mobile
 let app;
 try {
-  app = getApp();
+  app = initializeApp(firebaseConfig);
 } catch (e) {
-  if (Platform.OS === 'web') {
-    app = initializeApp(firebaseConfig);
-  } else {
-    console.warn('Firebase app not initialized. Ensure native configuration files are set up.');
-  }
+  console.warn('Firebase app not initialized. Ensure native configuration files are set up:', e);
 }
 
 const linking = {
@@ -101,19 +97,50 @@ const linking = {
 const MemoizedTabs = memo(Tabs);
 
 const RootLayout = () => {
-  const [userId, setUserId] = useState<number | null>(null);
-  const [unreadCount, setUnreadCount] = useState<number>(0);
-  const [socket, setSocket] = useState<WebSocket | null>(null);
+  const [userId, setUserId] = useState(null); // Removed TypeScript generic to avoid previous error
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [socket, setSocket] = useState(null);
+  const [resetKey, setResetKey] = useState(0);
   const insets = useSafeAreaInsets();
   const reconnectAttemptsRef = useRef(0);
+  const reconnectTimeoutRef = useRef(null); // Added to track reconnection timeouts
   const maxReconnectAttempts = 5;
   const lastUnreadCountRef = useRef(0);
-  const prevActiveTabRef = useRef<string | null>(null);
+  const prevActiveTabRef = useRef(null);
   const pathname = usePathname();
   const router = useRouter();
   const segments = useSegments();
+  const { resetSubscription } = useContext(SubscriptionContext);
 
-  // Animation refs for each tab
+  const resetAppState = useCallback(() => {
+    setUserId(null);
+    setUnreadCount(0);
+    setSocket((prevSocket) => {
+      if (prevSocket) {
+        prevSocket.close();
+      }
+      return null;
+    });
+    reconnectAttemptsRef.current = 0;
+    lastUnreadCountRef.current = 0;
+    prevActiveTabRef.current = null;
+
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+
+    Object.keys(scaleAnims).forEach((key) => {
+      scaleAnims[key].setValue(0.8);
+      opacityAnims[key].setValue(0.6);
+    });
+
+    setResetKey((prev) => prev + 1);
+    resetSubscription();
+    if (__DEV__) console.log('App state reset');
+  }, [resetSubscription]);
+
+  // Animation refs
   const scaleAnims = useRef({
     shop: new Animated.Value(0.8),
     status: new Animated.Value(0.8),
@@ -145,26 +172,55 @@ const RootLayout = () => {
         if (userIdString) {
           const parsedId = parseInt(userIdString, 10);
           if (!isNaN(parsedId)) {
+            if (__DEV__) console.log('Fetched userId:', parsedId);
             setUserId(parsedId);
+          } else {
+            if (__DEV__) console.warn('Invalid userId in AsyncStorage:', userIdString);
+            Toast.show({
+              type: 'error',
+              text1: 'Session Error',
+              text2: 'Please log in again.',
+            });
+            router.replace('/login');
           }
+        } else {
+          if (__DEV__) console.warn('No userId found in AsyncStorage');
+          Toast.show({
+            type: 'error',
+            text1: 'Session Expired',
+            text2: 'Please log in again.',
+          });
+          router.replace('/login');
         }
       } catch (error) {
         console.error('Error fetching user ID:', error);
+        Toast.show({
+          type: 'error',
+          text1: 'Error',
+          text2: 'Failed to load session. Please try again.',
+        });
       }
     };
     fetchUserId();
-  }, []);
+  }, [resetKey, router]);
 
   // Memoize WebSocket setup
   const setupWebSocket = useCallback(() => {
     if (!userId || reconnectAttemptsRef.current >= maxReconnectAttempts) {
       if (__DEV__) {
-        console.log('Skipping WebSocket: no userId or max reconnects reached', {
+        console.log('Skipping WebSocket setup:', {
           userId,
-          attempts: reconnectAttemptsRef.current,
+          reconnectAttempts: reconnectAttemptsRef.current,
+          maxReconnectAttempts,
         });
       }
       return () => {};
+    }
+
+    // Clear any existing reconnection timeout
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
     }
 
     const ws = new WebSocket(
@@ -172,7 +228,7 @@ const RootLayout = () => {
     );
 
     ws.onopen = () => {
-      if (__DEV__) console.log('Messages WebSocket connected');
+      if (__DEV__) console.log('Messages WebSocket connected for userId:', userId);
       reconnectAttemptsRef.current = 0;
       ws.send(JSON.stringify({ action: 'get_unread_count' }));
     };
@@ -180,9 +236,11 @@ const RootLayout = () => {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        if (__DEV__) console.log('Messages WebSocket message received:', data);
         if (data.unread_count !== undefined && data.unread_count !== lastUnreadCountRef.current) {
           lastUnreadCountRef.current = data.unread_count;
           setUnreadCount(data.unread_count);
+          if (__DEV__) console.log('Updated unreadCount:', data.unread_count);
         }
       } catch (error) {
         console.error('WebSocket message parse error:', error);
@@ -190,30 +248,56 @@ const RootLayout = () => {
     };
 
     ws.onerror = (error) => {
-      console.error('Messages WebSocket error:', error);
+      if (__DEV__) console.error('Messages WebSocket error:', error);
     };
 
-    ws.onclose = () => {
-      if (__DEV__) console.log('Messages WebSocket closed');
+    ws.onclose = (event) => {
+      if (__DEV__) console.log('Messages WebSocket closed:', { code: event.code, reason: event.reason });
       if (reconnectAttemptsRef.current < maxReconnectAttempts) {
         reconnectAttemptsRef.current += 1;
-        if (__DEV__) console.log(`Reconnecting Messages WebSocket (attempt ${reconnectAttemptsRef.current})`);
-        setTimeout(setupWebSocket, 10000);
+        const delay = Math.pow(2, reconnectAttemptsRef.current) * 1000; // Exponential backoff: 1s, 2s, 4s, etc.
+        if (__DEV__) console.log(`Reconnecting WebSocket (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts}) in ${delay}ms`);
+        reconnectTimeoutRef.current = setTimeout(setupWebSocket, delay);
+      } else {
+        if (__DEV__) console.log('Max reconnect attempts reached. WebSocket setup stopped.');
       }
     };
 
     setSocket(ws);
 
     return () => {
+      if (__DEV__) console.log('Cleaning up WebSocket for userId:', userId);
       ws.close();
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
     };
   }, [userId]);
 
   // Setup WebSocket when userId changes
   useEffect(() => {
+    if (__DEV__) console.log('WebSocket useEffect triggered:', { userId, socket: socket ? 'Connected' : 'Disconnected' });
     if (userId) {
+      // Close any existing socket before setting up a new one
+      if (socket) {
+        if (__DEV__) console.log('Closing existing WebSocket before new setup');
+        socket.close();
+        setSocket(null);
+      }
       return setupWebSocket();
     }
+    return () => {
+      if (socket) {
+        if (__DEV__) console.log('Cleaning up WebSocket on userId change or unmount');
+        socket.close();
+        setSocket(null);
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+    };
   }, [userId, setupWebSocket]);
 
   // Memoize isShopActive and activeTab
@@ -268,7 +352,7 @@ const RootLayout = () => {
           <TouchableOpacity
             {...props}
             style={styles.tabItem}
-            onPress={() => router.push('(tabs)/status')}
+            onPress={() => router.replace('(tabs)/status')}
           >
             <View style={styles.iconContainer}>
               <Animated.View
@@ -297,7 +381,7 @@ const RootLayout = () => {
           <TouchableOpacity
             {...props}
             style={styles.tabItem}
-            onPress={() => router.push('(tabs)/messages')}
+            onPress={() => router.replace('(tabs)/messages')}
           >
             <View style={styles.iconContainer}>
               <Animated.View
@@ -331,7 +415,7 @@ const RootLayout = () => {
           <TouchableOpacity
             {...props}
             style={styles.tabItem}
-            onPress={() => router.push('(tabs)/myshop')}
+            onPress={() => router.replace('(tabs)/myshop')}
           >
             <View style={styles.iconContainer}>
               <Animated.View
@@ -360,7 +444,7 @@ const RootLayout = () => {
           <TouchableOpacity
             {...props}
             style={styles.tabItem}
-            onPress={() => router.push('(tabs)/account')}
+            onPress={() => router.replace('(tabs)/account')}
           >
             <View style={styles.iconContainer}>
               <Animated.View
@@ -389,7 +473,7 @@ const RootLayout = () => {
           <TouchableOpacity
             {...props}
             style={styles.tabItem}
-            onPress={() => router.push('(tabs)/profile')}
+            onPress={() => router.replace('(tabs)/profile')}
           >
             <View style={styles.iconContainer}>
               <Animated.View
@@ -424,7 +508,7 @@ const RootLayout = () => {
         <TouchableOpacity
           {...props}
           style={styles.tabItem}
-          onPress={() => router.push(isShopActive ? '(tabs)/shop' : '/')}
+          onPress={() => router.replace(isShopActive ? '(tabs)/shop' : '/')}
         >
           <Animated.View
             style={[
@@ -503,7 +587,7 @@ const RootLayout = () => {
     [insets.bottom]
   );
 
-  // Memoize screen options with status before messages
+  // Memoize screen options
   const screenOptions = useMemo(
     () => [
       { name: 'index', options: { href: null, tabBarStyle: { display: 'none' } } },
@@ -617,7 +701,6 @@ const RootLayout = () => {
           tabBarButton: tabButtons.profile,
         },
       },
-      // Non-tab screens
       ...[
         'shop',
         'login',
@@ -630,6 +713,9 @@ const RootLayout = () => {
         'EnterOtp',
         '+not-found',
         'homepage',
+        'PhoneVerification',
+        'OTPVerification',
+        'VerificationStatus'
       ].map((name) => ({
         name,
         options: {
@@ -644,7 +730,10 @@ const RootLayout = () => {
             name === 'VerifyEmail' ||
             name === 'ForgotPassword' ||
             name === 'EnterOtp' ||
-            name === '+not-found'
+            name === '+not-found' ||
+            name === 'PhoneVerification' ||
+            name === 'OTPVerification' ||
+            name === 'VerificationStatus'
               ? { display: 'none' }
               : undefined,
         },
@@ -654,17 +743,19 @@ const RootLayout = () => {
   );
 
   return (
-    <GestureHandlerRootView style={styles.container}>
+    <GestureHandlerRootView style={styles.container} key={resetKey}>
       <SafeAreaProvider>
         <SelectProvider>
           <SubscriptionProvider userId={userId}>
             <AdProvider>
-              <MemoizedTabs screenOptions={tabOptions}>
-                {screenOptions.map(({ name, options }) => (
-                  <Tabs.Screen key={name} name={name} options={options} />
-                ))}
-              </MemoizedTabs>
-              <Toast position="top" topOffset={50} visibilityTime={7000} />
+              <AppResetContext.Provider value={{ resetAppState }}>
+                <MemoizedTabs screenOptions={tabOptions}>
+                  {screenOptions.map(({ name, options }) => (
+                    <Tabs.Screen key={name} name={name} options={options} />
+                  ))}
+                </MemoizedTabs>
+                <Toast position="top" topOffset={50} visibilityTime={7000} />
+              </AppResetContext.Provider>
             </AdProvider>
           </SubscriptionProvider>
         </SelectProvider>

@@ -148,10 +148,10 @@ const Homepage = () => {
 
   const handleExplorePress = useCallback(() => {
     if (!sessionToken) {
-      router.push("/login");
+      router.replace("/login");
       return;
     }
-    router.push("/(tabs)/shop");
+    router.replace("/(tabs)/shop");
   }, [sessionToken, router]);
 
   const handleGetStarted = useCallback(() => {
@@ -211,7 +211,7 @@ const Homepage = () => {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
-      <StatusBar barStyle={isDarkMode ? "light-content" : "dark-content"} backgroundColor='#2563EB' />
+      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
           <View style={styles.headerBrand}>
@@ -228,7 +228,7 @@ const Homepage = () => {
         <View style={styles.heroSection}>
           <Animated.View style={[styles.heroImageContainer, heroImageAnimatedStyle]}>
             <Image
-              source={require("../../assets/images/homeIcon.png")}
+              source={require("../../assets/images/homestart.jpg")}
               style={styles.heroImage}
               contentFit="cover"
               cachePolicy="memory-disk"

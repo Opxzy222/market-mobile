@@ -71,13 +71,14 @@ async function login(email, password) {
     });
 
     if (response.data.message === "login successful") {
-      const { user_id, session_id, user_name, userId, userVerified } = response.data;
+      const { user_id, session_id, user_name, userId, userVerified, phoneVerified } = response.data;
       console.log("Login response user_id:", user_id);
       await AsyncStorage.setItem("sessionToken", session_id);
       await AsyncStorage.setItem("user_id", user_id.toString());
       await AsyncStorage.setItem("userId", userId);
       await AsyncStorage.setItem("user_name", user_name);
       await AsyncStorage.setItem("user_verified", JSON.stringify(userVerified));
+      await AsyncStorage.setItem("phone_verified", JSON.stringify(phoneVerified));
       console.log("userVerified:", userVerified);
       return { id: user_id, name: user_name };
     }
@@ -137,7 +138,7 @@ const SignIn = () => {
       await AsyncStorage.setItem("userSession", JSON.stringify(user));
       Alert.alert("Welcome", `Logged in as ${user.name}`);
       console.log("Navigating to homepage");
-      router.push("homepage");
+      router.replace("homepage");
     } catch (error) {
       console.error("Login error:", error.message);
       setErrorMessage(error.message);

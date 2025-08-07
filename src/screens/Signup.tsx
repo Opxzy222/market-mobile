@@ -8,7 +8,9 @@ import {
   Dimensions,
   Platform,
   ActivityIndicator,
-  KeyboardAvoidingView, ScrollView
+  KeyboardAvoidingView,
+  ScrollView,
+  Alert, // Added Alert import
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -23,16 +25,16 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 import { Image } from "expo-image";
+import AsyncStorage from "@react-native-async-storage/async-storage"; // Added for session token
 
 const { width } = Dimensions.get("window");
 
 const API_URL = "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/complete-registration/";
 
-// Constants for consistent theming (aligned with SignIn and Homepage)
 const COLORS = {
   primary: "#1E3A8A",
   accent: "#FCD34D",
-  background: "#f7f8fc", // Kept original background color
+  background: "#f7f8fc",
   cardBackground: "#FFFFFF",
   textPrimary: "#111827",
   textSecondary: "#6B7280",
@@ -63,9 +65,24 @@ const SignUp = () => {
   const [secureConfirmText, setSecureConfirmText] = useState(true);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [sessionId, setSessionId] = useState(null); // Added for session token
   const router = useRouter();
   const params = useLocalSearchParams();
   const { email } = params;
+
+  // Fetch session token
+  React.useEffect(() => {
+    const fetchSessionId = async () => {
+      try {
+        const sessionIdString = await AsyncStorage.getItem("sessionToken");
+        setSessionId(sessionIdString);
+        console.log("Session ID fetched:", sessionIdString);
+      } catch (err) {
+        console.error("Error fetching session ID:", err);
+      }
+    };
+    fetchSessionId();
+  }, []);
 
   // Animation values
   const buttonScale = useSharedValue(1);
@@ -133,23 +150,28 @@ const SignUp = () => {
       const response = await axios.post(API_URL, formData, {
         headers: {
           "Content-Type": "multipart/form-data",
+          ...(sessionId ? { Authorization: sessionId } : {}), // Include session token if available
         },
       });
 
-      if (response.data.message === "Registration successful") {
+      console.log("Sign-up response:", response.data); // Log response for debugging
+
+      // Updated to match backend response
+      if (response.status === 201 && response.data.message.includes("Registration successfull")) {
         setErrorMessage("");
-        Alert.alert("Account Created Successfully ✅");
+        Alert.alert("Success", "Account Created Successfully ✅");
         router.push("/login");
       } else {
         setErrorMessage(response.data.message || "Sign-up failed");
       }
     } catch (error) {
+      console.error("Sign-up error:", error.response?.data || error.message);
       const errMsg = error.response?.data?.error || "An error occurred. Please try again.";
       setErrorMessage(errMsg);
     } finally {
       setLoading(false);
     }
-  }, [email, firstName, lastName, password, confirmPassword, loading, router]);
+  }, [email, firstName, lastName, password, confirmPassword, loading, router, sessionId]);
 
   const handleButtonPressIn = () => {
     buttonScale.value = withSpring(0.95, { stiffness: 400, damping: 20 });
@@ -180,7 +202,7 @@ const SignUp = () => {
         >
           <Animated.View style={[styles.logoContainer, logoAnimatedStyle]}>
             <Image
-              source={require("../../assets/images/icon1.png")} // Fixed syntax
+              source={require("../../assets/images/icon1.png")}
               style={styles.image}
               contentFit="contain"
               accessibilityLabel="Gogo Marketplace Logo"
@@ -381,7 +403,7 @@ const SignUp = () => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: COLORS.background, // #f7f8fc
+    backgroundColor: COLORS.background,
   },
   container: {
     flexGrow: 1,

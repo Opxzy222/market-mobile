@@ -1,133 +1,392 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, TouchableOpacity, StyleSheet, Text, Alert, ActivityIndicator } from 'react-native';
-import axios from 'axios';
-import * as Location from 'expo-location';
-import AutocompleteInput from '../AutocompleteInput';
-import { LinearGradient } from 'expo-linear-gradient';
+import {
+  View,
+  TextInput,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+} from 'react-native';
+import debounce from 'lodash.debounce';
+import { Ionicons } from '@expo/vector-icons';
+import { initializeDatabase, getSuggestions, cacheSuggestions, getSuggestionsCount } from '../storage/storage';
 
-export default function GeolocationSearch({ onSearch, onFocusChange, onSuggestionsStateChange }) {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const inputRef = useRef(null);
+const TOTAL_SUGGESTIONS = 163000; // Total number of suggestions
+const PROCESSING_BATCH_SIZE = 1000; // Batch size for processing suggestions
 
-  const handleSearch = useCallback(
-    async (query) => {
-      setLoading(true);
-      setError(null);
+// In-memory cache for suggestions
+const suggestionCache = new Map();
+
+const AutocompleteInput = ({
+  value,
+  onChangeText,
+  onSubmit,
+  style,
+  onFocusChange,
+  inputRef,
+  onSuggestionsStateChange,
+  onSearch,
+  loading,
+  onPopulationStateChange,
+}) => {
+  const [state, setState] = useState({
+    suggestions: [],
+    isLoading: false,
+    error: null,
+    isFocused: false,
+    suggestionsHeight: 0,
+    isPopulating: false,
+    progress: 0,
+  });
+  const { suggestions, isLoading, error, isFocused, suggestionsHeight, isPopulating, progress } = state;
+  const scrollViewRef = useRef(null);
+  const textInputRef = useRef(null);
+  const lastProgressRef = useRef(0); // Track last reported progress
+
+  useEffect(() => {
+    const init = async () => {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          setError('Location permission denied');
-          return;
+        await initializeDatabase(); // Assumes indexing on 'name' column
+        const count = await getSuggestionsCount();
+        console.log('Suggestions count:', count);
+        if (count < 160000) {
+          console.log('Populating initial suggestions');
+          await populateInitialSuggestions();
+        } else {
+          console.log('Suggestions sufficiently populated, count:', count);
         }
-
-        const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-        const { latitude, longitude } = location.coords;
-
-        const response = await axios.get('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop-product-search/', {
-          params: { input: query, lat: latitude, lon: longitude },
-        });
-
-        if (response.data.error) {
-          Alert.alert('Error', response.data.error);
-          return;
-        }
-
-        if (response.data.shops.length === 0) {
-          Alert.alert('No Results', 'No shops found for your search.');
-        }
-
-        onSearch(response.data.shops);
       } catch (err) {
-        console.error('Error details:', err.response?.data, err.message);
-        setError('Error fetching data. Please check your connection.');
-      } finally {
-        setLoading(false);
+        console.error('Initialization failed:', err);
+        setState((prev) => ({ ...prev, error: 'Failed to initialize database' }));
+        await populateInitialSuggestions(true);
       }
-    },
-    [onSearch]
+    };
+    init();
+  }, []);
+
+  const populateInitialSuggestions = async (forceFetch = false) => {
+    try {
+      const count = await getSuggestionsCount();
+      console.log('Suggestions count:', count);
+      if (!forceFetch && count >= TOTAL_SUGGESTIONS) {
+        console.log('Suggestions sufficiently populated, skipping fetch');
+        return;
+      }
+
+      setState((prev) => ({ ...prev, isPopulating: true, progress: 0 }));
+      lastProgressRef.current = 0;
+      onPopulationStateChange?.({ isPopulating: true, progress: 0 });
+
+      let offset = count;
+      while (offset < TOTAL_SUGGESTIONS) {
+        const response = await fetch(
+          `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/all-suggestions?offset=${offset}&limit=${PROCESSING_BATCH_SIZE}`,
+          {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'User-Agent': 'market-mobile/1.0.0',
+            },
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const batch = data.suggestions
+          .map((item, index) => {
+            const globalIndex = offset + index + 1;
+            const currentProgress = (globalIndex / TOTAL_SUGGESTIONS) * 100;
+            const roundedProgress = Math.min(Math.round(currentProgress * 10) / 10, 99);
+            if (roundedProgress > lastProgressRef.current + 0.099) {
+              setState((prev) => ({ ...prev, progress: roundedProgress }));
+              onPopulationStateChange?.({ isPopulating: true, progress: roundedProgress });
+              lastProgressRef.current = roundedProgress;
+              console.log('Population state changed:', { isPopulating: true, progress: roundedProgress });
+            }
+            return item && typeof item.name === 'string' && item.name.trim().length > 0 ? item.name.trim() : null;
+          })
+          .filter((name) => name);
+
+        await cacheSuggestions(batch);
+        console.log(`Cached batch of ${batch.length} suggestions, offset: ${offset}`);
+        offset += batch.length;
+
+        // Yield to prevent UI blocking
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+
+      setState((prev) => ({ ...prev, progress: 100 }));
+      onPopulationStateChange?.({ isPopulating: true, progress: 100 });
+      lastProgressRef.current = 100;
+
+      setTimeout(() => {
+        setState((prev) => ({ ...prev, isPopulating: false, progress: 0 }));
+        lastProgressRef.current = 0;
+        onPopulationStateChange?.({ isPopulating: false, progress: 0 });
+      }, 500);
+    } catch (error) {
+      console.error('Error populating suggestions:', error);
+      setState((prev) => ({
+        ...prev,
+        error: `Failed to load suggestions: ${error.message || 'Network error'}`,
+        isPopulating: false,
+        progress: 0,
+      }));
+      lastProgressRef.current = 0;
+      onPopulationStateChange?.({ isPopulating: false, progress: 0 });
+    }
+  };
+
+  const fetchSuggestions = useCallback(
+    debounce(async (input) => {
+      if (!input || input.length < 1) {
+        setState((prev) => ({ ...prev, suggestions: [], isLoading: false, error: null }));
+        return;
+      }
+
+      const cacheKey = input.toLowerCase();
+      if (suggestionCache.has(cacheKey)) {
+        setState((prev) => ({ ...prev, suggestions: suggestionCache.get(cacheKey), isLoading: false, error: null }));
+        return;
+      }
+
+      setState((prev) => ({ ...prev, isLoading: true, error: null }));
+      try {
+        const results = await getSuggestions(input, 20, 0);
+        suggestionCache.set(cacheKey, results);
+        if (suggestionCache.size > 100) {
+          suggestionCache.delete(suggestionCache.keys().next().value);
+        }
+        setState((prev) => ({ ...prev, suggestions: results, isLoading: false, error: null }));
+      } catch (error) {
+        console.error('Error fetching suggestions from SQLite:', error);
+        setState((prev) => ({ ...prev, suggestions: [], isLoading: false, error: null })); // No error shown to user
+      }
+    }, 100), // Reduced debounce delay
+    []
   );
+
+  const handleInput = (text) => {
+    onChangeText(text);
+    fetchSuggestions(text);
+  };
+
+  const handleSelectSuggestion = useCallback(
+    (suggestion) => {
+      onChangeText(suggestion);
+      setState((prev) => ({ ...prev, suggestions: [], suggestionsHeight: 0, isFocused: true }));
+      onSuggestionsStateChange?.({ showSuggestions: false, suggestions: [], suggestionsHeight: 0 });
+      onFocusChange?.(true);
+      onSubmit?.(suggestion);
+      textInputRef.current?.focus();
+    },
+    [onChangeText, onFocusChange, onSubmit, onSuggestionsStateChange]
+  );
+
+  const handleSubmitEditing = () => {
+    if (value) {
+      setState((prev) => ({ ...prev, suggestions: [], suggestionsHeight: 0, isFocused: true }));
+      onSuggestionsStateChange?.({ showSuggestions: false, suggestions: [], suggestionsHeight: 0 });
+      onFocusChange?.(true);
+      onSubmit?.(value);
+    }
+  };
+
+  const handleFocus = () => {
+    setState((prev) => ({ ...prev, isFocused: true }));
+    onFocusChange?.(true);
+    if (value) fetchSuggestions(value);
+  };
+
+  const handleBlur = () => {
+    setState((prev) => ({ ...prev, isFocused: false }));
+    onFocusChange?.(false);
+    setTimeout(() => {
+      if (!state.isFocused) {
+        setState((prev) => ({ ...prev, suggestions: [], suggestionsHeight: 0 }));
+        onSuggestionsStateChange?.({ showSuggestions: false, suggestions: [], suggestionsHeight: 0 });
+      }
+    }, 200);
+  };
+
+  const handleClear = () => {
+    onChangeText('');
+    setState((prev) => ({ ...prev, suggestions: [], suggestionsHeight: 0, isFocused: true }));
+    onSuggestionsStateChange?.({ showSuggestions: false, suggestions: [], suggestionsHeight: 0 });
+    onFocusChange?.(true);
+    textInputRef.current?.focus();
+  };
 
   return (
-    <View
-      style={styles.container}
-      onStartShouldSetResponder={() => true}
-      onResponderRelease={() => console.log('GeolocationSearch touch captured')}
-    >
-      <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.gradient}>
-        <View style={styles.card}>
-          {error && <Text style={styles.error}>{error}</Text>}
-          <AutocompleteInput
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onSubmit={handleSearch}
-            style={styles.input}
-            onFocusChange={onFocusChange}
-            inputRef={inputRef}
-            onSuggestionsStateChange={onSuggestionsStateChange}
-          />
+    <View style={[styles.container, style]}>
+      <View style={[styles.inputWrapper, isFocused && styles.inputWrapperFocused, { zIndex: 1000 }]}>
+        <TextInput
+          ref={inputRef || textInputRef}
+          style={styles.input}
+          value={value}
+          onChangeText={handleInput}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          onSubmitEditing={handleSubmitEditing}
+          placeholder="What are you looking for?"
+          placeholderTextColor="#5A5A5A"
+          returnKeyType="search"
+          autoFocus={false}
+          blurOnSubmit={true}
+        />
+        {value && (
           <TouchableOpacity
-            style={[styles.searchButton, loading && styles.searchButtonDisabled]}
-            onPress={() => handleSearch(searchQuery)}
-            disabled={loading}
-            activeOpacity={0.8}
+            style={styles.clearButton}
+            onPress={handleClear}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityLabel="Clear input"
           >
-            {loading ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Text style={styles.searchButtonText}>Search</Text>
-            )}
+            <Ionicons name="close-circle" size={20} color="#777" />
           </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          style={[styles.searchButton, loading && styles.searchButtonDisabled]}
+          onPress={() => onSearch?.(value)}
+          disabled={loading}
+          activeOpacity={0.8}
+          accessibilityLabel="Search"
+        >
+          {loading ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Ionicons name="search" size={20} color="#fff" />
+          )}
+        </TouchableOpacity>
+        {/*{isLoading && <ActivityIndicator size="small" color="#007bff" style={styles.loader} />} */}
+      </View>
+      {error && <Text style={styles.errorText}>{error}</Text>}
+      {suggestions.length > 0 && (
+        <View style={[styles.suggestionsContainer, { height: suggestionsHeight, zIndex: 999 }]}>
+          <ScrollView
+            ref={scrollViewRef}
+            scrollEnabled={true}
+            nestedScrollEnabled={true}
+            showsVerticalScrollIndicator={true}
+            style={styles.suggestionsList}
+            contentContainerStyle={styles.suggestionsContent}
+            keyboardShouldPersistTaps="handled"
+            onScroll={(e) => console.log('Suggestions ScrollView scrolled:', e.nativeEvent.contentOffset)}
+            onContentSizeChange={(w, h) => {
+              console.log(`Suggestions content size: ${w}x${h}`);
+              setState((prev) => ({ ...prev, suggestionsHeight: Math.min(h, 240) }));
+              onSuggestionsStateChange?.({ showSuggestions: true, suggestions, suggestionsHeight: Math.min(h, 240) });
+            }}
+          >
+            {suggestions.map((item, index) => (
+              <TouchableOpacity
+                key={`${item}-${index}`}
+                style={styles.suggestionItem}
+                onPress={() => {
+                  console.log('TouchableOpacity pressed for suggestion:', item);
+                  handleSelectSuggestion(item);
+                }}
+                activeOpacity={0.7}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                onStartShouldSetResponder={() => true}
+                onResponderRelease={() => console.log('Suggestion touch captured:', item)}
+              >
+                <Text style={styles.suggestionText}>{item}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
         </View>
-      </LinearGradient>
+      )}
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-  },
-  gradient: {
-    flex: 1,
-    padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 20,
     width: '100%',
-    maxWidth: 400,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    paddingHorizontal: 10,
+    height: 48,
+  },
+  inputWrapperFocused: {
+    borderColor: '#007bff',
+    shadowColor: '#007bff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 8,
+  },
+  input: {
+    flex: 1,
+    height: 48,
+    fontSize: 16,
+    color: '#333',
+    paddingRight: 8,
+  },
+  clearButton: {
+    padding: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  searchButton: {
+    backgroundColor: '#007bff',
+    borderRadius: 6,
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 4,
+  },
+  searchButtonDisabled: {
+    backgroundColor: '#A7C7E7',
+  },
+  loader: {
+    marginLeft: 8,
+  },
+  suggestionsContainer: {
+    marginTop: 4,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 5,
     elevation: 4,
+    overflow: 'visible',
   },
-  input: {
-    marginBottom: 12,
+  suggestionsList: {
+    maxHeight: 240,
   },
-  searchButton: {
-    backgroundColor: '#007bff',
+  suggestionsContent: {
+    paddingBottom: 8,
+  },
+  suggestionItem: {
     paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    height: 48,
   },
-  searchButtonDisabled: {
-    backgroundColor: '#A7C7E7',
-  },
-  searchButtonText: {
-    color: '#fff',
+  suggestionText: {
     fontSize: 16,
-    fontWeight: 'bold',
+    color: '#333',
   },
-  error: {
-    color: 'red',
+  errorText: {
+    color: '#ff4d4d',
     fontSize: 12,
-    marginBottom: 8,
-    textAlign: 'center',
+    marginTop: 4,
   },
 });
+
+export default React.memo(AutocompleteInput);

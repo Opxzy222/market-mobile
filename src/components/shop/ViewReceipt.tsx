@@ -137,15 +137,15 @@ const ViewReceiptPDF = ({ receipt }) => {
       <View style={styles.buttonContainer}>
         <Button
           mode="outlined"
-          icon="image"
+          icon="eye"
           onPress={viewReceiptAsImages}
           disabled={!images.length}
           style={styles.button}
           labelStyle={styles.buttonLabel}
         >
-          Images
+          View
         </Button>
-        <Button
+        {/*<Button
           mode="outlined"
           icon="eye"
           onPress={viewReceiptExternally}
@@ -154,7 +154,7 @@ const ViewReceiptPDF = ({ receipt }) => {
           labelStyle={styles.buttonLabel}
         >
           PDF
-        </Button>
+        </Button> */}
       </View>
 
       {/* Modal for displaying images */}

@@ -461,7 +461,7 @@ const ShopPostsScreen = () => {
         <StatusBar barStyle="light-content" backgroundColor='#2563EB' translucent={true} />
         <View style={styles.header}>
           <TouchableOpacity
-            onPress={() => router.navigate('(tabs)/status')}
+            onPress={() => router.navigate('(tabs)/myshop')}
             style={styles.backButton}
           >
             <Ionicons name="arrow-back" size={24} color="#fff" />

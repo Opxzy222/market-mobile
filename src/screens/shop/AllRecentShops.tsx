@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  Image,
-  TouchableOpacity,
-  ActivityIndicator, StatusBar
+ View,
+ Text,
+ StyleSheet,
+ FlatList,
+ Image,
+ TouchableOpacity,
+ ActivityIndicator,
+ StatusBar,
 } from "react-native";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -14,298 +15,320 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import Animated, { FadeInUp } from "react-native-reanimated";
+import Animated, { FadeInUp, ZoomIn } from "react-native-reanimated";
+import { getFullUrl } from "../../utils/imageUtils"; // Import the utility
 
-const AllRecentlyVisitedShops = () => {
-  const [shops, setShops] = useState([]);
-  const [sessionId, setSessionId] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const router = useRouter();
-  const params = useLocalSearchParams();
-  const { prevRoute } = params;
+export default function AllRecentlyVisitedShops() {
+ const [shops, setShops] = useState([]);
+ const [sessionId, setSessionId] = useState(null);
+ const [loading, setLoading] = useState(true);
+ const router = useRouter();
+ const params = useLocalSearchParams();
+ const { prevRoute } = params;
 
-  useEffect(() => {
-    const fetchUserId = async () => {
-      const sessionIdString = await AsyncStorage.getItem("sessionToken");
-      setSessionId(sessionIdString);
-    };
+ useEffect(() => {
+ const fetchUserId = async () => {
+ const sessionIdString = await AsyncStorage.getItem("sessionToken");
+ setSessionId(sessionIdString);
+ };
 
-    fetchUserId();
-  }, []);
+ fetchUserId();
+ }, []);
 
-  useEffect(() => {
-    if (sessionId) {
-      const fetchRecentlyVisitedShops = async () => {
-        try {
-          const response = await axios.get("https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/all-recently-visited/", {
-            headers: {
-              Authorization: sessionId,
-            },
-          });
-          setShops(response.data.recently_visited_shops);
-        } catch (error) {
-          console.error("Error fetching recently visited shops:", error);
-        } finally {
-          setLoading(false);
-        }
-      };
+ useEffect(() => {
+ if (sessionId) {
+ const fetchRecentlyVisitedShops = async () => {
+ try {
+ const response = await axios.get(
+ "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/all-recently-visited/",
+ {
+ headers: {
+ Authorization: sessionId,
+ },
+ }
+ );
+ const shopsData = response.data.recently_visited_shops;
+ setShops(shopsData);
+ // Prefetch images
+ shopsData.forEach((shop) => {
+ if (shop.image) {
+ Image.prefetch(getFullUrl(shop.image));
+ }
+ });
+ } catch (error) {
+ console.error("Error fetching recently visited shops:", error);
+ } finally {
+ setLoading(false);
+ }
+ };
 
-      fetchRecentlyVisitedShops();
-    }
-  }, [sessionId]);
+ fetchRecentlyVisitedShops();
+ }
+ }, [sessionId]);
 
-  const renderShopCard = ({ item }) => (
-    <Animated.View entering={FadeInUp}>
-      <View style={styles.shopCard}>
-        <View style={styles.shopHeader}>
-          {item.image ? (
-            <View style={styles.imageContainer}>
-              <Image
-                source={{ uri: `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${item.image}` }}
-                style={styles.shopImage}
-              />
-              <LinearGradient
-                colors={["transparent", "rgba(0,0,0,0.3)"]}
-                style={styles.imageGradient}
-              />
-            </View>
-          ) : (
-            <View style={[styles.shopImage, styles.placeholderImage]}>
-              <MaterialIcons name="store" size={40} color="#999" />
-            </View>
-          )}
-          <View style={styles.shopInfo}>
-            <Text style={styles.shopName}>{item.name}</Text>
-            <Text style={styles.shopAddress}>{item.address}</Text>
-            <Text style={styles.visitedAt}>
-              Visited: {new Date(item.visited_at).toLocaleDateString()}
-            </Text>
-          </View>
-        </View>
+ const renderShopCard = ({ item, index }) => (
+ <Animated.View entering={FadeInUp.delay(index * 100).duration(300)}>
+ <TouchableOpacity
+ style={styles.shopCard}
+ activeOpacity={0.9}
+ onPress={() =>
+ router.push({ pathname: "/shop/shop-page", params: { shopId: item.id } })
+ }
+ >
+ <View style={styles.imageContainer}>
+ {item.image ? (
+ <Image
+ source={{ uri: getFullUrl(item.image) }} // Use getFullUrl
+ style={styles.shopImage}
+ resizeMode="cover"
+ onError={(e) => console.error(`Image load error for shop ${item.id}:`, e.nativeEvent.error)} // Add error handling
+ />
+ ) : (
+ <LinearGradient
+ colors={["#E5E7EB", "#D1D5DB"]}
+ style={[styles.shopImage, styles.placeholderImage]}
+ >
+ <MaterialIcons name="store" size={40} color="#6B7280" />
+ </LinearGradient>
+ )}
+ <LinearGradient
+ colors={["transparent", "rgba(0,0,0,0.5)"]}
+ style={styles.imageGradient}
+ />
+ <Text style={styles.shopNameOverlay}>{item.name}</Text>
+ </View>
+ <View style={styles.shopContent}>
+ <View style={styles.shopInfo}>
+ <Text style={styles.shopAddress} numberOfLines={2}>
+ {item.address}
+ </Text>
+ <Text style={styles.visitedAt}>
+ Visited: {new Date(item.visited_at).toLocaleDateString()}
+ </Text>
+ <Text style={styles.shopDescription} numberOfLines={2}>
+ {item.description}
+ </Text>
+ </View>
+ <Animated.View entering={ZoomIn.delay(index * 100 + 200).duration(200)}>
+ <TouchableOpacity style={styles.visitButton} activeOpacity={0.7}>
+ <LinearGradient
+ colors={["#22C55E", "#15803D"]}
+ style={styles.buttonGradient}
+ >
+ <MaterialIcons name="storefront" size={20} color="#fff" />
+ <Text style={styles.buttonText}>Visit</Text>
+ </LinearGradient>
+ </TouchableOpacity>
+ </Animated.View>
+ </View>
+ </TouchableOpacity>
+ </Animated.View>
+ );
 
-        <Text style={styles.shopDescription}>{item.description}</Text>
-
-        <View style={styles.buttonsContainer}>
-          <TouchableOpacity
-            style={styles.messageButton}
-            onPress={() => console.log(`Message ${item.name}`)}
-            activeOpacity={0.9}
-          >
-            <LinearGradient
-              colors={["#007BFF", "#005BB5"]}
-              style={styles.buttonGradient}
-            >
-              <MaterialIcons name="message" size={20} color="#fff" />
-              <Text style={styles.buttonText}>Message</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.whatsappButton}
-            onPress={() =>
-              router.push({ pathname: "/shop/shop-page", params: { shopId: item.id } })
-            }
-            activeOpacity={0.9}
-          >
-            <LinearGradient
-              colors={["#28A745", "#1A7F33"]}
-              style={styles.buttonGradient}
-            >
-              <MaterialIcons name="storefront" size={20} color="#fff" />
-              <Text style={styles.buttonText}>Visit Shop</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Animated.View>
-  );
-
-  return (
-    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
-      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
-      <LinearGradient
-        colors={["#F7FAFC", "#E3F2FD"]}
-        style={styles.container}
-      >
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => router.navigate("(tabs)/shop")}
-            style={styles.backButton}
-          >
-            <MaterialIcons name="arrow-back" size={26} color="white" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Recently Visited</Text>
-          <View style={styles.headerSpacer} />
-        </View>
-        <View style={styles.wrapper}>
-          {loading ? (
-            <View style={styles.loaderContainer}>
-              <ActivityIndicator size="large" color="#3A7BD5" />
-              <Text style={styles.loaderText}>Loading shops...</Text>
-            </View>
-          ) : shops.length === 0 ? (
-            <Text style={styles.noDataText}>No recently visited shops yet.</Text>
-          ) : (
-            <FlatList
-              data={shops}
-              renderItem={renderShopCard}
-              keyExtractor={(item) => item.id.toString()}
-              contentContainerStyle={styles.listContainer}
-            />
-          )}
-        </View>
-      </LinearGradient>
-    </SafeAreaView>
-  );
-};
+ return (
+ <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+ <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+ <LinearGradient
+ colors={["#3A7BD5", "#2563EB"]}
+ style={styles.header}
+ >
+ <TouchableOpacity
+ onPress={() => router.navigate("(tabs)/shop")}
+ style={styles.backButton}
+ >
+ <MaterialIcons name="arrow-back" size={26} color="#fff" />
+ </TouchableOpacity>
+ <Text style={styles.headerTitle}>Recently Visited</Text>
+ <View style={styles.headerSpacer} />
+ </LinearGradient>
+ <LinearGradient
+ colors={["#F8FAFC", "#E2E8F0"]}
+ style={styles.wrapper}
+ >
+ {loading ? (
+ <LinearGradient
+ colors={["#F8FAFC", "#E2E8F0"]}
+ style={styles.loaderContainer}
+ >
+ <ActivityIndicator size="large" color="#3A7BD5" />
+ <Text style={styles.loaderText}>Loading your recently visited shops...</Text>
+ </LinearGradient>
+ ) : shops.length === 0 ? (
+ <View style={styles.emptyContainer}>
+ <MaterialIcons name="store" size={48} color="#6B7280" />
+ <Text style={styles.noDataText}>No recently visited shops yet.</Text>
+ <Text style={styles.noDataSubText}>Explore shops to start building your visit history!</Text>
+ </View>
+ ) : (
+ <FlatList
+ data={shops}
+ renderItem={renderShopCard}
+ keyExtractor={(item) => item.id.toString()}
+ contentContainerStyle={styles.listContainer}
+ initialNumToRender={10}
+ windowSize={21}
+ showsVerticalScrollIndicator={false}
+ />
+ )}
+ </LinearGradient>
+ </SafeAreaView>
+ );
+}
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    backgroundColor: "#3A7BD5",
-    borderBottomLeftRadius: 35,
-    borderBottomRightRadius: 35,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 6,
-  },
-  backButton: {
-    padding: 5,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#FFFFFF",
-    textAlign: "center",
-    flex: 1,
-  },
-  headerSpacer: {
-    width: 42,
-  },
-  wrapper: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 20,
-  },
-  listContainer: {
-    paddingBottom: 20,
-  },
-  noDataText: {
-    fontSize: 18,
-    color: "#1F2937",
-    textAlign: "center",
-    marginTop: 40,
-    fontWeight: "600",
-  },
-  shopCard: {
-    backgroundColor: "#FFF",
-    borderRadius: 20,
-    marginBottom: 16,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  shopHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  imageContainer: {
-    position: "relative",
-  },
-  shopImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 12,
-    marginRight: 16,
-  },
-  placeholderImage: {
-    backgroundColor: "#F3F4F6",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  imageGradient: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderRadius: 12,
-  },
-  shopInfo: {
-    flex: 1,
-  },
-  shopName: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#1F2937",
-  },
-  shopAddress: {
-    fontSize: 14,
-    color: "#4B5563",
-    marginTop: 4,
-  },
-  visitedAt: {
-    fontSize: 12,
-    color: "#6B7280",
-    marginTop: 4,
-  },
-  shopDescription: {
-    fontSize: 14,
-    color: "#4B5563",
-    marginVertical: 12,
-    lineHeight: 22,
-  },
-  buttonsContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  messageButton: {
-    borderRadius: 10,
-    overflow: "hidden",
-  },
-  whatsappButton: {
-    borderRadius: 10,
-    overflow: "hidden",
-  },
-  buttonGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-  },
-  buttonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-    marginLeft: 8,
-  },
-  loaderContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#F7FAFC",
-  },
-  loaderText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: "#3A7BD5",
-    fontWeight: "600",
-  },
+ container: {
+ flex: 1,
+ },
+ header: {
+ flexDirection: "row",
+ alignItems: "center",
+ paddingVertical: 16,
+ paddingHorizontal: 16,
+ borderBottomLeftRadius: 24,
+ borderBottomRightRadius: 24,
+ shadowColor: "#000",
+ shadowOffset: { width: 0, height: 4 },
+ shadowOpacity: 0.3,
+ shadowRadius: 8,
+ elevation: 8,
+ },
+ backButton: {
+ padding: 8,
+ borderRadius: 12,
+ backgroundColor: "rgba(255, 255, 255, 0.2)",
+ },
+ headerTitle: {
+ fontSize: 22,
+ fontWeight: "700",
+ color: "#FFFFFF",
+ textAlign: "center",
+ flex: 1,
+ },
+ headerSpacer: {
+ width: 42,
+ },
+ wrapper: {
+ flex: 1,
+ paddingHorizontal: 16,
+ paddingTop: 20,
+ },
+ listContainer: {
+ paddingBottom: 100,
+ },
+ shopCard: {
+ backgroundColor: "#FFFFFF",
+ borderRadius: 16,
+ marginBottom: 16,
+ overflow: "hidden",
+ shadowColor: "#000",
+ shadowOpacity: 0.15,
+ shadowRadius: 10,
+ shadowOffset: { width: 0, height: 2 },
+ elevation: 5,
+ },
+ imageContainer: {
+ position: "relative",
+ height: 120,
+ },
+ shopImage: {
+ width: "100%",
+ height: "100%",
+ borderTopLeftRadius: 16,
+ borderTopRightRadius: 16,
+ },
+ placeholderImage: {
+ justifyContent: "center",
+ alignItems: "center",
+ },
+ imageGradient: {
+ position: "absolute",
+ top: 0,
+ left: 0,
+ right: 0,
+ bottom: 0,
+ },
+ shopNameOverlay: {
+ position: "absolute",
+ bottom: 12,
+ left: 12,
+ fontSize: 18,
+ fontWeight: "700",
+ color: "#FFFFFF",
+ textShadowColor: "rgba(0, 0, 0, 0.5)",
+ textShadowOffset: { width: 1, height: 1 },
+ textShadowRadius: 2,
+ },
+ shopContent: {
+ flexDirection: "row",
+ justifyContent: "space-between",
+ alignItems: "center",
+ padding: 12,
+ },
+ shopInfo: {
+ flex: 1,
+ paddingRight: 12,
+ },
+ shopAddress: {
+ fontSize: 14,
+ color: "#374151",
+ lineHeight: 20,
+ marginBottom: 4,
+ },
+ visitedAt: {
+ fontSize: 12,
+ color: "#6B7280",
+ marginBottom: 4,
+ },
+ shopDescription: {
+ fontSize: 13,
+ color: "#4B5563",
+ lineHeight: 18,
+ },
+ visitButton: {
+ borderRadius: 10,
+ overflow: "hidden",
+ },
+ buttonGradient: {
+ flexDirection: "row",
+ alignItems: "center",
+ paddingVertical: 10,
+ paddingHorizontal: 16,
+ borderRadius: 10,
+ },
+ buttonText: {
+ color: "#fff",
+ fontSize: 14,
+ fontWeight: "600",
+ marginLeft: 6,
+ },
+ loaderContainer: {
+ flex: 1,
+ justifyContent: "center",
+ alignItems: "center",
+ },
+ loaderText: {
+ marginTop: 12,
+ fontSize: 16,
+ color: "#3A7BD5",
+ fontWeight: "600",
+ },
+ emptyContainer: {
+ flex: 1,
+ justifyContent: "center",
+ alignItems: "center",
+ paddingHorizontal: 20,
+ },
+ noDataText: {
+ fontSize: 18,
+ color: "#1F2937",
+ fontWeight: "600",
+ marginTop: 16,
+ textAlign: "center",
+ },
+ noDataSubText: {
+ fontSize: 14,
+ color: "#6B7280",
+ marginTop: 8,
+ textAlign: "center",
+ },
 });
-
-export default AllRecentlyVisitedShops;

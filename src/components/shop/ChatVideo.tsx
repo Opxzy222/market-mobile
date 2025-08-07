@@ -11,10 +11,11 @@ import {
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 import PropTypes from 'prop-types';
+import axios from 'axios';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-function ChatVideo({ uri, name, thumbnailUrl, pending, messageId }) {
+function ChatVideo({ uri, name, thumbnailUrl, pending, messageId, sessionId }) {
   console.log('ChatVideo render', {
     uri,
     name,
@@ -28,7 +29,9 @@ function ChatVideo({ uri, name, thumbnailUrl, pending, messageId }) {
   const [isVideoLoading, setIsVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isVideoLoaded, setIsVideoLoaded] = useState(false); // Track if video is loaded
+  const [isVideoLoaded, setIsVideoLoaded] = useState(false);
+  const [currentUri, setCurrentUri] = useState(uri);
+  const [currentThumbnailUrl, setCurrentThumbnailUrl] = useState(thumbnailUrl);
 
   const playerRef = useRef(null);
   const videoViewRef = useRef(null);
@@ -39,12 +42,35 @@ function ChatVideo({ uri, name, thumbnailUrl, pending, messageId }) {
     p.loop = false;
   });
 
-  // Construct full URL
-  const getFullUrl = (url) => {
-    const BASE_URL = 'https://retail-alvinia-goza-f6a0e4f7.koyeb.app';
-    const fullUrl = url && url.startsWith('http') ? url : `${BASE_URL}${url || ''}`;
-    console.log('Constructed full URL:', { url, fullUrl, messageId });
-    return fullUrl;
+  // Handle video and thumbnail load errors
+  const handleError = async (type = 'video') => {
+    console.error(`${type} load error:`, type === 'video' ? currentUri : currentThumbnailUrl, 'messageId:', messageId);
+    try {
+      const response = await axios.get(
+        `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/regenerate-attachment-url/`,
+        {
+          params: { message_id: messageId },
+          headers: { Authorization: sessionId },
+        }
+      );
+      const data = response.data;
+      if (data.file_url) {
+        console.log(`Regenerated ${type} URL:`, data.file_url, 'messageId:', messageId);
+        if (type === 'video') {
+          setCurrentUri(data.file_url);
+          setVideoError(null);
+          setIsVideoLoaded(false); // Reset to reload video
+        } else {
+          setCurrentThumbnailUrl(data.thumbnail_url);
+        }
+      } else {
+        console.error(`No ${type} URL returned from regeneration`, 'messageId:', messageId);
+        setVideoError(`Failed to load ${type}`);
+      }
+    } catch (error) {
+      console.error(`Failed to regenerate ${type} URL:`, error, 'messageId:', messageId);
+      setVideoError(`Failed to load ${type}`);
+    }
   };
 
   // Monitor player state
@@ -62,6 +88,17 @@ function ChatVideo({ uri, name, thumbnailUrl, pending, messageId }) {
         setVideoError('Video playback failed');
         setIsPlaying(false);
         setIsVideoLoading(false);
+        handleError('video');
+      }
+    });
+
+    const statusSubscription = player.addListener('statusChange', (status) => {
+      console.log('Player status:', status, 'messageId:', messageId);
+      if (status.error && isMountedRef.current) {
+        setVideoError('Video playback failed');
+        setIsPlaying(false);
+        setIsVideoLoading(false);
+        handleError('video');
       }
     });
 
@@ -69,9 +106,10 @@ function ChatVideo({ uri, name, thumbnailUrl, pending, messageId }) {
       console.log('Removing player listeners', { messageId });
       playingSubscription?.remove();
       errorSubscription?.remove();
+      statusSubscription?.remove();
       isMountedRef.current = false;
     };
-  }, [player, messageId]);
+  }, [player, messageId, sessionId]);
 
   // Handle fullscreen updates
   const handleFullscreenUpdate = ({ fullscreenUpdate }) => {
@@ -95,20 +133,19 @@ function ChatVideo({ uri, name, thumbnailUrl, pending, messageId }) {
   };
 
   const loadVideo = async () => {
-    if (!uri || pending) {
-      console.log('No URI or pending, skipping load', { uri, pending, messageId });
-      if (isMountedRef.current && !uri) setVideoError('No video available');
+    if (!currentUri || pending) {
+      console.log('No URI or pending, skipping load', { currentUri, pending, messageId });
+      if (isMountedRef.current && !currentUri) setVideoError('No video available');
       return;
     }
 
     try {
-      console.log('Loading URI:', uri, 'messageId:', messageId);
-      const fileName = name || uri.split('/').pop() || '';
-      if (!fileName.toLowerCase().endsWith('.mp4')) {
-        throw new Error('Unsupported video format (only MP4 supported)');
+      console.log('Loading URI:', currentUri, 'messageId:', messageId);
+      const fileName = name || currentUri.split('/').pop()?.split('?')[0] || '';
+      if (!fileName.toLowerCase().endsWith('.mp4') && !fileName.toLowerCase().endsWith('.mov')) {
+        throw new Error('Unsupported video format (only MP4/MOV supported)');
       }
 
-      const fullUri = getFullUrl(uri);
       setIsVideoLoading(true);
       setVideoError(null);
 
@@ -117,8 +154,8 @@ function ChatVideo({ uri, name, thumbnailUrl, pending, messageId }) {
         throw new Error('Video player not initialized');
       }
 
-      console.log('Loading video with URI:', fullUri, 'messageId:', messageId);
-      const loadPromise = playerRef.current.replaceAsync({ uri: fullUri });
+      console.log('Loading video with URI:', currentUri, 'messageId:', messageId);
+      const loadPromise = playerRef.current.replaceAsync({ uri: currentUri });
       const loadTimeout = setTimeout(() => {
         throw new Error('Video load timed out');
       }, 8000);
@@ -128,14 +165,15 @@ function ChatVideo({ uri, name, thumbnailUrl, pending, messageId }) {
 
       if (isMountedRef.current) {
         setIsVideoLoading(false);
-        setIsVideoLoaded(true); // Mark video as loaded
-        console.log('Video loaded:', fullUri, 'messageId:', messageId);
+        setIsVideoLoaded(true);
+        console.log('Video loaded:', currentUri, 'messageId:', messageId);
       }
     } catch (error) {
       console.error('Video load failed:', error.message, error.stack, 'messageId:', messageId);
       if (isMountedRef.current) {
         setVideoError(error.message || 'Failed to load video');
         setIsVideoLoading(false);
+        handleError('video');
       }
     }
   };
@@ -163,9 +201,9 @@ function ChatVideo({ uri, name, thumbnailUrl, pending, messageId }) {
             console.log('Exited fullscreen', { messageId });
           }
         } else {
-          console.log('Playing video:', uri, 'messageId:', messageId);
+          console.log('Playing video:', currentUri, 'messageId:', messageId);
           if (!isVideoLoaded) {
-            await loadVideo(); // Load video only when play is pressed
+            await loadVideo();
           }
           if (!videoError && isVideoLoaded) {
             playerRef.current.play();
@@ -179,9 +217,13 @@ function ChatVideo({ uri, name, thumbnailUrl, pending, messageId }) {
       } catch (error) {
         console.error('Play/pause error:', error.message, 'messageId:', messageId);
         setVideoError('Video playback failed');
+        handleError('video');
       }
     } else {
       console.log('Play blocked:', { videoError, isVideoLoading, pending, messageId });
+      if (!isVideoLoaded && !isVideoLoading && !pending) {
+        await loadVideo();
+      }
     }
   };
 
@@ -218,14 +260,15 @@ function ChatVideo({ uri, name, thumbnailUrl, pending, messageId }) {
     if (videoError) {
       return (
         <View style={styles.placeholder}>
-          {thumbnailUrl ? (
+          {currentThumbnailUrl ? (
             <Image
-              source={{ uri: getFullUrl(thumbnailUrl) }}
+              source={{ uri: currentThumbnailUrl }}
               style={styles.thumbnail}
               resizeMode="cover"
-              onError={(e) =>
-                console.error('Thumbnail load error:', thumbnailUrl, e.nativeEvent.error, 'messageId:', messageId)
-              }
+              onError={(e) => {
+                console.error('Thumbnail load error:', currentThumbnailUrl, e.nativeEvent.error, 'messageId:', messageId);
+                handleError('thumbnail');
+              }}
             />
           ) : (
             <View style={styles.fallbackThumbnail}>
@@ -240,14 +283,15 @@ function ChatVideo({ uri, name, thumbnailUrl, pending, messageId }) {
     if (isVideoLoading) {
       return (
         <View style={styles.placeholder}>
-          {thumbnailUrl ? (
+          {currentThumbnailUrl ? (
             <Image
-              source={{ uri: getFullUrl(thumbnailUrl) }}
+              source={{ uri: currentThumbnailUrl }}
               style={styles.thumbnail}
               resizeMode="cover"
-              onError={(e) =>
-                console.error('Thumbnail load error:', thumbnailUrl, e.nativeEvent.error, 'messageId:', messageId)
-              }
+              onError={(e) => {
+                console.error('Thumbnail load error:', currentThumbnailUrl, e.nativeEvent.error, 'messageId:', messageId);
+                handleError('thumbnail');
+              }}
             />
           ) : (
             <View style={styles.fallbackThumbnail}>
@@ -264,14 +308,15 @@ function ChatVideo({ uri, name, thumbnailUrl, pending, messageId }) {
 
     return (
       <View style={styles.videoWrapper}>
-        {thumbnailUrl && !isPlaying && !isVideoLoaded ? (
+        {currentThumbnailUrl && !isPlaying && !isVideoLoaded ? (
           <Image
-            source={{ uri: getFullUrl(thumbnailUrl) }}
+            source={{ uri: currentThumbnailUrl }}
             style={styles.thumbnail}
             resizeMode="cover"
-            onError={(e) =>
-              console.error('Thumbnail load error:', thumbnailUrl, e.nativeEvent.error, 'messageId:', messageId)
-            }
+            onError={(e) => {
+              console.error('Thumbnail load error:', currentThumbnailUrl, e.nativeEvent.error, 'messageId:', messageId);
+              handleError('thumbnail');
+            }}
           />
         ) : (
           <VideoView
@@ -288,6 +333,14 @@ function ChatVideo({ uri, name, thumbnailUrl, pending, messageId }) {
               if (isMountedRef.current) {
                 setVideoError('Video playback failed');
                 setIsPlaying(false);
+                handleError('video');
+              }
+            }}
+            onLoad={() => {
+              console.log('VideoView loaded:', currentUri, 'messageId:', messageId);
+              if (isMountedRef.current) {
+                setIsVideoLoading(false);
+                setIsVideoLoaded(true);
               }
             }}
           />
@@ -315,7 +368,7 @@ function ChatVideo({ uri, name, thumbnailUrl, pending, messageId }) {
         hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
       >
         {renderContent()}
-        {thumbnailUrl && !isPlaying && !videoError && !isVideoLoading && !pending && (
+        {currentThumbnailUrl && !isPlaying && !videoError && !isVideoLoading && !pending && (
           <View style={styles.playIconContainer}>
             <Ionicons name="play-circle" size={40} color="rgba(255, 255, 255, 0.7)" />
           </View>
@@ -331,6 +384,7 @@ ChatVideo.propTypes = {
   thumbnailUrl: PropTypes.string,
   pending: PropTypes.bool,
   messageId: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
+  sessionId: PropTypes.string,
 };
 
 ChatVideo.defaultProps = {
@@ -338,6 +392,7 @@ ChatVideo.defaultProps = {
   name: null,
   thumbnailUrl: null,
   pending: false,
+  sessionId: null,
 };
 
 const styles = StyleSheet.create({
@@ -354,8 +409,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: '#000',
-    elevation: 4, // Android shadow
-    shadowColor: '#000', // iOS shadow
+    elevation: 4,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,

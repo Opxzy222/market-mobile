@@ -1,14 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { View, Text, Image, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
-import axios from 'axios';
 import { useRouter, usePathname } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '@expo/vector-icons';
+import { getFullUrl } from '../../utils/imageUtils';
 
 const RecentlyVisitedShops = ({ shops }) => {
   const [showAll, setShowAll] = useState(false);
   const router = useRouter();
-  const pathname = usePathname()
+  const pathname = usePathname();
 
   const handleShowMore = () => {
     setShowAll(true);
@@ -19,7 +18,11 @@ const RecentlyVisitedShops = ({ shops }) => {
       style={styles.shopCard}
       onPress={() => router.push({ pathname: '/shop/shop-page', params: { shopId: item.id } })}
     >
-      <Image source={{ uri: `https://digital-market-place-production-cda0.up.railway.app${item.image}` }} style={styles.shopImage} />
+      <Image
+        source={{ uri: getFullUrl(item.image) }}
+        style={styles.shopImage}
+        onError={(e) => console.error(`Image load error for shop ${item.id}:`, e.nativeEvent.error)}
+      />
       <View style={styles.shopInfo}>
         <Text style={styles.shopName}>{item.name}</Text>
         <Text style={styles.visitedAt}>Visited: {new Date(item.visited_at).toLocaleDateString()}</Text>
@@ -34,10 +37,10 @@ const RecentlyVisitedShops = ({ shops }) => {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Recently Visited</Text>
-        <TouchableOpacity 
-                  style={styles.seeAllContainer}
-                  onPress={() => router.push({ pathname: '/shop/AllRecentShops', params: { prevRoute: pathname } })}
-                >
+        <TouchableOpacity
+          style={styles.seeAllContainer}
+          onPress={() => router.push({ pathname: '/shop/AllRecentShops', params: { prevRoute: pathname } })}
+        >
           <Text style={styles.seeAll}>See All</Text>
         </TouchableOpacity>
       </View>
@@ -48,8 +51,8 @@ const RecentlyVisitedShops = ({ shops }) => {
         contentContainerStyle={styles.listContainer}
       />
       {!showAll && shops.length > 3 && (
-        <TouchableOpacity onPress={handleShowMore} >
-          {/*<Text style={styles.showMoreText}>Show More</Text> */}
+        <TouchableOpacity onPress={handleShowMore}>
+          {/* <Text style={styles.showMoreText}>Show More</Text> */}
         </TouchableOpacity>
       )}
     </View>

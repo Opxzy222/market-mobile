@@ -1,36 +1,39 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
+  FlatList,
   Pressable,
   Alert,
   KeyboardAvoidingView,
   Platform,
   StatusBar,
   ActivityIndicator,
+  Modal,
+  Keyboard,
 } from "react-native";
-import { SelectList } from "react-native-dropdown-select-list";
-import MultiSelect from "react-native-multiple-select";
 import * as Location from "expo-location";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import axios from "axios";
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView } from "react-native-safe-area-context";
+import { SelectList } from "react-native-dropdown-select-list";
+import { MultiSelect as RNMultiSelect } from "react-native-element-dropdown";
 
 export default function CreateShopScreen({ navigation }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [geoLocation, setGeoLocation] = useState({ lat: "", lng: "" });
   const [address, setAddress] = useState("");
-  const [showAddressField, setShowAddressField] = useState(false); // New state for address field visibility
+  const [showAddressField, setShowAddressField] = useState(false);
   const [categories, setCategories] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(null);
+  const [selectedCategoryName, setSelectedCategoryName] = useState("");
   const [selectedSubcategories, setSelectedSubcategories] = useState([]);
   const [geoError, setGeoError] = useState("");
   const [formErrors, setFormErrors] = useState({});
@@ -38,7 +41,9 @@ export default function CreateShopScreen({ navigation }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showGeoFields, setShowGeoFields] = useState(false);
   const [isDetectingLocation, setIsDetectingLocation] = useState(false);
-
+  const [modalVisible, setModalVisible] = useState(false);
+  const [categorySearch, setCategorySearch] = useState("");
+  const [filteredCategories, setFilteredCategories] = useState([]);
   const [locations, setLocations] = useState([]);
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [childLocations, setChildLocations] = useState([]);
@@ -47,152 +52,228 @@ export default function CreateShopScreen({ navigation }) {
   const [selectedGrandChildLocation, setSelectedGrandChildLocation] = useState(null);
 
   const router = useRouter();
-  const scrollViewRef = useRef(null);
+  const flatListRef = useRef(null);
+  const dropdownRef = useRef(null);
+  const cancelTokenSourceRef = useRef(null);
 
-  // Fetch categories
+  // Keyboard listeners for debugging
   useEffect(() => {
-    const fetchCategories = async () => {
+    const keyboardDidShow = Keyboard.addListener("keyboardDidShow", () => {
+      console.log("Keyboard shown");
+    });
+    const keyboardDidHide = Keyboard.addListener("keyboardDidHide", () => {
+      console.log("Keyboard hidden");
+    });
+
+    return () => {
+      keyboardDidShow.remove();
+      keyboardDidHide.remove();
+    };
+  }, []);
+
+  // Fetch session ID
+  useEffect(() => {
+    cancelTokenSourceRef.current = axios.CancelToken.source();
+    const fetchSessionId = async () => {
       try {
-        const response = await axios.post(
-          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/category/dropdown-options/"
-        );
-        setCategories(
-          response.data.categories.map((cat) => ({
+        const sessionIdString = await AsyncStorage.getItem("sessionToken");
+        setSessionId(sessionIdString);
+        console.log("Session ID fetched:", sessionIdString);
+      } catch (err) {
+        console.error("Error fetching session ID:", err);
+      }
+    };
+    fetchSessionId();
+
+    return () => {
+      if (cancelTokenSourceRef.current) {
+        cancelTokenSourceRef.current.cancel("Component unmounted");
+      }
+    };
+  }, []);
+
+  // Fetch categories and locations only when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      cancelTokenSourceRef.current = axios.CancelToken.source();
+
+      const fetchCategories = async () => {
+        try {
+          console.log("Fetching categories...");
+          const response = await axios.post(
+            "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/category/dropdown-options/",
+            {},
+            { cancelToken: cancelTokenSourceRef.current.token }
+          );
+          const categoryData = response.data.categories.map((cat) => ({
             key: cat.id,
             value: cat.name,
-          }))
-        );
-      } catch (error) {
-        console.error("Error fetching categories:", error);
-      }
-    };
+          }));
+          const sortedCategories = categoryData.sort((a, b) => a.value.localeCompare(b.value));
+          setCategories(sortedCategories);
+          setFilteredCategories(sortedCategories);
+          console.log("Categories fetched:", sortedCategories);
+        } catch (error) {
+          if (!axios.isCancel(error)) {
+            console.error("Error fetching categories:", error);
+          }
+        }
+      };
 
-    fetchCategories();
-  }, []);
+      const fetchTopLevelLocations = async () => {
+        try {
+          console.log("Fetching top-level locations...");
+          const response = await axios.post(
+            "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/states/",
+            {},
+            { cancelToken: cancelTokenSourceRef.current.token }
+          );
+          setLocations(
+            response.data.locations.map((loc) => ({
+              key: loc.id,
+              value: loc.name,
+            }))
+          );
+          console.log("Locations fetched:", response.data.locations);
+        } catch (error) {
+          if (!axios.isCancel(error)) {
+            console.error("Error fetching locations:", error);
+          }
+        }
+      };
 
-  // Fetch user ID
+      fetchCategories();
+      fetchTopLevelLocations();
+
+      return () => {
+        console.log("Screen unfocused, canceling requests");
+        if (cancelTokenSourceRef.current) {
+          cancelTokenSourceRef.current.cancel("Screen unfocused");
+        }
+      };
+    }, [])
+  );
+
+  // Filter categories based on search input
   useEffect(() => {
-    const fetchSessionId = async () => {
-      const sessionIdString = await AsyncStorage.getItem("sessionToken");
-      setSessionId(sessionIdString);
-    };
+    setFilteredCategories(
+      categories.filter((cat) =>
+        cat.value.toLowerCase().includes(categorySearch.toLowerCase())
+      )
+    );
+  }, [categorySearch, categories]);
 
-    fetchSessionId();
-  }, []);
-
-  // Fetch top-level locations
-  useEffect(() => {
-    const fetchTopLevelLocations = async () => {
-      try {
-        const response = await axios.post(
-          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/states/"
-        );
-        setLocations(
-          response.data.locations.map((loc) => ({
-            key: loc.id,
-            value: loc.name,
-          }))
-        );
-      } catch (error) {
-        console.error("Error fetching locations:", error);
-      }
-    };
-
-    fetchTopLevelLocations();
-  }, []);
-
-  const handleLocationChange = async (selectedOption) => {
+  // Handle state selection and fetch LGAs
+  const handleLocationChange = useCallback(async (selectedOption) => {
     setSelectedLocation(selectedOption);
-    setSelectedChildLocation(null);
-    setSelectedGrandChildLocation(null);
+    setSelectedChildLocation(null); // Clear LGA selection
+    setChildLocations([]); // Clear LGA options
+    setSelectedGrandChildLocation(null); // Clear location selection
+    setGrandChildLocations([]); // Clear location options
 
-    try {
-      const formData = new FormData();
-      formData.append("parent_id", selectedOption);
+    if (selectedOption) {
+      try {
+        const formData = new FormData();
+        formData.append("parent_id", selectedOption);
 
-      const response = await axios.post(
-        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/children/",
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
-      );
+        const response = await axios.post(
+          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/children/",
+          formData,
+          {
+            headers: { "Content-Type": "multipart/form-data" },
+            cancelToken: cancelTokenSourceRef.current?.token,
+          }
+        );
 
-      setChildLocations(
-        response.data.locations.map((loc) => ({
+        const newChildLocations = response.data.locations.map((loc) => ({
           key: loc.id,
           value: loc.name,
-        }))
-      );
-    } catch (error) {
-      console.error("Error fetching child locations:", error);
+        }));
+        setChildLocations(newChildLocations);
+        console.log("Child locations fetched:", newChildLocations);
+      } catch (error) {
+        if (!axios.isCancel(error)) {
+          console.error("Error fetching child locations:", error);
+          setChildLocations([]);
+        }
+      }
     }
-  };
+  }, []);
 
-  const handleChildLocationChange = async (selectedOption) => {
+  // Handle LGA selection and fetch locations
+  const handleChildLocationChange = useCallback(async (selectedOption) => {
     setSelectedChildLocation(selectedOption);
-    setSelectedGrandChildLocation(null);
+    setSelectedGrandChildLocation(null); // Clear location selection
+    setGrandChildLocations([]); // Clear location options
 
-    try {
-      const formData = new FormData();
-      formData.append("parent_id", selectedOption);
+    if (selectedOption) {
+      try {
+        const formData = new FormData();
+        formData.append("parent_id", selectedOption);
 
-      const response = await axios.post(
-        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/children/",
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
-      );
+        const response = await axios.post(
+          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/children/",
+          formData,
+          {
+            headers: { "Content-Type": "multipart/form-data" },
+            cancelToken: cancelTokenSourceRef.current?.token,
+          }
+        );
 
-      setGrandChildLocations(
-        response.data.locations.map((loc) => ({
+        const newGrandChildLocations = response.data.locations.map((loc) => ({
           key: loc.id,
           value: loc.name,
-        }))
-      );
-    } catch (error) {
-      console.error("Error fetching grandchild locations:", error);
+        }));
+        setGrandChildLocations(newGrandChildLocations);
+        console.log("Grandchild locations fetched:", newGrandChildLocations);
+      } catch (error) {
+        if (!axios.isCancel(error)) {
+          console.error("Error fetching grandchild locations:", error);
+          setGrandChildLocations([]);
+        }
+      }
     }
-  };
+  }, []);
 
-  const handleGrandChildLocationChange = (selectedOption) => {
+  const handleGrandChildLocationChange = useCallback((selectedOption) => {
     setSelectedGrandChildLocation(selectedOption);
-  };
+  }, []);
 
-  const handleCategoryChange = async (selectedOption) => {
-    setSelectedCategory(selectedOption);
+  const handleCategoryChange = useCallback(async (key, value) => {
+    setSelectedCategory(key);
+    setSelectedCategoryName(value);
+    setModalVisible(false);
+    setCategorySearch("");
     setSelectedSubcategories([]);
 
     try {
       const formData = new FormData();
-      formData.append("parent_id", selectedOption);
+      formData.append("parent_id", key);
 
       const response = await axios.post(
         "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/category/subcategories/",
         formData,
         {
           headers: { "Content-Type": "multipart/form-data" },
+          cancelToken: cancelTokenSourceRef.current?.token,
         }
       );
 
-      setSubcategories(
-        response.data.subcategories.map((subcat) => ({
-          key: subcat.id,
-          value: subcat.name,
-        }))
-      );
+      const subcats = response.data.subcategories.map((subcat) => ({
+        key: subcat.id,
+        value: subcat.name,
+      }));
+      setSubcategories(subcats);
+      console.log("Subcategories fetched:", subcats);
     } catch (error) {
-      console.error("Error fetching subcategories:", error);
+      if (!axios.isCancel(error)) {
+        console.error("Error fetching subcategories:", error);
+        setSubcategories([]);
+      }
     }
-  };
+  }, []);
 
-  const handlePinLocation = async () => {
-    // Prompt user to stand outside
+  const handlePinLocation = useCallback(async () => {
     Alert.alert(
       "Prepare for Location Detection",
       "For the best accuracy, please stand outside your business location, away from roofs or obstructions, to allow clear GPS signal reception.",
@@ -203,7 +284,6 @@ export default function CreateShopScreen({ navigation }) {
           onPress: async () => {
             setIsDetectingLocation(true);
             try {
-              // Request foreground permissions
               let { status } = await Location.requestForegroundPermissionsAsync();
               if (status !== "granted") {
                 setGeoError("Permission to access location was denied.");
@@ -223,7 +303,6 @@ export default function CreateShopScreen({ navigation }) {
                 return;
               }
 
-              // Get current position with high accuracy and timeout
               const location = await Location.getCurrentPositionAsync({
                 accuracy: Location.Accuracy.High,
                 timeInterval: 5000,
@@ -233,14 +312,12 @@ export default function CreateShopScreen({ navigation }) {
 
               const { latitude, longitude } = location.coords;
 
-              // Update geolocation state
               setGeoLocation({
                 lat: latitude.toString(),
                 lng: longitude.toString(),
               });
               setShowGeoFields(true);
 
-              // Reverse geocode to get address
               let formattedAddress = "";
               try {
                 const reverseGeocode = await Location.reverseGeocodeAsync({
@@ -262,27 +339,22 @@ export default function CreateShopScreen({ navigation }) {
                 setAddress("Unable to fetch address. Please enter manually.");
               }
 
-              setShowAddressField(true); // Show address field after detection
+              setShowAddressField(true);
               setGeoError("");
 
-              // Scroll to address field
               setTimeout(() => {
-                scrollViewRef.current?.scrollToEnd({ animated: true });
+                flatListRef.current?.scrollToIndex({
+                  index: formSections.findIndex((section) => section.id === "address"),
+                  animated: true,
+                });
               }, 100);
 
-              // Prompt user to verify/edit address
               Alert.alert(
                 "Verify Your Address",
                 `We detected the following address:\n\n${formattedAddress || "No address detected."}\n\nIs this correct? If not, please edit the address in the field provided.`,
                 [
                   { text: "OK", style: "default" },
-                  {
-                    text: "Edit Address",
-                    style: "default",
-                    onPress: () => {
-                      // Optional: could focus the address input, but handled by scroll
-                    },
-                  },
+                  { text: "Edit Address", style: "default" },
                 ]
               );
             } catch (error) {
@@ -303,9 +375,9 @@ export default function CreateShopScreen({ navigation }) {
       ],
       { cancelable: true }
     );
-  };
+  }, []);
 
-  const handleValidation = () => {
+  const handleValidation = useCallback(() => {
     const errors = {};
     if (!name.trim()) errors.name = "Business name is required.";
     if (!description.trim()) errors.description = "Description is required.";
@@ -319,9 +391,9 @@ export default function CreateShopScreen({ navigation }) {
 
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
-  };
+  }, [name, description, address, geoLocation, selectedLocation, selectedChildLocation, selectedGrandChildLocation]);
 
-  const handleSubmit = async () => {
+  const handleSubmit = useCallback(async () => {
     if (!handleValidation() || isSubmitting) return;
 
     setIsSubmitting(true);
@@ -346,251 +418,413 @@ export default function CreateShopScreen({ navigation }) {
             "Content-Type": "multipart/form-data",
             Authorization: sessionId,
           },
+          cancelToken: cancelTokenSourceRef.current?.token,
         }
       );
 
       const shopId = response.data.shop_id;
 
       Alert.alert("Success", "Your space has been created!");
-      router.push({ pathname: "/shop/WelcomeWorkingHours", params: { shopId: shopId } });
+      router.replace({ pathname: "/shop/WelcomeWorkingHours", params: { shopId } });
     } catch (error) {
-      console.error("Error creating space:", error);
-      Alert.alert("Error", "Something went wrong. Please try again.");
+      if (!axios.isCancel(error)) {
+        console.error("Error creating space:", error);
+        Alert.alert("Error", "Something went wrong. Please try again.");
+      }
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, [name, description, geoLocation, address, selectedChildLocation, selectedGrandChildLocation, selectedSubcategories, sessionId, handleValidation]);
 
-  const handleInputFocus = () => {
-    if (scrollViewRef.current) {
-      scrollViewRef.current.scrollToEnd({ animated: true });
+  const handleInputFocus = useCallback((sectionId) => {
+    const index = formSections.findIndex((section) => section.id === sectionId);
+    if (flatListRef.current && index !== -1) {
+      flatListRef.current.scrollToIndex({ index, animated: true });
     }
-  };
+  }, []);
 
-  return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 120 : 20}
+  const renderCategoryItem = useCallback(({ item }) => (
+    <TouchableOpacity
+      style={styles.categoryItem}
+      onPress={() => handleCategoryChange(item.key, item.value)}
     >
-      <View style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
-        <View style={styles.header}>
-                  <TouchableOpacity
-                    onPress={() => router.back()}
-                    style={styles.backButton}
-                  >
-                    <MaterialIcons name="arrow-back" size={26} color="white" />
-                  </TouchableOpacity>
-                  <Text style={styles.headerTitle}>Create Space</Text>
-                  <View style={styles.headerSpacer} />
-                </View>
+      <Text style={styles.categoryItemText}>{item.value}</Text>
+    </TouchableOpacity>
+  ), [handleCategoryChange]);
 
-        <ScrollView
-          ref={scrollViewRef}
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.card}>
-            <Text style={styles.heading}>Create Your Digital Shop</Text>
-
+  const formSections = useMemo(
+    () => [
+      {
+        id: "name",
+        render: () => (
+          <>
             <Text style={styles.label}>Name</Text>
             <TextInput
               style={styles.input}
               placeholder="Input your business name"
               value={name}
               onChangeText={setName}
-              onFocus={handleInputFocus}
+              onFocus={() => handleInputFocus("name")}
               returnKeyType="next"
             />
             {formErrors.name && <Text style={styles.error}>{formErrors.name}</Text>}
-
+          </>
+        ),
+      },
+      {
+        id: "description",
+        render: () => (
+          <>
             <Text style={styles.label}>Description</Text>
             <TextInput
               style={[styles.input, styles.description]}
-              placeholder="Input business description"
+              placeholder="Tell us about your business"
               value={description}
               onChangeText={setDescription}
               multiline
               numberOfLines={4}
-              onFocus={handleInputFocus}
+              onFocus={() => handleInputFocus("description")}
               returnKeyType="next"
             />
             {formErrors.description && <Text style={styles.error}>{formErrors.description}</Text>}
-
+          </>
+        ),
+      },
+      {
+        id: "category",
+        render: () => (
+          <>
             <Text style={styles.label}>Category</Text>
-            <SelectList
-              setSelected={handleCategoryChange}
-              data={categories}
-              placeholder="Select Category"
-              save="key"
-              searchPlaceholder="Search categories"
-              boxStyles={styles.dropdown}
-            />
-
-            {selectedCategory && subcategories.length > 0 && (
-              <>
-                <Text style={styles.label}>Subcategories</Text>
-                <View style={styles.subcategoriesContainer}>
-                  <MultiSelect
-                    key={selectedCategory}
-                    items={subcategories.map((sub) => ({
-                      id: sub.key,
-                      name: sub.value,
-                    }))}
-                    uniqueKey="id"
-                    onSelectedItemsChange={setSelectedSubcategories}
-                    selectedItems={selectedSubcategories}
-                    selectText="Select Subcategories"
-                    searchInputPlaceholderText="Search Subcategories..."
-                    displayKey="name"
-                    styleDropdownMenuSubsection={{
-                      backgroundColor: "#fff",
-                      borderColor: "#ddd",
-                      borderWidth: 1,
-                      borderRadius: 8,
-                      paddingHorizontal: 10,
-                      paddingVertical: 18,
-                      marginLeft: 10,
-                    }}
-                    altFontFamily="ProximaNova-Light"
-                    tagRemoveIconColor="#CCC"
-                    tagBorderColor="#CCC"
-                    tagTextColor="#CCC"
-                    selectedItemTextColor="#CCC"
-                    selectedItemIconColor="#CCC"
-                    itemTextColor="#000"
-                    searchInputStyle={{ color: "#CCC" }}
-                    submitButtonColor="#00BFA5"
-                    submitButtonText="Submit"
-                  />
-                </View>
-              </>
-            )}
-
+            <TouchableOpacity
+              style={styles.dropdown}
+              onPress={() => setModalVisible(true)}
+            >
+              <Text style={styles.dropdownText}>
+                {selectedCategoryName || "Select Category"}
+              </Text>
+              <MaterialIcons name="arrow-drop-down" size={24} color="#6c757d" />
+            </TouchableOpacity>
+          </>
+        ),
+      },
+      {
+        id: "subcategories",
+        render: () => {
+          if (!selectedCategory || !subcategories || subcategories.length === 0) {
+            return null;
+          }
+          console.log("Rendering subcategories:", subcategories);
+          return (
+            <>
+              <Text style={styles.label}>Subcategories</Text>
+              <View style={styles.subcategoriesContainer}>
+                <RNMultiSelect
+                  ref={dropdownRef}
+                  style={styles.dropdown}
+                  containerStyle={styles.multiSelectDropdownMenu}
+                  itemTextStyle={styles.multiSelectText}
+                  selectedStyle={styles.multiSelectTagContainer}
+                  selectedTextStyle={styles.multiSelectTagText}
+                  inputSearchStyle={styles.multiSelectSearchInput}
+                  data={subcategories.map((sub) => ({
+                    value: sub.key,
+                    label: sub.value,
+                  }))}
+                  labelField="label"
+                  valueField="value"
+                  placeholder="Select Subcategories"
+                  searchPlaceholder="Search Subcategories..."
+                  value={selectedSubcategories}
+                  onChange={(items) => setSelectedSubcategories(items)}
+                  search
+                  maxHeight={350}
+                  fontFamily="System"
+                  dropdownPosition="bottom"
+                  onFocus={() => {
+                    flatListRef.current?.scrollToIndex({
+                      index: formSections.findIndex((section) => section.id === "subcategories"),
+                      animated: true,
+                    });
+                  }}
+                  onLayout={(event) => {
+                    const { y } = event.nativeEvent.layout;
+                    flatListRef.current?.scrollToOffset({ offset: y - 100, animated: true });
+                  }}
+                  renderItem={(item, selected) => (
+                    <View style={styles.multiSelectItem}>
+                      <Text style={selected ? styles.multiSelectTagText : styles.multiSelectText}>
+                        {item.label}
+                      </Text>
+                      {selected && (
+                        <MaterialIcons
+                          name="check"
+                          size={16}
+                          color="#FFFFFF"
+                          style={styles.checkIcon}
+                        />
+                      )}
+                    </View>
+                  )}
+                />
+              </View>
+            </>
+          );
+        },
+      },
+      {
+        id: "state",
+        render: () => (
+          <>
             <Text style={styles.label}>State</Text>
             <SelectList
               setSelected={handleLocationChange}
               data={locations}
-              placeholder="Select Location"
+              placeholder="Select State"
               save="key"
               boxStyles={styles.dropdown}
+              searchPlaceholder="Search states"
+              defaultOption={locations.find((loc) => loc.key === selectedLocation)}
             />
             {formErrors.location && <Text style={styles.error}>{formErrors.location}</Text>}
-
-            {selectedLocation && (
-              <>
-                <Text style={styles.label}>Local Government</Text>
-                <SelectList
-                  setSelected={handleChildLocationChange}
-                  data={childLocations}
-                  placeholder="Select Child Location"
-                  save="key"
-                  boxStyles={styles.dropdown}
-                />
-                {formErrors.childLocation && (
-                  <Text style={styles.error}>{formErrors.childLocation}</Text>
+          </>
+        ),
+      },
+      {
+        id: "childLocation",
+        render: () =>
+          selectedLocation && childLocations.length > 0 ? (
+            <>
+              <Text style={styles.label}>Local Government</Text>
+              <SelectList
+                setSelected={handleChildLocationChange}
+                data={childLocations}
+                placeholder="Select Local Government"
+                save="key"
+                boxStyles={styles.dropdown}
+                searchPlaceholder="Search local governments"
+                defaultOption={childLocations.find((loc) => loc.key === selectedChildLocation)}
+              />
+              {formErrors.childLocation && (
+                <Text style={styles.error}>{formErrors.childLocation}</Text>
+              )}
+            </>
+          ) : null,
+      },
+      {
+        id: "grandChildLocation",
+        render: () =>
+          selectedChildLocation && grandChildLocations.length > 0 ? (
+            <>
+              <Text style={styles.label}>Location</Text>
+              <SelectList
+                setSelected={handleGrandChildLocationChange}
+                data={grandChildLocations}
+                placeholder="Select Location"
+                save="key"
+                boxStyles={styles.dropdown}
+                searchPlaceholder="Search locations"
+                defaultOption={grandChildLocations.find(
+                  (loc) => loc.key === selectedGrandChildLocation
                 )}
-              </>
-            )}
-
-            {selectedChildLocation && (
+              />
+              {formErrors.grandChildLocation && (
+                <Text style={styles.error}>{formErrors.grandChildLocation}</Text>
+              )}
+            </>
+          ) : null,
+      },
+      {
+        id: "address",
+        render: () =>
+          showAddressField ? (
+            <>
+              <Text style={styles.label}>Address</Text>
+              <TextInput
+                style={[styles.input, styles.addressInput]}
+                placeholder="Edit your business address if needed"
+                value={address}
+                onChangeText={setAddress}
+                onFocus={() => handleInputFocus("address")}
+                multiline
+                numberOfLines={3}
+                returnKeyType="done"
+              />
+              {formErrors.address && <Text style={styles.error}>{formErrors.address}</Text>}
+            </>
+          ) : null,
+      },
+      {
+        id: "geo",
+        render: () => (
+          <View style={styles.geoSection}>
+            {showGeoFields && (
               <>
-                <Text style={styles.label}>Location</Text>
-                <SelectList
-                  setSelected={handleGrandChildLocationChange}
-                  data={grandChildLocations}
-                  placeholder="Select Grandchild Location"
-                  save="key"
-                  boxStyles={styles.dropdown}
-                />
-                {formErrors.grandChildLocation && (
-                  <Text style={styles.error}>{formErrors.grandChildLocation}</Text>
-                )}
+                <View style={styles.geoInputContainer}>
+                  <Text style={styles.geoLabel}>Latitude</Text>
+                  <TextInput
+                    style={[styles.input, styles.readOnly]}
+                    placeholder="Auto-filled after detection"
+                    value={geoLocation.lat}
+                    editable={false}
+                  />
+                </View>
+                <View style={styles.geoInputContainer}>
+                  <Text style={styles.geoLabel}>Longitude</Text>
+                  <TextInput
+                    style={[styles.input, styles.readOnly]}
+                    placeholder="Auto-filled after detection"
+                    value={geoLocation.lng}
+                    editable={false}
+                  />
+                </View>
               </>
             )}
-
-            {showAddressField && (
-              <>
-                <Text style={styles.label}>Address</Text>
-                <TextInput
-                  style={[styles.input, styles.addressInput]}
-                  placeholder="Edit your business address if needed"
-                  value={address}
-                  onChangeText={setAddress}
-                  onFocus={handleInputFocus}
-                  multiline
-                  numberOfLines={3}
-                  returnKeyType="done"
-                />
-                {formErrors.address && <Text style={styles.error}>{formErrors.address}</Text>}
-              </>
-            )}
-
-            <View style={styles.geoSection}>
-              {showGeoFields && (
+            <TouchableOpacity
+              style={[styles.pinButton, isDetectingLocation && styles.disabledButton]}
+              onPress={handlePinLocation}
+              disabled={isDetectingLocation}
+            >
+              {isDetectingLocation ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
                 <>
-                  <View style={styles.geoInputContainer}>
-                    <Text style={styles.geoLabel}>Latitude</Text>
-                    <TextInput
-                      style={[styles.input, styles.readOnly]}
-                      placeholder="Auto-filled after detection"
-                      value={geoLocation.lat}
-                      editable={false}
-                    />
-                  </View>
-
-                  <View style={styles.geoInputContainer}>
-                    <Text style={styles.geoLabel}>Longitude</Text>
-                    <TextInput
-                      style={[styles.input, styles.readOnly]}
-                      placeholder="Auto-filled after detection"
-                      value={geoLocation.lng}
-                      editable={false}
-                    />
-                  </View>
+                  <MaterialIcons name="my-location" style={styles.pinIcon} />
+                  <Text style={styles.pinButtonText}>
+                    {geoLocation.lat && geoLocation.lng ? "Update Location" : "Detect My Location"}
+                  </Text>
                 </>
               )}
-
-              <TouchableOpacity
-                style={[styles.pinButton, isDetectingLocation && styles.disabledButton]}
-                onPress={handlePinLocation}
-                disabled={isDetectingLocation}
-              >
-                {isDetectingLocation ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <>
-                    <MaterialIcons name="my-location" style={styles.pinIcon} />
-                    <Text style={styles.pinButtonText}>
-                      {geoLocation.lat && geoLocation.lng ? "Update Location" : "Detect My Location"}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-              <Text style={styles.helperText}>
-                Stand outside your business, away from roofs, for accurate location detection.
-              </Text>
-            </View>
-
+            </TouchableOpacity>
+            <Text style={styles.helperText}>
+              Stand outside your business, away from roofs, for accurate location detection.
+            </Text>
             {geoError && <Text style={styles.error}>{geoError}</Text>}
             {formErrors.geoLocation && <Text style={styles.error}>{formErrors.geoLocation}</Text>}
-
-            <Pressable
-              style={[styles.submitButton, isSubmitting && styles.disabledButton]}
-              onPress={handleSubmit}
-              disabled={isSubmitting}
-            >
-              <Text style={styles.submitButtonText}>
-                {isSubmitting ? "Submitting..." : "Create Business Space"}
-              </Text>
-            </Pressable>
           </View>
-        </ScrollView>
-      </View>
-    </KeyboardAvoidingView>
+        ),
+      },
+      {
+        id: "submit",
+        render: () => (
+          <Pressable
+            style={[styles.submitButton, isSubmitting && styles.disabledButton]}
+            onPress={handleSubmit}
+            disabled={isSubmitting}
+          >
+            <Text style={styles.submitButtonText}>
+              {isSubmitting ? "Submitting..." : "Create Business Space"}
+            </Text>
+          </Pressable>
+        ),
+      },
+    ],
+    [
+      name,
+      description,
+      address,
+      geoLocation,
+      selectedCategory,
+      selectedCategoryName,
+      selectedSubcategories,
+      subcategories,
+      selectedLocation,
+      selectedChildLocation,
+      selectedGrandChildLocation,
+      childLocations,
+      grandChildLocations,
+      locations,
+      formErrors,
+      isSubmitting,
+      showAddressField,
+      showGeoFields,
+      isDetectingLocation,
+      geoError,
+      handleInputFocus,
+    ]
+  );
+
+  const renderFormSection = useCallback(({ item }) => item.render(), []);
+
+  return (
+    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 20}
+      >
+        <View style={styles.container} keyboardShouldPersistTaps="handled">
+          <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+          <View style={styles.header}>
+            <TouchableOpacity
+              onPress={() => router.back()}
+              style={styles.backButton}
+            >
+              <MaterialIcons name="arrow-back" size={26} color="white" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Create Space</Text>
+            <View style={styles.headerSpacer} />
+          </View>
+
+          <FlatList
+            ref={flatListRef}
+            data={formSections}
+            renderItem={renderFormSection}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.formContainer}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            nestedScrollEnabled={true}
+            getItemLayout={(data, index) => ({
+              length: 100,
+              offset: 100 * index,
+              index,
+            })}
+          />
+
+          <Modal
+            visible={modalVisible}
+            animationType="slide"
+            transparent={false}
+            onRequestClose={() => setModalVisible(false)}
+            onShow={() => {
+              setTimeout(() => {
+                flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+              }, 100);
+            }}
+          >
+            <SafeAreaView style={styles.modalContainer}>
+              <View style={styles.modalHeader}>
+                <TouchableOpacity
+                  onPress={() => setModalVisible(false)}
+                  style={styles.closeButton}
+                >
+                  <MaterialIcons name="arrow-back" size={26} color="#fff" />
+                </TouchableOpacity>
+                <Text style={styles.modalTitle}>Select Category</Text>
+                <View style={styles.headerSpacer} />
+              </View>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search categories..."
+                value={categorySearch}
+                onChangeText={setCategorySearch}
+              />
+              <FlatList
+                data={filteredCategories}
+                renderItem={renderCategoryItem}
+                keyExtractor={(item) => item.key.toString()}
+                contentContainerStyle={styles.categoryList}
+                initialNumToRender={15}
+                windowSize={21}
+                ListEmptyComponent={
+                  <Text style={styles.emptyText}>No categories found</Text>
+                }
+                style={styles.modalFlatList}
+              />
+            </SafeAreaView>
+          </Modal>
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -598,21 +832,21 @@ export default function CreateShopScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f9f9f9",
+    backgroundColor: "#F9FAFB",
   },
-  scrollContent: {
+  formContainer: {
     padding: 20,
     paddingBottom: 100,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: 16,
     paddingHorizontal: 12,
-    backgroundColor: '#3A7BD5',
+    backgroundColor: "#3A7BD5",
     borderBottomLeftRadius: 35,
     borderBottomRightRadius: 35,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 6,
@@ -621,67 +855,140 @@ const styles = StyleSheet.create({
   backButton: {
     padding: 5,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    textAlign: 'center',
+    fontWeight: "bold",
+    color: "#FFFFFF",
+    textAlign: "center",
     flex: 1,
   },
   headerSpacer: {
     width: 42,
   },
-  card: {
-    backgroundColor: "#fff",
-    padding: 20,
-    borderRadius: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    elevation: 4,
-  },
-  subcategoriesContainer: {
-    marginBottom: 15,
-    position: "relative",
-    zIndex: 10,
-    width: "100%",
-  },
-  heading: {
-    fontSize: 22,
-    fontWeight: "bold",
-    marginBottom: 20,
-    textAlign: "center",
-  },
   input: {
-    backgroundColor: "#f5f5f5",
-    borderRadius: 8,
+    backgroundColor: "#F5F5F5",
+    borderRadius: 12,
     padding: 12,
-    borderColor: "#ddd",
+    borderColor: "#E5E7EB",
     borderWidth: 1,
     marginBottom: 15,
     fontSize: 16,
+    fontFamily: "System",
   },
   description: {
     minHeight: 100,
     textAlignVertical: "top",
   },
   addressInput: {
-    borderColor: "#007BFF", // Highlight address field
+    borderColor: "#3B82F6",
     borderWidth: 2,
   },
   label: {
     fontSize: 14,
-    fontWeight: "bold",
-    marginBottom: 5,
+    fontWeight: "600",
+    color: "#1F2937",
+    marginBottom: 8,
   },
   dropdown: {
     backgroundColor: "#fff",
-    borderColor: "#ddd",
+    borderColor: "#E5E7EB",
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     marginBottom: 15,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  dropdownText: {
+    fontSize: 16,
+    color: "#1F2937",
+    fontFamily: "System",
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: "#F9FAFB",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    backgroundColor: "#3A7BD5",
+    borderBottomLeftRadius: 35,
+    borderBottomRightRadius: 35,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#FFFFFF",
+    flex: 1,
+    textAlign: "center",
+  },
+  closeButton: {
+    padding: 5,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+  },
+  searchInput: {
+    backgroundColor: "#fff",
+    borderColor: "#E5E7EB",
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    margin: 16,
+    fontSize: 16,
+    fontFamily: "System",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  categoryList: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    flexGrow: 1,
+  },
+  modalFlatList: {
+    flex: 1,
+  },
+  categoryItem: {
+    backgroundColor: "#fff",
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  categoryItemText: {
+    fontSize: 16,
+    color: "#1F2937",
+    fontWeight: "500",
+    fontFamily: "System",
+  },
+  emptyText: {
+    fontSize: 16,
+    color: "#6B7280",
+    textAlign: "center",
+    marginTop: 20,
+    fontFamily: "System",
   },
   geoSection: {
     marginBottom: 15,
@@ -692,17 +999,18 @@ const styles = StyleSheet.create({
   },
   geoLabel: {
     fontSize: 14,
-    fontWeight: "bold",
-    marginBottom: 5,
+    fontWeight: "600",
+    color: "#1F2937",
+    marginBottom: 8,
   },
   readOnly: {
-    backgroundColor: "#e9ecef",
+    backgroundColor: "#E9ECEF",
   },
   pinButton: {
-    backgroundColor: "#007BFF",
+    backgroundColor: "#3B82F6",
     paddingVertical: 12,
     paddingHorizontal: 20,
-    borderRadius: 10,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
@@ -716,43 +1024,112 @@ const styles = StyleSheet.create({
   pinButtonText: {
     color: "#fff",
     fontSize: 16,
-    fontWeight: "bold",
+    fontWeight: "600",
     marginLeft: 5,
+    fontFamily: "System",
   },
   pinIcon: {
     fontSize: 18,
     color: "#fff",
   },
   submitButton: {
-    backgroundColor: "#4CAF50",
+    backgroundColor: "#10B981",
     paddingVertical: 15,
-    borderRadius: 8,
+    borderRadius: 12,
     alignItems: "center",
     marginTop: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   submitButtonText: {
     color: "#fff",
-    fontWeight: "bold",
+    fontWeight: "600",
     fontSize: 16,
+    fontFamily: "System",
   },
   disabledButton: {
-    backgroundColor: "#6c757d",
+    backgroundColor: "#6B7280",
   },
   error: {
-    color: "#FF4D4F",
-    backgroundColor: "#FFF2F0",
+    color: "#EF4444",
+    backgroundColor: "#FEF2F2",
     padding: 8,
     marginVertical: 6,
-    borderRadius: 5,
+    borderRadius: 8,
     fontSize: 14,
     fontWeight: "600",
     borderWidth: 1,
-    borderColor: "#FFCCC7",
+    borderColor: "#FECACA",
+    fontFamily: "System",
   },
   helperText: {
     fontSize: 12,
-    color: "#6c757d",
+    color: "#6B7280",
     marginTop: 5,
     fontStyle: "italic",
+    fontFamily: "System",
+  },
+  subcategoriesContainer: {
+    marginBottom: 15,
+    position: "relative",
+    zIndex: 2000,
+    width: "100%",
+    overflow: "visible",
+  },
+  multiSelectDropdownMenu: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    borderColor: "#E5E7EB",
+    borderWidth: 1,
+    maxHeight: 350,
+    zIndex: 2100,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
+    marginTop: 2,
+  },
+  multiSelectText: {
+    fontSize: 16,
+    color: "#6B7280",
+    fontFamily: "System",
+    fontWeight: "400",
+    paddingVertical: 8,
+    left: 5,
+  },
+  multiSelectTagContainer: {
+    backgroundColor: "#FFFFFF",
+    borderColor: "#1E40AF",
+    borderWidth: 2,
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    margin: 4,
+  },
+  multiSelectTagText: {
+    fontSize: 14,
+    color: "#2563EB",
+    fontWeight: "800",
+    fontFamily: "System",
+    left: 5,
+  },
+  multiSelectSearchInput: {
+    fontSize: 16,
+    color: "#1F2937",
+    fontFamily: "System",
+    padding: 8,
+  },
+  multiSelectItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  checkIcon: {
+    marginLeft: 8,
   },
 });

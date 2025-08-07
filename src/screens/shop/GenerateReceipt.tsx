@@ -13,24 +13,28 @@ import {
   TouchableWithoutFeedback,
   Keyboard,
   StatusBar,
+  Linking, Image
 } from "react-native";
 import axios from "axios";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import SubscriptionProvider, { SubscriptionContext } from "../../components/SubscriptionProvider";
 import { MaterialIcons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
+import * as ImagePicker from "expo-image-picker";
+import { getFullUrl } from "../../utils/imageUtils"; // Adjust path as needed
 
 const GenerateReceipt = () => {
   const [customerName, setCustomerName] = useState("");
   const [items, setItems] = useState([]);
   const [newItem, setNewItem] = useState({ name: "", qty: "", price: "" });
   const [totalAmount, setTotalAmount] = useState(0);
-  const [receiptUrl, setReceiptUrl] = useState(null);
+  const [receiptData, setReceiptData] = useState({ pdfUrl: null, imageUrls: [] });
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [shopProducts, setShopProducts] = useState([]);
-  const [NameLoading, setNameLoading] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false); // State for loading
+  const [nameLoading, setNameLoading] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [editIndex, setEditIndex] = useState(null);
+  const [signature, setSignature] = useState(null);
 
   const params = useLocalSearchParams();
   const { shopId, senderId } = params;
@@ -58,6 +62,7 @@ const GenerateReceipt = () => {
         setShopProducts(response.data.shop_products);
       } catch (error) {
         console.error("Error fetching shop products:", error);
+        Alert.alert("Error", "Failed to fetch shop products.");
       }
     };
     fetchProducts();
@@ -72,11 +77,13 @@ const GenerateReceipt = () => {
   const fetchCustomerName = async (customerId) => {
     setNameLoading(true);
     try {
-      const response = await axios.get("https://retail-alvinia-goza-f6a0e4f7.koyeb.app/customer-fullname/", {
-        params: { customer_id: customerId },
-      });
+      const response = await axios.get(
+        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/customer-fullname/",
+        { params: { customer_id: customerId } }
+      );
       setCustomerName(response.data.full_name);
     } catch (error) {
+      console.error("Error fetching customer name:", error);
       Alert.alert("Error", "Customer not found.");
       setCustomerName("");
     }
@@ -155,23 +162,43 @@ const GenerateReceipt = () => {
     qtyRef.current?.focus();
   };
 
+  const pickSignature = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 1,
+    });
+    if (!result.canceled) {
+      setSignature(result.assets[0]);
+      console.log("Signature picked:", result.assets[0].uri);
+    }
+  };
+
   const generateReceipt = async () => {
-    console.log("Generating receipt with data:", { customerName, items, totalAmount });
+    console.log("Generating receipt with data:", { customerName, customerId, items, totalAmount, signature });
     if (!customerName || items.length === 0 || !totalAmount) {
       Alert.alert("Error", "All fields are required!");
       return;
     }
 
-    if (isGenerating) return; // Prevent multiple clicks
+    if (isGenerating) return;
 
-    setIsGenerating(true); // Start loading
+    setIsGenerating(true);
     try {
       const formData = new FormData();
       formData.append("shop_id", shopId);
       formData.append("customer_name", customerName);
-      formData.append("items", JSON.stringify(items));
+      formData.append("items", JSON.stringify({ items })); // Wrap items in object
       formData.append("total_amount", totalAmount.toString());
       formData.append("customer_id", customerId);
+
+      if (signature) {
+        formData.append("signature", {
+          uri: signature.uri,
+          type: "image/png",
+          name: "signature.png",
+        });
+      }
 
       const response = await axios.post(
         "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/generate-receipt/",
@@ -179,16 +206,29 @@ const GenerateReceipt = () => {
         { headers: { "Content-Type": "multipart/form-data" } }
       );
 
-      if (response.data.template_url) {
-        setReceiptUrl(response.data.template_url);
-      } else {
-        Alert.alert("Success", "Receipt Generated");
-      }
+      const { pdf_url, image_urls, receipt_id } = response.data;
+      setReceiptData({
+        pdfUrl: getFullUrl(pdf_url),
+        imageUrls: image_urls.map(url => getFullUrl(url)),
+        receipt_id,
+      });
+      Alert.alert("Success", `Receipt ${receipt_id} generated successfully!`);
     } catch (error) {
       console.error("Error generating receipt:", error);
       Alert.alert("Error", "Could not generate receipt");
     } finally {
-      setIsGenerating(false); // Stop loading
+      setIsGenerating(false);
+    }
+  };
+
+  const openReceipt = async () => {
+    if (receiptData.pdfUrl) {
+      try {
+        await Linking.openURL(receiptData.pdfUrl);
+      } catch (error) {
+        console.error("Error opening receipt:", error);
+        Alert.alert("Error", "Failed to open receipt. Please try again.");
+      }
     }
   };
 
@@ -211,7 +251,7 @@ const GenerateReceipt = () => {
             <TextInput
               ref={customerIdRef}
               style={styles.input}
-              placeholder="Customer Profile ID"
+              placeholder="Customer ID"
               value={customerId}
               keyboardType="numeric"
               maxLength={8}
@@ -221,7 +261,7 @@ const GenerateReceipt = () => {
               returnKeyType="next"
               onSubmitEditing={() => itemNameRef.current?.focus()}
             />
-            {NameLoading && <ActivityIndicator size="small" color="#007BFF" />}
+            {nameLoading && <ActivityIndicator size="small" color="#007BFF" />}
           </View>
 
           <TextInput
@@ -230,6 +270,17 @@ const GenerateReceipt = () => {
             value={customerName}
             editable={false}
           />
+
+          {/* Signature Picker */}
+          <TouchableOpacity
+            style={styles.button}
+            onPress={pickSignature}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.buttonText}>
+              {signature ? "Change Signature" : "Add Signature"}
+            </Text>
+          </TouchableOpacity>
 
           {/* Item Input Fields */}
           <View style={styles.itemInputRow}>
@@ -300,12 +351,12 @@ const GenerateReceipt = () => {
             onPress={addItem}
             activeOpacity={0.7}
           >
-            <Text style={styles.buttonText}>Add Item</Text>
+            <Text style={styles.buttonText}>{editIndex !== null ? "Update Item" : "Add Item"}</Text>
           </TouchableOpacity>
         </View>
       </View>
     ),
-    [customerId, customerName, newItem, filteredProductsMemo, NameLoading]
+    [customerId, customerName, newItem, filteredProductsMemo, nameLoading, editIndex, signature]
   );
 
   // Memoize renderContent
@@ -342,6 +393,13 @@ const GenerateReceipt = () => {
                 })}
               </Text>
               <TouchableOpacity
+                onPress={() => editItem(index)}
+                style={styles.removeButton}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons name="edit" size={18} color="#007BFF" />
+              </TouchableOpacity>
+              <TouchableOpacity
                 onPress={() => removeItem(index)}
                 style={styles.removeButton}
                 activeOpacity={0.7}
@@ -375,18 +433,42 @@ const GenerateReceipt = () => {
           )}
         </TouchableOpacity>
 
-        {receiptUrl && (
+        {receiptData.pdfUrl && (
           <TouchableOpacity
-            onPress={() => Alert.alert("Download", "Opening Receipt...")}
+            onPress={openReceipt}
             style={styles.button}
             activeOpacity={0.7}
           >
-            <Text style={styles.buttonText}>Download Receipt</Text>
+            <Text style={styles.buttonText}>View Receipt PDF</Text>
           </TouchableOpacity>
+        )}
+
+        {receiptData.imageUrls.length > 0 && (
+          <View style={styles.imageContainer}>
+            <Text style={styles.imageLabel}>Receipt Images</Text>
+            <FlatList
+              data={receiptData.imageUrls}
+              keyExtractor={(item, index) => index.toString()}
+              horizontal
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  onPress={() => Linking.openURL(item)}
+                  style={styles.imagePreview}
+                  activeOpacity={0.7}
+                >
+                  <Image
+                    source={{ uri: item }}
+                    style={styles.image}
+                    onError={(e) => console.error("Image load error:", e.nativeEvent.error, "URL:", item)}
+                  />
+                </TouchableOpacity>
+              )}
+            />
+          </View>
         )}
       </View>
     ),
-    [items, totalAmount, receiptUrl, isGenerating]
+    [items, totalAmount, receiptData, isGenerating]
   );
 
   return (
@@ -428,7 +510,7 @@ const GenerateReceipt = () => {
   );
 };
 
-// Styles (unchanged from previous, included for completeness)
+// Updated Styles
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -462,6 +544,7 @@ const styles = StyleSheet.create({
   card: {
     flex: 1,
     padding: 16,
+    backgroundColor: "#F7FAFC",
   },
   inputContainer: {
     flexDirection: "row",
@@ -490,6 +573,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#333",
     paddingHorizontal: 10,
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
   },
   disabledInput: {
     height: 50,
@@ -501,6 +585,7 @@ const styles = StyleSheet.create({
     color: "#6C757D",
     borderWidth: 1,
     borderColor: "#CCC",
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
   },
   itemInputRow: {
     flexDirection: "row",
@@ -528,6 +613,7 @@ const styles = StyleSheet.create({
         elevation: 3,
       },
     }),
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
   },
   itemsInput: {
     flex: 1.4,
@@ -553,7 +639,8 @@ const styles = StyleSheet.create({
   buttonText: {
     color: "#fff",
     fontSize: 16,
-    fontWeight: "bold",
+    fontWeight: "700",
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
   },
   tableHeader: {
     flexDirection: "row",
@@ -568,6 +655,7 @@ const styles = StyleSheet.create({
     color: "#fff",
     textAlign: "left",
     fontWeight: "600",
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
   },
   tableRow: {
     flexDirection: "row",
@@ -594,6 +682,7 @@ const styles = StyleSheet.create({
     color: "#333",
     paddingHorizontal: 4,
     textAlign: "left",
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
   },
   tableRowItem: {
     flex: 1.3,
@@ -623,8 +712,9 @@ const styles = StyleSheet.create({
   },
   totalText: {
     fontSize: 20,
-    fontWeight: "bold",
+    fontWeight: "700",
     color: "#333",
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
   },
   primaryButton: {
     backgroundColor: "#28A745",
@@ -641,7 +731,8 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     color: "#fff",
     fontSize: 16,
-    fontWeight: "bold",
+    fontWeight: "700",
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
   },
   disabledButton: {
     backgroundColor: "#6c757d",
@@ -687,6 +778,32 @@ const styles = StyleSheet.create({
   suggestionText: {
     fontSize: 14,
     color: "#333",
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
+  },
+  imageContainer: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: "#F8FAFC",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  imageLabel: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#1F2937",
+    marginBottom: 8,
+    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
+  },
+  imagePreview: {
+    marginRight: 8,
+  },
+  image: {
+    width: 100,
+    height: 150,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
   },
 });
 

@@ -32,7 +32,7 @@ const isRecentPost = (createdAt) => {
   return hoursDifference < 3;
 };
 
-const ShopPostsFeed = ({ posts, showDistance = false, onSeeMore, hasMore }) => {
+const ShopPostsFeed = ({ posts, showDistance = false, onSeeMore, hasMore, regenerateMediaUrl, onThumbnailError }) => {
   const [selectedPost, setSelectedPost] = useState(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isVideoLoading, setIsVideoLoading] = useState(false);
@@ -41,29 +41,24 @@ const ShopPostsFeed = ({ posts, showDistance = false, onSeeMore, hasMore }) => {
 
   const playerRef = useRef(null);
 
+  // Initialize useVideoPlayer at the top level with an empty URI
+  const player = useVideoPlayer({ uri: "" }, (p) => {
+    playerRef.current = p;
+    p.loop = false;
+  });
+
   const isVideoFile = (media) => {
     if (!media || !media.url) return false;
     return media.type === "video";
   };
 
   useEffect(() => {
-    console.log("Posts on mount:", posts);
-  }, [posts]);
-
-  useEffect(() => {
-    let player = null;
-
     if (selectedPost && selectedPost.media && selectedPost.media[currentIndex]) {
       const media = selectedPost.media[currentIndex];
       const fullUrl = getFullUrl(media.url);
       const isVideo = isVideoFile(media);
 
       if (isVideo) {
-        player = useVideoPlayer({ uri: fullUrl }, (p) => {
-          playerRef.current = p;
-          p.loop = false;
-        });
-
         const loadVideo = async () => {
           try {
             setIsVideoLoading(true);
@@ -87,13 +82,9 @@ const ShopPostsFeed = ({ posts, showDistance = false, onSeeMore, hasMore }) => {
       if (playerRef.current) {
         try {
           playerRef.current.pause?.();
-          playerRef.current = null;
         } catch (error) {
           console.warn("Error pausing video during cleanup:", error.message);
         }
-      }
-      if (player) {
-        player = null;
       }
     };
   }, [selectedPost, currentIndex]);
@@ -112,14 +103,13 @@ const ShopPostsFeed = ({ posts, showDistance = false, onSeeMore, hasMore }) => {
     setIsFullscreen(!isFullscreen);
   };
 
-  const renderThumbnail = (media) => {
+  const renderThumbnail = (media, post) => {
     let thumbnailUri;
     if (isVideoFile(media) && media.thumbnail_url) {
       thumbnailUri = getFullUrl(media.thumbnail_url);
     } else {
       thumbnailUri = getFullUrl(media.url);
     }
-    console.log("Rendering thumbnail for:", thumbnailUri);
     if (thumbnailUri) {
       return (
         <Image
@@ -129,6 +119,9 @@ const ShopPostsFeed = ({ posts, showDistance = false, onSeeMore, hasMore }) => {
           cachePolicy="memory-disk"
           onError={(e) => {
             console.error("Thumbnail load error:", thumbnailUri, e.error);
+            if (onThumbnailError && post) {
+              onThumbnailError(post.id, post.shop_id, post.media.indexOf(media));
+            }
           }}
         />
       );
@@ -157,7 +150,7 @@ const ShopPostsFeed = ({ posts, showDistance = false, onSeeMore, hasMore }) => {
     if (isVideo) {
       return (
         <LinearGradient
-          colors={['rgba(0, 0, 0, 0.7)', 'rgba(0, 0, 0, 0.9)']}
+          colors={["rgba(0, 0, 0, 0.7)", "rgba(0, 0, 0, 0.9)"]}
           style={[styles.mediaContainer, isFullscreen && styles.fullscreenMedia]}
         >
           {isVideoLoading ? (
@@ -172,7 +165,7 @@ const ShopPostsFeed = ({ posts, showDistance = false, onSeeMore, hasMore }) => {
           ) : (
             <VideoView
               style={[styles.videoView, isFullscreen && styles.fullscreenVideo]}
-              player={playerRef.current}
+              player={player}
               contentFit="cover"
               allowsFullscreen={true}
               allowsPictureInPicture={false}
@@ -203,7 +196,7 @@ const ShopPostsFeed = ({ posts, showDistance = false, onSeeMore, hasMore }) => {
 
     return (
       <LinearGradient
-        colors={['rgba(0, 0, 0, 0.7)', 'rgba(0, 0, 0, 0.9)']}
+        colors={["rgba(0, 0, 0, 0.7)", "rgba(0, 0, 0, 0.9)"]}
         style={[styles.imageViewerContainer, isFullscreen && styles.fullscreenImage]}
       >
         <ImageViewer
@@ -261,15 +254,15 @@ const ShopPostsFeed = ({ posts, showDistance = false, onSeeMore, hasMore }) => {
       <Animated.View entering={FadeInDown.duration(300)} style={styles.postItem}>
         <TouchableOpacity onPress={() => handleMediaClick(item)} activeOpacity={0.8}>
           <LinearGradient
-            colors={['#ffffff', '#f8fafc']}
+            colors={["#ffffff", "#f8fafc"]}
             style={styles.thumbnailContainer}
           >
             {firstMedia ? (
               <>
-                {renderThumbnail(firstMedia)}
+                {renderThumbnail(firstMedia, item)}
                 {isNew && (
                   <LinearGradient
-                    colors={['#f39c12', '#e67e22']}
+                    colors={["#f39c12", "#e67e22"]}
                     style={styles.newBadge}
                   >
                     <Text style={styles.newBadgeText}>New</Text>
@@ -328,7 +321,7 @@ const ShopPostsFeed = ({ posts, showDistance = false, onSeeMore, hasMore }) => {
         <Modal visible={true} transparent={true} animationType="fade">
           <SafeAreaView style={[styles.modalContainer, isFullscreen && styles.fullscreenModal]}>
             <LinearGradient
-              colors={['rgba(0, 0, 0, 0.7)', 'rgba(0, 0, 0, 0.95)']}
+              colors={["rgba(0, 0, 0, 0.7)", "rgba(0, 0, 0, 0.95)"]}
               style={styles.modalBackground}
             >
               <View style={styles.modalHeader}>
@@ -372,93 +365,93 @@ const ShopPostsFeed = ({ posts, showDistance = false, onSeeMore, hasMore }) => {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: 'transparent',
+    backgroundColor: "transparent",
   },
   flatListContent: {
     paddingBottom: 10,
   },
   postItem: {
-    width: (SCREEN_WIDTH - 50) / 2,
+    width: (SCREEN_WIDTH - 45) / 2,
     margin: 6,
     borderRadius: 16,
-    overflow: 'hidden',
-    shadowColor: '#000',
+    overflow: "hidden",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 6,
     elevation: 4,
-    right: 10,
+    right: 7,
   },
   thumbnailContainer: {
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   thumbnail: {
-    width: '100%',
+    width: "100%",
     height: 120,
-    backgroundColor: '#e0e0e0',
+    backgroundColor: "#e0e0e0",
   },
   newBadge: {
-    position: 'absolute',
+    position: "absolute",
     top: 10,
     left: 10,
     borderRadius: 12,
     paddingVertical: 4,
     paddingHorizontal: 10,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 2,
     elevation: 2,
   },
   newBadgeText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   shopInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 10,
     paddingTop: 8,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
   },
   shopName: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#2c3e50',
+    fontWeight: "600",
+    color: "#2c3e50",
   },
   createdAt: {
     fontSize: 12,
-    color: '#7f8c8d',
+    color: "#7f8c8d",
     marginTop: 4,
   },
   distance: {
     fontSize: 12,
-    color: '#7f8c8d',
+    color: "#7f8c8d",
     marginTop: 4,
   },
   description: {
     fontSize: 13,
-    color: '#34495e',
+    color: "#34495e",
     paddingHorizontal: 10,
     paddingBottom: 10,
     lineHeight: 18,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
   },
   multiMediaIndicator: {
-    position: 'absolute',
+    position: "absolute",
     top: 10,
     right: 10,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
     borderRadius: 12,
     padding: 6,
   },
   modalContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   fullscreenModal: {
     padding: 0,
@@ -466,36 +459,36 @@ const styles = StyleSheet.create({
   },
   modalBackground: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   modalHeader: {
-    position: 'absolute',
+    position: "absolute",
     top: 20,
     left: 0,
     right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     paddingHorizontal: 20,
     zIndex: 10,
   },
   modalClose: {
     padding: 12,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
     borderRadius: 20,
   },
   fullscreenButton: {
     padding: 12,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
     borderRadius: 20,
   },
   mediaContainer: {
     width: SCREEN_WIDTH * 0.95,
     height: SCREEN_HEIGHT * 0.7,
     borderRadius: 12,
-    overflow: 'hidden',
+    overflow: "hidden",
     borderWidth: 1,
-    borderColor: '#e8ecef',
+    borderColor: "#e8ecef",
   },
   fullscreenMedia: {
     width: SCREEN_WIDTH,
@@ -512,33 +505,33 @@ const styles = StyleSheet.create({
     height: SCREEN_HEIGHT,
   },
   imageViewer: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
   fullscreenImageViewer: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
   },
   videoView: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
     borderRadius: 12,
   },
   fullscreenVideo: {
     borderRadius: 0,
   },
   controlsContainer: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 30,
-    width: '100%',
-    alignItems: 'center',
+    width: "100%",
+    alignItems: "center",
     paddingHorizontal: 20,
     zIndex: 10,
   },
   slideControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
     borderRadius: 20,
     paddingVertical: 10,
     paddingHorizontal: 16,
@@ -547,58 +540,58 @@ const styles = StyleSheet.create({
   navButton: {
     padding: 8,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
   },
   slideIndicator: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
     marginHorizontal: 12,
   },
   descriptionText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 16,
-    textAlign: 'center',
+    textAlign: "center",
     paddingHorizontal: 20,
-    fontWeight: '500',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    fontWeight: "500",
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
     borderRadius: 10,
     paddingVertical: 10,
   },
   fallbackContainer: {
-    width: '100%',
+    width: "100%",
     height: 120,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#e0e0e0',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#e0e0e0",
     borderRadius: 12,
   },
   errorText: {
-    color: '#7f8c8d',
+    color: "#7f8c8d",
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   loadingText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 16,
-    textAlign: 'center',
+    textAlign: "center",
     marginTop: 12,
   },
   loadingContainer: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    width: "100%",
+    height: "100%",
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
     borderRadius: 12,
   },
   playIconOverlay: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
+    position: "absolute",
+    top: "50%",
+    left: "50%",
     transform: [{ translateX: -20 }, { translateY: -20 }],
     opacity: 0.8,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
     borderRadius: 20,
     padding: 8,
   },

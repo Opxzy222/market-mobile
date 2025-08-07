@@ -592,7 +592,7 @@ const ShopProfileScreen: React.FC = () => {
         {
           headers: {
             "Content-Type": "multipart/form-data",
-            Authorization: `Bearer ${sessionId}`,
+            Authorization: sessionId,
           },
         }
       );

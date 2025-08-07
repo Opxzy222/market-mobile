@@ -38,9 +38,9 @@ const ProfileScreen = () => {
       setCopied(true);
 
       if (Platform.OS === 'android') {
-        ToastAndroid.show('Profile ID copied!', ToastAndroid.SHORT);
+        ToastAndroid.show('Customer ID copied!', ToastAndroid.SHORT);
       } else {
-        Alert.alert('Copied', 'Profile ID copied to clipboard!');
+        Alert.alert('Copied', 'Customer ID copied to clipboard!');
       }
 
       setTimeout(() => setCopied(false), 2000);
@@ -53,7 +53,7 @@ const ProfileScreen = () => {
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         {userId && (
           <View style={styles.profileCard}>
-            <Text style={styles.profileTitle}>Profile ID</Text>
+            <Text style={styles.profileTitle}>Customer ID</Text>
             <View style={styles.profileRow}>
               <Text style={styles.profileIdText}>{userId}</Text>
               <TouchableOpacity onPress={copyToClipboard} style={styles.copyButton}>
@@ -86,7 +86,7 @@ const ProfileScreen = () => {
           <MenuItem
             icon="shield-checkmark"
             title="Account Verification"
-            onPress={() => router.push('AccountVerification')}
+            onPress={() => router.push({ pathname: 'VerificationStatus'})}
           />
           <MenuItem
             icon="trash"

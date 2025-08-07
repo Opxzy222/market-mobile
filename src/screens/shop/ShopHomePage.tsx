@@ -9,6 +9,8 @@ import {
   View,
   Text,
   TouchableOpacity,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -37,14 +39,14 @@ const ShopHomePage = () => {
   const [inputFocused, setInputFocused] = useState(false);
   const [networkError, setNetworkError] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [showBannerAd, setShowBannerAd] = useState(false);
+  const [isPopulating, setIsPopulating] = useState(false); // Track population state
+  const [progress, setProgress] = useState(0); // Track population progress
   const hasFetchedOnceRef = useRef(false);
   const sessionTokenRef = useRef(null);
   const flatListRef = useRef(null);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const TAB_BAR_HEIGHT = 60;
-  const BANNER_AD_HEIGHT = 60;
 
   const loadCachedData = async () => {
     try {
@@ -106,7 +108,11 @@ const ShopHomePage = () => {
         }
       );
       setData(response.data);
+
+
       await AsyncStorage.setItem('shopDashboardData', JSON.stringify(response.data));
+      await AsyncStorage.setItem('user_verified', JSON.stringify(response.data.user_verified));
+      await AsyncStorage.setItem('phone_verified', JSON.stringify(response.data.phone_verified));
       console.log('Fetched dashboard data:', response.data);
       hasFetchedOnceRef.current = true;
     } catch (error) {
@@ -164,29 +170,16 @@ const ShopHomePage = () => {
     setInputFocused(focused);
   }, []);
 
-  const handleTouchStart = useCallback(() => {
-    console.log('Parent FlatList touched');
+  const handlePopulationStateChange = useCallback(({ isPopulating, progress }) => {
+    console.log('Population state changed:', { isPopulating, progress });
+    setIsPopulating(isPopulating);
+    setProgress(progress);
   }, []);
 
   const handleReload = useCallback(() => {
     console.log('Reload button pressed');
     fetchData();
   }, []);
-
-  const handleScroll = useCallback(
-    ({ nativeEvent }) => {
-      if (!['regular', 'standard', 'premium'].includes(subscriptionStatus)) {
-        const { contentOffset, contentSize } = nativeEvent;
-        const scrollPercentage = contentOffset.y / contentSize.height;
-        const isScrolledEnough = scrollPercentage >= 0.25;
-        setShowBannerAd(isScrolledEnough);
-        console.log('Scroll position:', contentOffset.y, 'Scroll percentage:', scrollPercentage, 'Show banner ad:', isScrolledEnough);
-      } else {
-        setShowBannerAd(false);
-      }
-    },
-    [subscriptionStatus]
-  );
 
   const sections = useMemo(
     () => [
@@ -196,12 +189,20 @@ const ShopHomePage = () => {
         id: 'searchBar',
         onSuggestionsStateChange: handleSuggestionsStateChange,
         onFocusChange: handleFocusChange,
+        onPopulationStateChange: handlePopulationStateChange, // Pass prop
       },
       { type: 'categories', id: 'categories', data: data.categories },
       { type: 'recentShops', id: 'recentShops', data: data.recently_visited_shops },
       { type: 'followedShops', id: 'followedShops', data: data.followed_shops },
     ],
-    [data.categories, data.recently_visited_shops, data.followed_shops, handleSuggestionsStateChange, handleFocusChange]
+    [
+      data.categories,
+      data.recently_visited_shops,
+      data.followed_shops,
+      handleSuggestionsStateChange,
+      handleFocusChange,
+      handlePopulationStateChange,
+    ]
   );
 
   const renderSection = ({ item }) => {
@@ -209,7 +210,13 @@ const ShopHomePage = () => {
       case 'header':
         return <View />;
       case 'searchBar':
-        return <SearchBar onSuggestionsStateChange={item.onSuggestionsStateChange} onFocusChange={item.onFocusChange} />;
+        return (
+          <SearchBar
+            onSuggestionsStateChange={item.onSuggestionsStateChange}
+            onFocusChange={item.onFocusChange}
+            onPopulationStateChange={item.onPopulationStateChange} // Pass prop
+          />
+        );
       case 'categories':
         return <Categories categories={item.data} />;
       case 'recentShops':
@@ -224,7 +231,7 @@ const ShopHomePage = () => {
   if (loading || isLoading) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: '#F7FAFC' }]}>
-        <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
+        <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
         <View style={styles.loadingContainer}>
           <MaterialIcons name="store" size={40} color="#2563EB" />
           <Text style={styles.loadingText}>Loading your dashboard...</Text>
@@ -236,7 +243,7 @@ const ShopHomePage = () => {
   if (networkError) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: '#F7FAFC' }]}>
-        <StatusBar barStyle="dark-content" backgroundColor='#2563EB' />
+        <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>Failed to load data due to a network issue.</Text>
           <TouchableOpacity style={styles.reloadButton} onPress={handleReload}>
@@ -250,7 +257,7 @@ const ShopHomePage = () => {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: '#F7FAFC' }]} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="dark-content" backgroundColor='#2563EB' />
+      <StatusBar barStyle="dark-content" backgroundColor="#2563EB" />
       <View style={styles.headerContainer}>
         <Header />
       </View>
@@ -259,7 +266,7 @@ const ShopHomePage = () => {
         style={styles.keyboardAvoidingView}
         keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 20}
       >
-        <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
+        <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.container}>
           <FlatList
             ref={flatListRef}
             data={sections}
@@ -268,32 +275,39 @@ const ShopHomePage = () => {
             contentContainerStyle={[
               styles.flatListContent,
               {
-                paddingBottom:
-                  suggestionsHeight + insets.bottom + TAB_BAR_HEIGHT + (showBannerAd ? BANNER_AD_HEIGHT + 10 : 10),
+                paddingBottom: suggestionsHeight + insets.bottom + TAB_BAR_HEIGHT + 10,
               },
             ]}
             nestedScrollEnabled={true}
             keyboardShouldPersistTaps="handled"
             scrollEnabled={true}
-            onTouchStart={handleTouchStart}
-            onScroll={handleScroll}
             scrollEventThrottle={16}
             ListFooterComponent={
               <View style={styles.footerContainer}>
-                <View style={[styles.adContainer, { opacity: 0 }]}>
-                  <AdMobManager />
-                </View>
+                {!['regular', 'standard', 'premium'].includes(subscriptionStatus) && (
+                  <View style={styles.adContainer}>
+                    <AdMobManager />
+                  </View>
+                )}
                 <View style={[styles.footerSpacer, { height: insets.bottom + TAB_BAR_HEIGHT }]} />
               </View>
             }
           />
-          {showBannerAd && !['regular', 'standard', 'premium'].includes(subscriptionStatus) && (
-            <View style={[styles.stickyAdContainer, { bottom: insets.bottom + TAB_BAR_HEIGHT }]}>
-              <AdMobManager />
-            </View>
-          )}
         </LinearGradient>
       </KeyboardAvoidingView>
+      <Modal visible={isPopulating} animationType="fade" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Text style={styles.modalTitle}>Setting Up Your Dashboard</Text>
+            <Text style={styles.modalSubtitle}>Please hold on this could take a few minutes...</Text>
+            <View style={styles.progressBarContainer}>
+              <View style={[styles.progressBar, { width: `${progress}%` }]} />
+            </View>
+            <Text style={styles.progressText}>{`${Math.round(progress)}%`}</Text>
+            <ActivityIndicator size="large" color="#2563EB" style={styles.modalLoader} />
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -313,7 +327,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#F7FAFC',
   },
   flatListContent: {
-   
     paddingTop: 10,
   },
   footerContainer: {
@@ -325,13 +338,6 @@ const styles = StyleSheet.create({
   },
   footerSpacer: {
     // Height for tab bar and insets
-  },
-  stickyAdContainer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    backgroundColor: '#F7FAFC',
   },
   loadingContainer: {
     flex: 1,
@@ -372,6 +378,59 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    width: '80%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  progressBarContainer: {
+    width: '100%',
+    height: 10,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 5,
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: '#2563EB',
+    borderRadius: 5,
+  },
+  progressText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 20,
+  },
+  modalLoader: {
+    marginTop: 10,
   },
 });
 

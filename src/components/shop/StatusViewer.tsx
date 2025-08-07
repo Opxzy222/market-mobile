@@ -7,38 +7,364 @@ import {
   TouchableOpacity,
   StyleSheet,
   Animated,
+  ActivityIndicator,
 } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
+import * as FileSystem from "expo-file-system";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const IMAGE_TEXT_DURATION = 6000;
 const VIDEO_MAX_DURATION = 30000;
+const LOAD_TIMEOUT = 10000;
 const CACHE_KEY = "videoCache";
 
-const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusViewed, userId }) => {
+const formatRelativeTime = (createdAt) => {
+  if (!createdAt) return "";
+  const now = new Date();
+  const created = new Date(createdAt);
+  const diffMs = now - created;
+  const diffSeconds = Math.floor(diffMs / 1000);
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  const diffHours = Math.floor(diffMinutes / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffSeconds < 60) return `${diffSeconds} second${diffSeconds === 1 ? "" : "s"} ago`;
+  if (diffMinutes < 60) return `${diffMinutes} minute${diffMinutes === 1 ? "" : "s"} ago`;
+  if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
+  return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+};
+
+const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusViewed, userId, authToken }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [sortedStatuses, setSortedStatuses] = useState([]);
+  const sortedStatusesRef = useRef([]);
   const [videoCache, setVideoCache] = useState({});
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  const lastStatusesRef = useRef(null);
+  const isNavigating = useRef(false); // Prevent concurrent navigation
 
   const progress = useRef(new Animated.Value(0)).current;
-  const progressAnimation = useRef(null);
-  const pausedTime = useRef(0);
-  const isPaused = useRef(false);
-  const isVideoFinished = useRef(false);
+  const timerRef = useRef(null);
   const playerRef = useRef(null);
+  const isPaused = useRef(false);
+  const pausedTime = useRef(0);
+  const loadTimeoutRef = useRef(null);
+  const videoReadyRef = useRef(false);
 
-  // Current status
   const currentStatus = useMemo(() => {
-    return sortedStatuses[currentIndex] || {};
+    const status = sortedStatuses[currentIndex] || {};
+    if (status.media && /\.(mp4|mov|avi)$/i.test(status.media) && status.media_type !== "video") {
+      console.warn(`Mismatched media_type for status ${status.id}: expected video, got ${status.media_type}`);
+      return { ...status, media_type: "video" };
+    }
+    return status;
   }, [sortedStatuses, currentIndex]);
 
-  // Next status for preloading
-  const nextStatus = useMemo(() => {
-    return currentIndex < sortedStatuses.length - 1 ? sortedStatuses[currentIndex + 1] : {};
-  }, [sortedStatuses, currentIndex]);
+  const isImage = currentStatus.media_type === "image";
+  const isVideo = currentStatus.media_type === "video";
+  const isText = currentStatus.media_type === "text";
+  const hasMedia = (isImage || isVideo) && !!currentStatus.media;
+  const statusText = currentStatus.text || "";
 
-  // Load video cache
+  const cacheVideo = async (url) => {
+    try {
+      const cacheDir = `${FileSystem.cacheDirectory}videos/`;
+      await FileSystem.makeDirectoryAsync(cacheDir, { intermediates: true });
+      const fileName = url.split("/").pop().split("?")[0];
+      const localUri = `${cacheDir}${fileName}`;
+      const fileInfo = await FileSystem.getInfoAsync(localUri);
+
+      if (!fileInfo.exists) {
+        console.log("Caching video from:", url);
+        await FileSystem.downloadAsync(url, localUri, {
+          headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+        });
+      }
+      console.log("Cached video at:", localUri);
+      return localUri;
+    } catch (err) {
+      console.error(`Failed to cache video at ${url}:`, err);
+      return url;
+    }
+  };
+
+  const checkVideoUrl = useCallback(async (url) => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const response = await fetch(url, {
+        method: "HEAD",
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      console.log("Video URL accessible:", url);
+      return true;
+    } catch (error) {
+      console.error("Video URL check failed:", error);
+      return false;
+    }
+  }, [authToken]);
+
+  const playerSource = useMemo(
+    () =>
+      isVideo && currentStatus.media
+        ? { uri: currentStatus.media, headers: authToken ? { Authorization: `Bearer ${authToken}` } : {} }
+        : null,
+    [isVideo, currentStatus.media, authToken]
+  );
+
+  const player = useVideoPlayer(playerSource, (p) => {
+    console.log("Player initialized, source:", playerSource?.uri || "none");
+    playerRef.current = p;
+    p.loop = false;
+    p.onError = (error) => {
+      console.error("Video player error:", error);
+      setIsLoading(false);
+      setLoadError(error.message || "Failed to load video");
+      if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+      setTimeout(() => handleNext(true), 2000);
+    };
+  });
+
+  const isPlayerValid = (player) => {
+    return player && typeof player.pause === "function";
+  };
+
+  const getStatusDuration = useCallback(() => {
+    if (isVideo) {
+      const safeDuration = playerRef.current?.duration
+        ? playerRef.current.duration * 1000
+        : VIDEO_MAX_DURATION;
+      console.log("Video duration:", safeDuration);
+      return Math.min(safeDuration, VIDEO_MAX_DURATION);
+    }
+    console.log("Image/text duration:", IMAGE_TEXT_DURATION);
+    return IMAGE_TEXT_DURATION;
+  }, [isVideo]);
+
+  const startProgress = useCallback(
+    (duration) => {
+      console.log("startProgress called, duration:", duration);
+      if (isPaused.current || isNavigating.current) return;
+      progress.setValue(progress.__getValue());
+      if (timerRef.current) clearTimeout(timerRef.current);
+      Animated.timing(progress, {
+        toValue: 1,
+        duration,
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        console.log("Progress animation finished:", finished);
+        if (finished && !isPaused.current && !isNavigating.current) {
+          handleNext(true);
+        }
+      });
+    },
+    [handleNext]
+  );
+
+  const handleNext = useCallback(
+    (fromTimer = false) => {
+      if (isNavigating.current) {
+        console.log("handleNext blocked: already navigating");
+        return;
+      }
+      isNavigating.current = true;
+      console.log("handleNext called", {
+        fromTimer,
+        currentIndex,
+        sortedStatusesLength: sortedStatuses.length,
+        sortedStatusesRefLength: sortedStatusesRef.current.length,
+        currentStatus: currentStatus.id ? { id: currentStatus.id, shopId: currentStatus.shop?.id } : null,
+      });
+
+      if (!fromTimer && isPaused.current) {
+        togglePause();
+        isNavigating.current = false;
+        return;
+      }
+      if (isVideo && isPlayerValid(playerRef.current)) {
+        try {
+          playerRef.current.pause();
+          console.log("Paused player before next");
+        } catch (error) {
+          console.error("Pause error in handleNext:", error);
+        }
+      }
+      Animated.timing(progress).stop();
+      progress.setValue(0);
+      setIsLoading(false);
+      setLoadError(null);
+      if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+
+      if (currentIndex < sortedStatusesRef.current.length - 1) {
+        setCurrentIndex((prev) => {
+          const nextIndex = Math.min(prev + 1, sortedStatusesRef.current.length - 1);
+          console.log("Moving to next index:", nextIndex);
+          return nextIndex;
+        });
+        isNavigating.current = false;
+      } else {
+        console.log("Reached end of statuses, calling onClose");
+        const currentShopId = currentStatus.shop?.id ?? 0;
+        const shopStatuses = sortedStatusesRef.current.filter((s) => s.shop?.id === currentShopId);
+        console.log("Shop statuses for onStatusViewed:", { shopStatuses, currentShopId });
+        if (shopStatuses.length > 0 && currentStatus.shop?.name) {
+          onStatusViewed({ shop: currentStatus.shop.name, statuses: shopStatuses });
+        }
+        onClose();
+        isNavigating.current = false;
+      }
+    },
+    [currentIndex, currentStatus, onStatusViewed, onClose, isVideo]
+  );
+
+  const handlePrev = useCallback(() => {
+    if (isNavigating.current) {
+      console.log("handlePrev blocked: already navigating");
+      return;
+    }
+    isNavigating.current = true;
+    console.log("handlePrev called", { currentIndex, sortedStatusesRefLength: sortedStatusesRef.current.length });
+    if (isVideo && isPlayerValid(playerRef.current)) {
+      try {
+        playerRef.current.pause();
+        console.log("Paused player before prev");
+      } catch (error) {
+        console.error("Pause error in handlePrev:", error);
+      }
+    }
+    Animated.timing(progress).stop();
+    progress.setValue(0);
+    setIsLoading(false);
+    setLoadError(null);
+    if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+    if (currentIndex > 0) {
+      setCurrentIndex((prev) => {
+        console.log("Moving to prev index:", prev - 1);
+        return prev - 1;
+      });
+      if (isPaused.current) {
+        isPaused.current = false;
+      }
+    } else {
+      console.log("Reached start, calling onClose");
+      onClose();
+    }
+    isNavigating.current = false;
+  }, [currentIndex, onClose, isVideo]);
+
+  const togglePause = useCallback(() => {
+    console.log("togglePause called", { isPaused: isPaused.current, playerRef: !!playerRef.current });
+    isPaused.current = !isPaused.current;
+
+    if (isPaused.current) {
+      pausedTime.current = progress.__getValue() * getStatusDuration();
+      console.log("Pausing, pausedTime:", pausedTime.current);
+      Animated.timing(progress).stop();
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (isVideo && isPlayerValid(playerRef.current)) {
+        try {
+          playerRef.current.pause();
+          console.log("Video paused");
+        } catch (error) {
+          console.error("Pause error in togglePause:", error);
+        }
+      }
+    } else {
+      const duration = getStatusDuration();
+      const remainingTime = duration - pausedTime.current;
+      console.log("Resuming, remainingTime:", remainingTime);
+      progress.setValue(pausedTime.current / duration);
+      startProgress(remainingTime);
+      if (isVideo && isPlayerValid(playerRef.current)) {
+        try {
+          playerRef.current.play();
+          console.log("Video resumed");
+        } catch (error) {
+          console.error("Play error in togglePause:", error);
+          handleNext(true);
+        }
+      }
+    }
+  }, [isVideo, getStatusDuration, startProgress, handleNext]);
+
+  const markStatusAsViewed = useCallback(
+    async (status) => {
+      if (!status || status.viewed || !userId) return;
+      try {
+        console.log("Marking status as viewed:", status.id);
+        const formData = new FormData();
+        formData.append("user_id", userId.toString());
+        formData.append("status_ids[]", status.id);
+
+        await axios.post(
+          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/mark_status_viewed/",
+          formData,
+          { headers: { "Content-Type": "multipart/form-data", Authorization: `Bearer ${authToken}` } }
+        );
+        status.viewed = true;
+
+        if (status.media_type === "video" && status.media && !videoCache[status.media]) {
+          const newCache = { ...videoCache, [status.media]: status.media };
+          setVideoCache(newCache);
+          await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(newCache));
+          console.log("Cached video:", status.media);
+        }
+      } catch (error) {
+        console.error("Error marking status as viewed:", error);
+      }
+    },
+    [userId, videoCache, authToken]
+  );
+
+  const handleVideoLoad = useCallback(() => {
+    console.log("Video loaded, source:", currentStatus.media);
+    videoReadyRef.current = true;
+    setIsLoading(false);
+    setLoadError(null);
+    if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+    if (!isPaused.current && isVideo) {
+      try {
+        playerRef.current.play();
+        console.log("Video auto-playing");
+        startProgress(getStatusDuration());
+      } catch (error) {
+        console.error("Auto-play error:", error);
+        handleNext(true);
+      }
+    }
+  }, [currentStatus.media, isVideo, getStatusDuration, startProgress, handleNext]);
+
+  const handleVideoError = useCallback(
+    (error) => {
+      console.error("VideoView error:", error);
+      setIsLoading(false);
+      setLoadError(error.message || "Failed to play video");
+      if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+      setTimeout(() => handleNext(true), 2000);
+    },
+    [handleNext]
+  );
+
+  const handlePlaybackStatusUpdate = useCallback(
+    (status) => {
+      console.log("Playback status update:", status);
+      if (status.didJustFinish && !isPaused.current && !isNavigating.current) {
+        console.log("Video finished, advancing to next status");
+        progress.setValue(1);
+        if (timerRef.current) clearTimeout(timerRef.current);
+        handleNext(true);
+      }
+    },
+    [handleNext]
+  );
+
   useEffect(() => {
     const loadCache = async () => {
       try {
@@ -55,208 +381,37 @@ const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusVi
     loadCache();
   }, []);
 
-  // Video players
-  const currentPlayer = useVideoPlayer(currentStatus?.media_url ?? "", (player) => {
-    console.log("Current player initialized:", player);
-    playerRef.current = player;
-    player.loop = false;
-    player.onError = (error) => {
-      console.error("Current video error:", error);
-      handleNext();
-    };
-    if (currentStatus.media_type === "video" && videoCache[currentStatus.media_url]) {
-      console.log("Using cached video for current:", currentStatus.media_url);
-      player.source = { uri: currentStatus.media_url };
-    }
-  });
-
-  const nextPlayer = useVideoPlayer(nextStatus?.media_url ?? "", (player) => {
-    console.log("Next player initialized:", player);
-    player.loop = false;
-    player.onError = (error) => {
-      console.error("Next video error:", error);
-    };
-    if (nextStatus.media_type === "video" && videoCache[nextStatus.media_url]) {
-      console.log("Using cached video for next:", nextStatus.media_url);
-      player.source = { uri: nextStatus.media_url };
-    }
-  });
-
-  // Navigation handlers
-  const handleNext = useCallback(() => {
-    console.log("handleNext called");
-    if (playerRef.current) {
-      try {
-        playerRef.current.pause();
-        console.log("Paused current player before next");
-      } catch (error) {
-        console.error("Pause error before next:", error);
-      }
-      playerRef.current = null;
-    }
-
-    setTimeout(() => {
-      if (currentIndex < sortedStatuses.length - 1) {
-        setCurrentIndex((prev) => prev + 1);
-      } else {
-        // Mark all statuses for the current shop as viewed
-        const currentShopId = currentStatus.shop?.id;
-        const shopStatuses = sortedStatuses.filter((s) => s.shop?.id === currentShopId);
-        if (shopStatuses.length > 0) {
-          onStatusViewed({ shop: currentStatus.shop?.name, statuses: shopStatuses });
-        }
-        onClose();
-      }
-    }, 100);
-  }, [currentIndex, sortedStatuses, currentStatus, onStatusViewed, onClose]);
-
-  const handlePrev = useCallback(() => {
-    console.log("handlePrev called");
-    if (playerRef.current) {
-      try {
-        playerRef.current.pause();
-        console.log("Paused current player before prev");
-      } catch (error) {
-        console.error("Pause error before prev:", error);
-      }
-      playerRef.current = null;
-    }
-
-    setTimeout(() => {
-      if (currentIndex > 0) {
-        setCurrentIndex((prev) => prev - 1);
-      } else {
-        onClose();
-      }
-    }, 100);
-  }, [currentIndex, onClose]);
-
-  // Calculate duration
-  const getStatusDuration = useCallback(() => {
-    const mediaType = currentStatus.media_type;
-    if (!mediaType) return IMAGE_TEXT_DURATION;
-    if (mediaType === "video") {
-      const safeDuration = playerRef.current?.duration
-        ? playerRef.current.duration * 1000
-        : VIDEO_MAX_DURATION;
-      console.log("Video duration:", safeDuration);
-      return Math.min(safeDuration, VIDEO_MAX_DURATION);
-    }
-    console.log("Image/text duration:", IMAGE_TEXT_DURATION);
-    return IMAGE_TEXT_DURATION;
-  }, [currentStatus.media_type]);
-
-  // Start progress animation
-  const startProgress = useCallback(
-    (duration) => {
-      console.log("startProgress called, duration:", duration);
-      if (isPaused.current || isVideoFinished.current) return;
-      progress.setValue(progress.__getValue());
-      progressAnimation.current?.stop();
-      progressAnimation.current = Animated.timing(progress, {
-        toValue: 1,
-        duration: duration,
-        useNativeDriver: true,
-      });
-      progressAnimation.current.start(({ finished }) => {
-        console.log("Progress animation finished:", finished);
-        if (finished && !isPaused.current && !isVideoFinished.current) {
-          handleNext();
-        }
-      });
-    },
-    [handleNext]
-  );
-
-  // Mark status as viewed and cache video
-  const markStatusAsViewed = useCallback(
-    async (status) => {
-      if (!status || status.viewed || !userId) return;
-      try {
-        console.log("Marking status as viewed:", status.id);
-        const formData = new FormData();
-        formData.append("user_id", userId.toString());
-        formData.append("status_ids[]", status.id);
-
-        await axios.post(
-          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/mark_status_viewed/",
-          formData,
-          { headers: { "Content-Type": "multipart/form-data" } }
-        );
-        status.viewed = true;
-
-        if (status.media_type === "video" && status.media_url && !videoCache[status.media_url]) {
-          const newCache = { ...videoCache, [status.media_url]: status.media_url };
-          setVideoCache(newCache);
-          await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(newCache));
-          console.log("Cached video:", status.media_url);
-        }
-      } catch (error) {
-        console.error("Error marking status as viewed:", error);
-      }
-    },
-    [userId, videoCache]
-  );
-
-  // Pause/resume
-  const togglePause = useCallback(() => {
-    console.log("togglePause called, isPaused:", isPaused.current, "playerRef:", playerRef.current);
-    isPaused.current = !isPaused.current;
-
-    if (isPaused.current) {
-      pausedTime.current = progress.__getValue() * getStatusDuration();
-      console.log("Pausing, pausedTime:", pausedTime.current);
-      progressAnimation.current?.stop();
-      if (
-        currentStatus.media_type === "video" &&
-        playerRef.current &&
-        typeof playerRef.current.pause === "function"
-      ) {
-        try {
-          playerRef.current.pause();
-          console.log("Video paused successfully");
-        } catch (error) {
-          console.error("Pause error:", error);
-        }
-      }
-    } else {
-      const remainingTime = getStatusDuration() - pausedTime.current;
-      console.log("Resuming, remainingTime:", remainingTime);
-      progress.setValue(pausedTime.current / getStatusDuration());
-      startProgress(remainingTime);
-      if (
-        currentStatus.media_type === "video" &&
-        playerRef.current &&
-        typeof playerRef.current.play === "function"
-      ) {
-        try {
-          playerRef.current.play();
-          console.log("Video playing successfully");
-        } catch (error) {
-          console.error("Play error:", error);
-        }
-      }
-    }
-  }, [getStatusDuration, startProgress, currentStatus.media_type]);
-
-  // Initialize statuses
   useEffect(() => {
+    console.log("Statuses prop changed:", { statusesLength: statuses?.length, statuses });
     if (!visible || !statuses?.length) {
-      console.log("Not visible or no statuses:", { visible, statuses });
-      setSortedStatuses([]);
+      console.log("Not visible or no statuses, preserving sortedStatusesRef");
       return;
     }
 
-    console.log("Initializing statuses:", statuses);
-    // Sort statuses by shop.id and created_at
-    const sorted = statuses
-      .slice()
-      .sort((a, b) => {
-        // Sort by shop.id first, then by created_at
-        if (a.shop?.id !== b.shop?.id) {
-          return a.shop?.id - b.shop?.id;
+    lastStatusesRef.current = statuses;
+    console.log("Raw statuses before deduplication:", statuses);
+    const uniqueStatuses = Array.from(
+      new Map(statuses.map((status) => [status.id, status])).values()
+    );
+    const sorted = uniqueStatuses
+      .map((status) => {
+        if (!status.shop?.id) {
+          console.warn(`Status ${status.id} has no shop.id, defaulting to 0`);
+          return { ...status, shop: { ...status.shop, id: 0 } };
         }
-        return new Date(a.created_at) - new Date(b.created_at);
+        if (status.media && /\.(mp4|mov|avi)$/i.test(status.media) && status.media_type !== "video") {
+          console.warn(`Mismatched media_type for status ${status.id}: expected video, got ${status.media_type}`);
+          return { ...status, media_type: "video" };
+        }
+        return status;
+      })
+      .sort((a, b) => {
+        const shopIdA = a.shop?.id ?? 0;
+        const shopIdB = b.shop?.id ?? 0;
+        if (shopIdA !== shopIdB) {
+          return shopIdA - shopIdB;
+        }
+        return new Date(b.created_at) - new Date(a.created_at);
       });
 
     let startIndex = initialIndex;
@@ -264,159 +419,177 @@ const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusVi
       startIndex = 0;
     }
 
+    console.log("Setting sorted statuses:", sorted);
     console.log("Setting initial index:", startIndex);
     setSortedStatuses(sorted);
+    sortedStatusesRef.current = sorted;
     setCurrentIndex(startIndex);
   }, [visible, statuses, initialIndex]);
 
-  // Handle video playback completion
-  const handleVideoStatusChange = useCallback(
-    (status) => {
-      console.log("Video status change:", status);
-      if (
-        status.isPlaying &&
-        status.positionMillis >= status.durationMillis &&
-        !isVideoFinished.current &&
-        !isPaused.current
-      ) {
-        console.log("Video finished playing, moving to next status");
-        isVideoFinished.current = true;
-        progressAnimation.current?.stop();
-        handleNext();
-      }
-    },
-    [handleNext]
-  );
-
-  // Handle status change and video playback
   useEffect(() => {
-    if (!visible || !sortedStatuses.length) return;
+    if (!visible) {
+      console.log("Modal closing, resetting state but preserving sortedStatusesRef");
+      setSortedStatuses([]);
+      setCurrentIndex(0);
+      setIsLoading(false);
+      setLoadError(null);
+      progress.setValue(0);
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+      if (isPlayerValid(playerRef.current)) {
+        try {
+          playerRef.current.pause();
+          console.log("Paused player on modal close");
+        } catch (error) {
+          console.error("Modal close pause error:", error);
+        }
+      }
+      return;
+    }
 
-    const status = sortedStatuses[currentIndex];
+    if (currentIndex >= sortedStatusesRef.current.length) {
+      console.log("Invalid currentIndex, closing StatusViewer", { currentIndex, sortedStatusesRefLength: sortedStatusesRef.current.length });
+      onClose();
+      return;
+    }
+
+    const status = sortedStatusesRef.current[currentIndex];
     if (!status) {
-      console.log("No status available");
+      console.log("No status available, closing StatusViewer");
+      onClose();
       return;
     }
 
     console.log("Status changed:", status);
-
-    // Reset state
-    progressAnimation.current?.stop();
     progress.setValue(0);
     pausedTime.current = 0;
     isPaused.current = false;
-    isVideoFinished.current = false;
-
-    if (playerRef.current) {
-      try {
-        playerRef.current.pause();
-        console.log("Paused player before status change");
-      } catch (error) {
-        console.error("Pause error before status change:", error);
-      }
-      playerRef.current = null;
-    }
+    setIsLoading(false);
+    setLoadError(null);
+    videoReadyRef.current = false;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
 
     markStatusAsViewed(status);
 
-    const duration = getStatusDuration();
-    if (status.media_type === "video") {
-      const checkVideoReady = setInterval(() => {
-        if (playerRef.current?.duration && playerRef.current.duration > 0) {
-          console.log("Video ready, duration:", playerRef.current.duration);
-          clearInterval(checkVideoReady);
-          if (!isPaused.current) {
-            try {
-              playerRef.current.play();
-              console.log("Video started playing");
-            } catch (error) {
-              console.error("Play error on load:", error);
-            }
-            startProgress(duration);
-          }
-        } else {
-          console.log("Video not ready yet");
+    if (isVideo && playerRef.current && status.id) {
+      console.log("Updating video source:", status.media);
+      setIsLoading(true);
+
+      const loadVideo = async () => {
+        const isAccessible = await checkVideoUrl(status.media);
+        if (!isAccessible) {
+          console.error("Video URL inaccessible:", status.media);
+          setLoadError("Video URL is inaccessible");
+          setTimeout(() => handleNext(true), 2000);
+          return;
         }
-      }, 100);
-      return () => {
-        console.log("Cleaning up video check");
-        clearInterval(checkVideoReady);
+        const cachedUri = await cacheVideo(status.media);
+        try {
+          await playerRef.current.replaceAsync({
+            uri: cachedUri,
+            headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+          });
+          console.log("replaceAsync successful, cachedUri:", cachedUri);
+
+          const checkVideoReady = setInterval(() => {
+            if (playerRef.current?.duration > 0) {
+              console.log("Video ready, duration:", playerRef.current.duration);
+              clearInterval(checkVideoReady);
+              videoReadyRef.current = true;
+              setIsLoading(false);
+              if (!isPaused.current) {
+                try {
+                  playerRef.current.play();
+                  console.log("Video auto-playing");
+                  startProgress(getStatusDuration());
+                } catch (error) {
+                  console.error("Auto-play error:", error);
+                  handleNext(true);
+                }
+              }
+            }
+          }, 100);
+
+          loadTimeoutRef.current = setTimeout(() => {
+            if (videoReadyRef.current) {
+              console.log("Video already loaded, ignoring timeout");
+              return;
+            }
+            console.log("Video load timeout reached");
+            setIsLoading(false);
+            setLoadError("Video took too long to load");
+            clearInterval(checkVideoReady);
+            handleNext(true);
+          }, LOAD_TIMEOUT);
+
+          return () => clearInterval(checkVideoReady);
+        } catch (error) {
+          console.error("replaceAsync error:", error);
+          setIsLoading(false);
+          setLoadError(error.message || "Failed to load video");
+          handleNext(true);
+        }
       };
+
+      loadVideo();
     } else {
-      if (!isPaused.current) {
-        startProgress(duration);
+      setIsLoading(false);
+      setLoadError(null);
+      if (!isVideo) {
+        startProgress(getStatusDuration());
       }
     }
 
     return () => {
-      console.log("Cleaning up effect");
-      progressAnimation.current?.stop();
-      if (playerRef.current && typeof playerRef.current.pause === "function") {
+      console.log("Cleaning up status change");
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+      if (isVideo && isPlayerValid(playerRef.current)) {
         try {
           playerRef.current.pause();
-          console.log("Paused video on cleanup");
+          console.log("Paused player on cleanup");
         } catch (error) {
           console.error("Cleanup pause error:", error);
         }
-        playerRef.current = null;
       }
     };
-  }, [visible, currentIndex, sortedStatuses, markStatusAsViewed, startProgress, getStatusDuration]);
+  }, [visible, currentIndex, isVideo, authToken, checkVideoUrl, getStatusDuration, startProgress, markStatusAsViewed]);
 
-  // Reset when modal closes
-  useEffect(() => {
-    if (!visible) {
-      console.log("Modal closing, resetting state");
-      setCurrentIndex(0);
-      setSortedStatuses([]);
-      progress.setValue(0);
-      progressAnimation.current?.stop();
-      if (playerRef.current && typeof playerRef.current.pause === "function") {
-        try {
-          playerRef.current.pause();
-          console.log("Paused video on modal close");
-        } catch (error) {
-          console.error("Modal close pause error:", error);
-        }
-        playerRef.current = null;
-      }
-    }
-  }, [visible]);
-
-  if (!visible || !sortedStatuses.length) {
-    console.log("Rendering null, visible:", visible, "statuses length:", sortedStatuses.length);
+  if (!visible || !sortedStatusesRef.current.length || currentIndex >= sortedStatusesRef.current.length) {
+    console.log("Rendering null", {
+      visible,
+      sortedStatusesLength: sortedStatuses.length,
+      sortedStatusesRefLength: sortedStatusesRef.current.length,
+      currentIndex,
+    });
     return null;
   }
 
-  const isImage = currentStatus.media_type === "image";
-  const isVideo = currentStatus.media_type === "video";
-  const hasMedia = (isImage || isVideo) && !!currentStatus.media_url;
-  const statusText = currentStatus.text || "";
-
-  console.log("Rendering status:", { isImage, isVideo, hasMedia, media_url: currentStatus.media_url });
+  console.log("Rendering status:", { isImage, isVideo, isText, hasMedia, media: currentStatus.media });
 
   return (
     <Modal visible={visible} animationType="fade" transparent>
       <View style={styles.container}>
         <View style={styles.header}>
           <Text style={styles.shopName}>{currentStatus.shop?.name || "Unknown Shop"}</Text>
-          
+          <Text style={styles.createdAt}>{formatRelativeTime(currentStatus.created_at)}</Text>
         </View>
 
         <View style={styles.progressContainer}>
-          {sortedStatuses
-            .filter((s) => s.shop?.id === currentStatus.shop?.id)
-            .map((_, idx) => (
-              <View key={idx} style={styles.progressBackground}>
+          {sortedStatusesRef.current
+            .filter((s) => s.shop?.id === (currentStatus.shop?.id ?? 0))
+            .map((status, idx) => (
+              <View key={status.id} style={styles.progressBackground}>
                 <Animated.View
                   style={[
                     styles.progressBar,
                     {
                       transform: [
                         {
-                          scaleX: sortedStatuses.findIndex((s) => s.id === currentStatus.id) === idx
+                          scaleX: status.id === currentStatus.id
                             ? progress.interpolate({ inputRange: [0, 1], outputRange: [0, 1] })
-                            : idx < sortedStatuses.findIndex((s) => s.id === currentStatus.id)
+                            : idx < sortedStatusesRef.current.filter((s) => s.shop?.id === (currentStatus.shop?.id ?? 0)).findIndex((s) => s.id === currentStatus.id)
                             ? 1
                             : 0,
                         },
@@ -428,27 +601,38 @@ const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusVi
             ))}
         </View>
 
-        <TouchableOpacity style={[styles.leftExpanded, { zIndex: 10 }]} onPress={handlePrev} />
+        <TouchableOpacity style={[styles.leftExpanded, { zIndex: 10 }]} onPress={handlePrev} activeOpacity={0.8} />
 
         <TouchableOpacity
           style={[styles.content, { zIndex: 5 }]}
           activeOpacity={0.8}
           onPress={togglePause}
         >
-          {hasMedia ? (
+          {isLoading && isVideo ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#fff" />
+            </View>
+          ) : loadError && isVideo ? (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>{loadError}</Text>
+            </View>
+          ) : hasMedia ? (
             <>
               {isVideo ? (
                 <VideoView
                   style={styles.media}
-                  player={currentPlayer}
-                  resizeMode="cover"
+                  player={player}
+                  contentFit="cover"
                   allowsFullscreen={false}
                   allowsPictureInPicture={false}
-                  onStatusChange={isVideo ? handleVideoStatusChange : undefined}
+                  onLoad={handleVideoLoad}
+                  onError={handleVideoError}
+                  onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
+                  nativeControls={false}
                 />
               ) : isImage ? (
                 <Image
-                  source={{ uri: currentStatus.media_url }}
+                  source={{ uri: currentStatus.media }}
                   style={styles.media}
                   resizeMode="contain"
                 />
@@ -459,7 +643,7 @@ const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusVi
             </>
           ) : (
             <View style={styles.plainTextContainer}>
-              <Text style={styles.plainText}>{statusText || "No content available"}</Text>
+              <Text style={styles.plainText}>{isText && statusText ? statusText : "No content available"}</Text>
               {currentStatus.shop?.image && (
                 <Image
                   source={{ uri: currentStatus.shop.image }}
@@ -470,9 +654,25 @@ const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusVi
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.rightExpanded, { zIndex: 10 }]} onPress={handleNext} />
+        <TouchableOpacity style={[styles.rightExpanded, { zIndex: 10 }]} onPress={() => handleNext(false)} activeOpacity={0.8} />
 
-        <TouchableOpacity style={[styles.closeButton, { zIndex: 15 }]} onPress={onClose}>
+        <TouchableOpacity
+          style={[styles.closeButton, { zIndex: 30 }]}
+          onPress={() => {
+            console.log("Close button pressed, onClose:", typeof onClose);
+            if (onClose) {
+              onClose();
+            } else {
+              console.warn("onClose is undefined, resetting state manually");
+              setCurrentIndex(0);
+              setSortedStatuses([]);
+              sortedStatusesRef.current = [];
+              setIsLoading(false);
+              setLoadError(null);
+            }
+          }}
+          activeOpacity={0.8}
+        >
           <Text style={styles.closeText}>✕</Text>
         </TouchableOpacity>
       </View>
@@ -487,9 +687,9 @@ const styles = StyleSheet.create({
   },
   header: {
     position: "absolute",
-    top: 40,
+    top: 20,
     left: 16,
-    right: 16,
+    right: 60,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -499,7 +699,11 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 18,
     fontWeight: "600",
-    bottom: 20
+  },
+  createdAt: {
+    color: "#fff",
+    fontSize: 14,
+    opacity: 0.7,
   },
   progressContainer: {
     flexDirection: "row",
@@ -565,6 +769,7 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: "40%",
+    zIndex: 10,
   },
   rightExpanded: {
     position: "absolute",
@@ -572,22 +777,41 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: "40%",
+    zIndex: 10,
   },
   closeButton: {
     position: "absolute",
-    top: 70,
+    top: 20,
     right: 15,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
     justifyContent: "center",
     alignItems: "center",
+    zIndex: 30,
   },
   closeText: {
     color: "#fff",
-    fontSize: 18,
+    fontSize: 24,
     fontWeight: "bold",
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  errorText: {
+    color: "#fff",
+    fontSize: 18,
+    textAlign: "center",
+    marginBottom: 20,
   },
 });
 

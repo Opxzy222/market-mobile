@@ -1,4 +1,3 @@
-// src/components/shop/AdminShopPosts.tsx
 import React, { useState, useEffect, useRef } from "react";
 import {
   View,
@@ -38,7 +37,14 @@ const AdminShopPosts = ({ posts, shopId, onPostDeleted }) => {
     p.loop = false;
   });
 
-  console.log("AdminShopPosts Posts:", JSON.stringify(posts, null, 2));
+  // Sort posts by created_at in descending order (most recent first)
+  const sortedPosts = [...posts].sort((a, b) => {
+    const dateA = new Date(a.created_at || 0);
+    const dateB = new Date(b.created_at || 0);
+    return dateB - dateA; // Descending order
+  });
+
+  console.log("AdminShopPosts Sorted Posts:", JSON.stringify(sortedPosts, null, 2));
 
   const isVideoFile = (media) => {
     if (!media || !media.url) return false;
@@ -233,9 +239,9 @@ const AdminShopPosts = ({ posts, shopId, onPostDeleted }) => {
 
   return (
     <View style={styles.container}>
-      {posts && posts.length > 0 ? (
+      {sortedPosts && sortedPosts.length > 0 ? (
         <FlatList
-          data={posts}
+          data={sortedPosts} // Use sortedPosts instead of posts
           keyExtractor={(item) => item.id.toString()}
           numColumns={2}
           renderItem={({ item }) => {

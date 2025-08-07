@@ -1,12 +1,16 @@
+import { AppRegistry } from 'react-native';
 import { View, Text } from 'react-native';
 import Homepage from '@/screens/homepage';
-import React, { useEffect } from 'react';
+import React from 'react';
 import Toast from 'react-native-toast-message';
+
+// Define app name manually (from app.json)
+const appName = 'market-mobile';
 
 class ErrorBoundary extends React.Component {
   state = { hasError: false, error: null };
 
-  static getDerivedStateFromError(error) {
+  static getDerivedStateFromError(error: any) {
     return { hasError: true, error };
   }
 
@@ -34,3 +38,6 @@ export default function Index() {
     </View>
   );
 }
+
+// Register the main app
+AppRegistry.registerComponent(appName, () => Index);

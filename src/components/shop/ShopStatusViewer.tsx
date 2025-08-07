@@ -18,6 +18,7 @@ import axios from 'axios';
 const STATUS_DURATION = 5000;
 const VIDEO_MAX_DURATION = 30000;
 const LOAD_TIMEOUT = 10000;
+const BACKEND_URL = "https://retail-alvinia-goza-f6a0e4f7.koyeb.app";
 
 const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete, canDelete }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
@@ -26,10 +27,11 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
   const timerRef = useRef(null);
   const isPaused = useRef(false);
   const pausedTime = useRef(0);
-  const cleanupLock = useRef(false);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const loadTimeoutRef = useRef(null);
+  const videoReadyRef = useRef(false);
+  const [mediaUrl, setMediaUrl] = useState(statuses[initialIndex]?.media || null);
 
   const renderCount = useRef(0);
   useEffect(() => {
@@ -40,14 +42,14 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
   const currentStatus = useMemo(() => statuses[currentIndex] || {}, [statuses, currentIndex]);
   const isVideo = currentStatus.media_type === "video";
   const isImage = currentStatus.media_type === "image";
-  const hasMedia = (isImage || isVideo) && !!currentStatus.media;
+  const hasMedia = (isImage || isVideo) && !!mediaUrl;
   const statusText = currentStatus.text || "";
 
   const cacheVideo = async (url) => {
     try {
       const cacheDir = `${FileSystem.cacheDirectory}videos/`;
       await FileSystem.makeDirectoryAsync(cacheDir, { intermediates: true });
-      const fileName = url.split('/').pop();
+      const fileName = url.split('/').pop().split('?')[0]; // Remove query params
       const localUri = `${cacheDir}${fileName}`;
       const fileInfo = await FileSystem.getInfoAsync(localUri);
 
@@ -69,15 +71,12 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
-
       const response = await fetch(url, {
         method: "HEAD",
         headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
         signal: controller.signal,
       });
-
       clearTimeout(timeoutId);
-
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
@@ -89,25 +88,44 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
     }
   }, [authToken]);
 
+  const regenerateUrl = useCallback(async (statusId) => {
+    try {
+      const response = await axios.get(`${BACKEND_URL}/status/regenerate-url/?status_id=${statusId}`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      const { media_url, thumbnail_url } = response.data;
+      setMediaUrl(media_url);
+      return media_url;
+    } catch (error) {
+      console.error(`Error regenerating URL for status ${statusId}:`, error);
+      setLoadError("Failed to load media");
+      setTimeout(() => handleNext(true), 2000);
+      return null;
+    }
+  }, [authToken]);
+
   const retryVideoLoad = useCallback(async () => {
-    if (isVideo && playerRef.current && currentStatus.media) {
-      console.log("Retrying video load:", currentStatus.media);
+    if (isVideo && playerRef.current && currentStatus.id) {
+      console.log("Retrying video load for status ID:", currentStatus.id);
       setIsLoading(true);
       setLoadError(null);
-      const isAccessible = await checkVideoUrl(currentStatus.media);
+      const newUrl = await regenerateUrl(currentStatus.id);
+      if (!newUrl) return;
+      const isAccessible = await checkVideoUrl(newUrl);
       if (!isAccessible) {
         setIsLoading(false);
         setLoadError("Video URL is inaccessible");
         setTimeout(() => handleNext(true), 2000);
         return;
       }
-      const cachedUri = await cacheVideo(currentStatus.media);
+      const cachedUri = await cacheVideo(newUrl);
       try {
         await playerRef.current.replaceAsync({
           uri: cachedUri,
           headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
         });
         console.log("replaceAsync successful");
+        videoReadyRef.current = false;
       } catch (error) {
         console.error("Retry replaceAsync error:", error);
         setIsLoading(false);
@@ -115,14 +133,15 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
         setTimeout(() => handleNext(true), 2000);
       }
     }
-  }, [isVideo, currentStatus.media, authToken, checkVideoUrl, handleNext]);
+  }, [isVideo, currentStatus.id, authToken, checkVideoUrl, regenerateUrl]);
 
   const playerSource = useMemo(() => 
-    isVideo && currentStatus.media
-      ? { uri: currentStatus.media, headers: authToken ? { Authorization: `Bearer ${authToken}` } : {} }
+    isVideo && mediaUrl
+      ? { uri: mediaUrl, headers: authToken ? { Authorization: `Bearer ${authToken}` } : {} }
       : null,
-    [isVideo, currentStatus.media, authToken]
+    [isVideo, mediaUrl, authToken]
   );
+
   const player = useVideoPlayer(playerSource, (p) => {
     console.log("Player initialized, source:", playerSource?.uri || "none");
     playerRef.current = p;
@@ -132,7 +151,7 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
       setIsLoading(false);
       setLoadError(error.message || "Failed to load video");
       if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
-      setTimeout(() => handleNext(true), 2000);
+      setTimeout(() => retryVideoLoad(), 1000); // Retry with regenerated URL
     };
   });
 
@@ -142,9 +161,8 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
 
   const deleteStatus = async (statusId) => {
     try {
-      await axios.delete('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/delete_status/', {
-        data: { status_id: statusId },
-        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+      await axios.delete(`${BACKEND_URL}/status/${statusId}/delete/`, {
+        headers: { Authorization: `Bearer ${authToken}` },
       });
       Alert.alert('Success', 'Status deleted successfully');
       if (onDelete) onDelete(statusId);
@@ -160,21 +178,21 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
   };
 
   useEffect(() => {
-    if (isVideo && playerRef.current && currentStatus.media) {
+    if (!statuses || currentIndex >= statuses.length) return;
+    setMediaUrl(currentStatus.media); // Update mediaUrl when status changes
+    if (isVideo && playerRef.current && currentStatus.id) {
       console.log("Updating video source:", currentStatus.media);
       setIsLoading(true);
       setLoadError(null);
+      videoReadyRef.current = false;
 
       const loadVideo = async () => {
         const isAccessible = await checkVideoUrl(currentStatus.media);
         if (!isAccessible) {
-          setIsLoading(false);
-          setLoadError("Video URL is inaccessible");
-          setTimeout(() => handleNext(true), 2000);
-          return;
+          const newUrl = await regenerateUrl(currentStatus.id);
+          if (!newUrl) return;
         }
-
-        const cachedUri = await cacheVideo(currentStatus.media);
+        const cachedUri = await cacheVideo(isAccessible ? currentStatus.media : mediaUrl);
         try {
           await playerRef.current.replaceAsync({
             uri: cachedUri,
@@ -186,6 +204,7 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
             if (playerRef.current?.duration > 0) {
               console.log("Video ready, duration:", playerRef.current.duration);
               clearInterval(checkVideoReady);
+              videoReadyRef.current = true;
               setIsLoading(false);
               if (!isPaused.current) {
                 playerRef.current.play();
@@ -195,11 +214,15 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
           }, 100);
 
           loadTimeoutRef.current = setTimeout(() => {
+            if (videoReadyRef.current) {
+              console.log("Video already loaded, ignoring timeout");
+              return;
+            }
             console.log("Video load timeout reached");
             setIsLoading(false);
             setLoadError("Video took too long to load");
             clearInterval(checkVideoReady);
-            handleNext(true);
+            retryVideoLoad();
           }, LOAD_TIMEOUT);
 
           return () => clearInterval(checkVideoReady);
@@ -207,7 +230,7 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
           console.error("replaceAsync error:", error);
           setIsLoading(false);
           setLoadError(error.message || "Failed to load video");
-          setTimeout(() => handleNext(true), 2000);
+          retryVideoLoad();
         }
       };
 
@@ -224,7 +247,7 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
     return () => {
       if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
     };
-  }, [currentStatus.media, isVideo, authToken, checkVideoUrl, getStatusDuration, startProgress, handleNext]);
+  }, [currentStatus, isVideo, authToken, checkVideoUrl, getStatusDuration, startProgress, regenerateUrl]);
 
   const getStatusDuration = useCallback(() => {
     if (isVideo) {
@@ -240,12 +263,12 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
 
   const handleNext = useCallback(
     (fromTimer = false) => {
-      console.log("handleNext called, fromTimer:", fromTimer);
+      console.log("handleNext called, fromTimer:", fromTimer, "playerRef.current:", playerRef.current);
       if (!fromTimer && isPaused.current) {
         togglePause();
         return;
       }
-      if (isPlayerValid(playerRef.current) && !cleanupLock.current) {
+      if (isVideo && isPlayerValid(playerRef.current) && !isPaused.current) {
         try {
           playerRef.current.pause();
           console.log("Paused player before next");
@@ -264,12 +287,12 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
         onClose();
       }
     },
-    [currentIndex, statuses.length, onClose]
+    [currentIndex, statuses.length, onClose, isVideo]
   );
 
   const handlePrev = useCallback(() => {
-    console.log("handlePrev called");
-    if (isPlayerValid(playerRef.current) && !cleanupLock.current) {
+    console.log("handlePrev called", "playerRef.current:", playerRef.current);
+    if (isVideo && isPlayerValid(playerRef.current) && !isPaused.current) {
       try {
         playerRef.current.pause();
         console.log("Paused player before prev");
@@ -288,7 +311,7 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
         isPaused.current = false;
       }
     }
-  }, [currentIndex]);
+  }, [currentIndex, isVideo]);
 
   const startProgress = useCallback(
     (duration) => {
@@ -311,7 +334,7 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
   );
 
   const togglePause = useCallback(() => {
-    console.log("togglePause called, isPaused:", isPaused.current);
+    console.log("togglePause called, isPaused:", isPaused.current, "playerRef.current:", playerRef.current);
     isPaused.current = !isPaused.current;
 
     if (isPaused.current) {
@@ -319,7 +342,7 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
       console.log("Pausing, pausedTime:", pausedTime.current);
       Animated.timing(progress).stop();
       if (timerRef.current) clearTimeout(timerRef.current);
-      if (isVideo && isPlayerValid(playerRef.current) && !cleanupLock.current) {
+      if (isVideo && isPlayerValid(playerRef.current)) {
         try {
           playerRef.current.pause();
           console.log("Video paused");
@@ -333,7 +356,7 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
       console.log("Resuming, remainingTime:", remainingTime);
       progress.setValue(pausedTime.current / duration);
       startProgress(remainingTime);
-      if (isVideo && isPlayerValid(playerRef.current) && !cleanupLock.current) {
+      if (isVideo && isPlayerValid(playerRef.current)) {
         try {
           playerRef.current.play();
           console.log("Video resumed");
@@ -345,11 +368,12 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
   }, [isVideo, getStatusDuration, startProgress]);
 
   const handleVideoLoad = useCallback(() => {
-    console.log("Video loaded, source:", currentStatus.media);
+    console.log("Video loaded, source:", mediaUrl);
+    videoReadyRef.current = true;
     setIsLoading(false);
     setLoadError(null);
     if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
-  }, [currentStatus.media]);
+  }, [mediaUrl]);
 
   const handleVideoError = useCallback(
     (error) => {
@@ -357,9 +381,9 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
       setIsLoading(false);
       setLoadError(error.message || "Failed to play video");
       if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
-      setTimeout(() => handleNext(true), 2000);
+      retryVideoLoad();
     },
-    [handleNext]
+    [retryVideoLoad]
   );
 
   const handlePlaybackStatusUpdate = useCallback(
@@ -380,7 +404,6 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
 
     console.log("State updated:", { isLoading, loadError, currentIndex });
     console.log("Status changed, index:", currentIndex, "status:", currentStatus);
-    cleanupLock.current = false;
     progress.setValue(0);
     pausedTime.current = 0;
     isPaused.current = false;
@@ -393,31 +416,12 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
     return () => {
       console.log("Cleaning up status change");
       if (timerRef.current) clearTimeout(timerRef.current);
-      if (isPlayerValid(playerRef.current) && !cleanupLock.current) {
-        try {
-          playerRef.current.pause();
-          console.log("Paused video on cleanup");
-        } catch (error) {
-          console.error("Pause error in status cleanup:", error);
-        }
-      }
-      cleanupLock.current = true;
     };
   }, [currentIndex, statuses, currentStatus, getStatusDuration, startProgress, isVideo]);
 
   useEffect(() => {
     return () => {
       console.log("Unmounting StatusViewer");
-      cleanupLock.current = true;
-      if (isPlayerValid(playerRef.current)) {
-        try {
-          playerRef.current.pause();
-          console.log("Paused player on unmount");
-        } catch (error) {
-          console.error("Pause error on unmount:", error);
-        }
-      }
-      playerRef.current = null;
       if (timerRef.current) {
         clearTimeout(timerRef.current);
         console.log("Cleared timer on unmount");
@@ -426,6 +430,7 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
         clearTimeout(loadTimeoutRef.current);
         console.log("Cleared load timeout on unmount");
       }
+      playerRef.current = null;
     };
   }, []);
 
@@ -434,7 +439,7 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
     return null;
   }
 
-  console.log("Rendering:", { isImage, isVideo, hasMedia, media: currentStatus.media });
+  console.log("Rendering:", { isImage, isVideo, hasMedia, media: mediaUrl });
 
   return (
     <Modal visible={true} animationType="fade" transparent>
@@ -491,7 +496,7 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
                   nativeControls={false}
                 />
               ) : isImage ? (
-                <Image source={{ uri: currentStatus.media }} style={styles.media} resizeMode="contain" />
+                <Image source={{ uri: mediaUrl }} style={styles.media} resizeMode="contain" onError={() => regenerateUrl(currentStatus.id)} />
               ) : null}
               {statusText.trim().length > 0 && (
                 <Text style={styles.caption}>{statusText}</Text>
@@ -535,6 +540,7 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
   );
 };
 
+// Styles remain unchanged
 const styles = StyleSheet.create({
   container: {
     flex: 1,

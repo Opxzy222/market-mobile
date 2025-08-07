@@ -16,6 +16,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
+import debounce from "lodash.debounce";
+import { useInterstitialAd } from "../../components/AdMobManager";
 
 const ShopProduct = () => {
   const [products, setProducts] = useState(null);
@@ -27,6 +29,26 @@ const ShopProduct = () => {
   const { shopId, prevRoute, category } = params;
   const router = useRouter();
   const isMountedRef = useRef(true);
+  const { adLoaded } = useInterstitialAd(); // Ensure ad readiness
+
+  // Clean up old cache entries
+  const cleanOldCache = useCallback(async () => {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const cacheKeys = keys.filter((key) => key.startsWith("products_"));
+      for (const key of cacheKeys) {
+        const cached = await AsyncStorage.getItem(key);
+        if (cached) {
+          const { timestamp } = JSON.parse(cached);
+          if (Date.now() - timestamp > 5 * 60 * 1000) { // 5 minutes TTL
+            await AsyncStorage.removeItem(key);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error cleaning cache:", error);
+    }
+  }, []);
 
   // Fetch session token
   useEffect(() => {
@@ -42,117 +64,148 @@ const ShopProduct = () => {
       }
     };
     fetchSessionId();
+    cleanOldCache();
 
     return () => {
       isMountedRef.current = false;
     };
-  }, []);
+  }, [cleanOldCache]);
 
-  const fetchShopProducts = useCallback(async () => {
-    if (!isMountedRef.current) return;
-    try {
-      setLoading(true);
-      setError(null);
-      setProducts(null); // Clear previous data
-      console.log("Fetching shop products for shopId:", shopId);
+  // Fetch shop products with caching and retry
+  const fetchShopProducts = useCallback(
+    debounce(async () => {
+      if (!isMountedRef.current) return;
 
-      const formData = new FormData();
-      formData.append("shop_id", shopId);
+      const cacheKey = `products_${shopId}`;
+      try {
+        setLoading(true);
+        setError(null);
+        setProducts(null);
 
-      const response = await axios.post(
-        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop-products/",
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-            Authorization: sessionId ? `Bearer ${sessionId}` : "",
-          },
+        // Check cache
+        const cached = await AsyncStorage.getItem(cacheKey);
+        if (cached) {
+          const { products: cachedProducts, timestamp } = JSON.parse(cached);
+          if (Date.now() - timestamp < 5 * 60 * 1000) { // 5 minutes TTL
+            if (isMountedRef.current) {
+              setProducts(Array.isArray(cachedProducts) ? cachedProducts : []);
+              setLoading(false);
+            }
+            return;
+          }
         }
-      );
 
-      if (isMountedRef.current) {
-        setProducts(response.data.products || []);
-        console.log("Fetched products:", response.data.products);
-      }
-    } catch (err) {
-      if (isMountedRef.current) {
-        console.error("Error fetching shop products:", err);
-        setError(
-          err.message.includes("Network")
-            ? "Network error. Please check your connection and try again."
-            : `Failed to load products: ${err.message}`
-        );
-      }
-    } finally {
-      if (isMountedRef.current) {
-        setLoading(false);
-      }
-    }
-  }, [shopId, sessionId]);
+        const formData = new FormData();
+        formData.append("shop_id", shopId);
 
-  // Refetch on focus, with cleanup
+        // Retry mechanism
+        let response;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            response = await axios.post(
+              "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop-products/",
+              formData,
+              {
+                headers: {
+                  "Content-Type": "multipart/form-data",
+                  Authorization: sessionId ? `Bearer ${sessionId}` : "",
+                },
+                timeout: 10000, // 10-second timeout
+              }
+            );
+            break;
+          } catch (err) {
+            if (attempt === 3) throw err;
+            await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait 1s before retry
+          }
+        }
+
+        if (isMountedRef.current) {
+          const fetchedProducts = response.data.products || [];
+          setProducts(fetchedProducts);
+          await AsyncStorage.setItem(
+            cacheKey,
+            JSON.stringify({ products: fetchedProducts, timestamp: Date.now() })
+          );
+          console.log("Fetched products:", fetchedProducts.length);
+        }
+      } catch (err) {
+        if (isMountedRef.current) {
+          console.error("Error fetching shop products:", err);
+          setError(
+            err.message.includes("Network")
+              ? "Network error. Please check your connection and try again."
+              : `Failed to load products: ${err.message}`
+          );
+        }
+      } finally {
+        if (isMountedRef.current) {
+          setLoading(false);
+        }
+      }
+    }, 300),
+    [shopId, sessionId]
+  );
+
+  // Refetch on focus
   useFocusEffect(
     useCallback(() => {
       console.log("Screen focused, triggering fetchShopProducts");
       fetchShopProducts();
 
       return () => {
-        console.log("Screen unfocused, cleaning up");
-        isMountedRef.current = false;
+        console.log("Screen unfocused");
       };
     }, [fetchShopProducts])
   );
 
-  const handleTryAgain = () => {
+  const handleTryAgain = useCallback(() => {
     console.log("User clicked Try Again");
     fetchShopProducts();
-  };
+  }, [fetchShopProducts]);
 
-  const handleUpdateProduct = () => {
+  const handleUpdateProduct = useCallback(() => {
     router.push({ pathname: "/shop/UpdateProduct", params: { shop_id: shopId } });
-  };
+  }, [router, shopId]);
 
   const renderProductItem = useCallback(
-    ({ item: categoryData }) => {
-      console.log("Rendering product item for category:", categoryData.category);
-      return (
-        <Animated.View entering={FadeInUp} style={styles.categoryCard}>
-          <Text style={styles.categoryTitle}>{categoryData.category}</Text>
-          {categoryData.subcategories.map((subcategoryData) => (
-            <View key={subcategoryData.subcategory} style={styles.subcategorySection}>
-              <Text style={styles.subcategoryTitle}>{subcategoryData.subcategory}</Text>
-              <View style={styles.table}>
-                <View style={styles.tableHeader}>
-                  <Text style={[styles.tableCell, styles.cellWide, styles.headerCell]}>
-                    Product Name
-                  </Text>
-                  <Text style={[styles.tableCell, styles.headerCell]}>Available</Text>
-                  <Text style={[styles.tableCell, styles.headerCell]}>Price</Text>
-                </View>
-                {subcategoryData.products.map((product, index) => (
-                  <View
-                    key={product.id}
-                    style={[styles.tableRow, index % 2 === 0 && styles.alternateRow]}
-                  >
-                    <Text style={[styles.tableCell, styles.cellWide]}>
-                      {product.product_name}
-                    </Text>
-                    <Text style={styles.tableCell}>{product.is_available ? "✔️" : "❌"}</Text>
-                    <Text style={styles.tableCell}>
-                      {product.price !== null &&
-                      product.price !== undefined &&
-                      !isNaN(Number(product.price))
-                        ? `₦${Number(product.price).toLocaleString()}`
-                        : "N/A"}
-                    </Text>
-                  </View>
-                ))}
+    ({ item: categoryData }) => (
+      <Animated.View entering={FadeInUp} style={styles.categoryCard}>
+        <Text style={styles.categoryTitle}>{categoryData.category}</Text>
+        {categoryData.subcategories.map((subcategoryData) => (
+          <View key={subcategoryData.subcategory} style={styles.subcategorySection}>
+            <Text style={styles.subcategoryTitle}>{subcategoryData.subcategory}</Text>
+            <View style={styles.table}>
+              <View style={styles.tableHeader}>
+                <Text style={[styles.tableCell, styles.cellWide, styles.headerCell]}>
+                  Product Name
+                </Text>
+                <Text style={[styles.tableCell, styles.headerCell]}>Available</Text>
+                <Text style={[styles.tableCell, styles.headerCell]}>Price</Text>
               </View>
+              {subcategoryData.products.map((product, index) => (
+                <View
+                  key={product.id}
+                  style={[styles.tableRow, index % 2 === 0 && styles.alternateRow]}
+                >
+                  <Text style={[styles.tableCell, styles.cellWide]}>
+                    {product.product_name}
+                  </Text>
+                  <Text style={styles.tableCell}>{product.is_available ? "✔️" : "❌"}</Text>
+                  <Text style={styles.tableCell}>
+                    {product.price !== null &&
+                    product.price !== undefined &&
+                    !isNaN(Number(product.price))
+                      ? `₦${Number(product.price).toLocaleString()}`
+                      : "N/A"}
+                  </Text>
+                </View>
+              ))}
             </View>
-          ))}
-        </Animated.View>
-      );
-    },
+          </View>
+        ))}
+      </Animated.View>
+    ),
     []
   );
 
@@ -165,10 +218,7 @@ const ShopProduct = () => {
             const filteredProducts = subcategoryData.products.filter((product) => {
               const productName = product.product_name.toLowerCase();
               const query = searchQuery.toLowerCase();
-              if (!query) return true;
-              if (productName.includes(query)) return true;
-              if (query.length === 1 && productName.startsWith(query)) return true;
-              return false;
+              return !query || productName.includes(query) || (query.length === 1 && productName.startsWith(query));
             });
             return { ...subcategoryData, products: filteredProducts };
           })
@@ -177,6 +227,16 @@ const ShopProduct = () => {
       })
       .filter((category) => category.subcategories.length > 0);
   }, [products, searchQuery]);
+
+  // FlatList item layout for performance
+  const getItemLayout = useCallback(
+    (data, index) => ({
+      length: 300, // Approximate height of a category card (adjust based on content)
+      offset: 300 * index,
+      index,
+    }),
+    []
+  );
 
   if (loading) {
     return (
@@ -240,7 +300,6 @@ const ShopProduct = () => {
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
       <LinearGradient colors={["#F7FAFC", "#E3F2FD"]} style={styles.container}>
-        {/* Fixed Header */}
         <View style={styles.header}>
           <TouchableOpacity
             onPress={() => router.navigate("(tabs)/myshop")}
@@ -253,7 +312,6 @@ const ShopProduct = () => {
           </Text>
           <View style={styles.headerSpacer} />
         </View>
-        {/* Scrollable Content */}
         <View style={styles.contentWrapper}>
           <TextInput
             style={styles.searchInput}
@@ -280,6 +338,10 @@ const ShopProduct = () => {
             keyExtractor={(item) => item.category}
             contentContainerStyle={styles.contentContainer}
             showsVerticalScrollIndicator={false}
+            getItemLayout={getItemLayout}
+            initialNumToRender={5}
+            maxToRenderPerBatch={5}
+            windowSize={3}
           />
         </View>
       </LinearGradient>
