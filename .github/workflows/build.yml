@@ -23,13 +23,27 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin' # Added to fix the error
+          distribution: 'temurin'
           java-version: '17'
+      - name: Set up Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: '26.1.10909125'
       - name: Cache Gradle
         uses: actions/cache@v4
         with:
-          path: ~/.gradle/caches
-          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*') }}
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+      - name: Generate Android folder
+        run: npx expo prebuild --platform android --clean
+      - name: Create android/app directory
+        run: mkdir -p android/app
+      - name: Clean invalid resource files
+        run: find android/app/src/main/res/ -name "*:Zone.Identifier" -delete
       - name: Decode Keystore
         env:
           EXPO_ANDROID_KEYSTORE: ${{ secrets.EXPO_ANDROID_KEYSTORE }}
@@ -41,7 +55,9 @@ jobs:
           EXPO_ANDROID_KEY_PASSWORD: ${{ secrets.EXPO_ANDROID_KEY_PASSWORD }}
         run: |
           cd android
-          ./gradlew clean bundleRelease
+          chmod +x gradlew
+          ./gradlew clean
+          ./gradlew bundleRelease --stacktrace --info --warning-mode all
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
