@@ -14,7 +14,7 @@ react {
     bundleCommand = "export:embed"
 }
 
-def enableProguardInReleaseBuilds = (findProperty('android.enableProguardInReleaseBuilds') ?: true).toBoolean() // Changed to true for better minification
+def enableProguardInReleaseBuilds = (findProperty('android.enableProguardInReleaseBuilds') ?: true).toBoolean()
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
 android {
@@ -48,17 +48,16 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            signingConfig signingConfigs.release // Changed to use release config
-            shrinkResources true // Enable resource shrinking
+            signingConfig signingConfigs.release
+            shrinkResources true
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
             crunchPngs (findProperty('android.enablePngCrunchInReleaseBuilds')?.toBoolean() ?: true)
-            useLegacyPackaging false // Modern packaging to avoid deprecated settings
         }
     }
-    packagingOptions {
+    packaging {
         jniLibs {
-            useLegacyPackaging (findProperty('expo.useLegacyPackaging')?.toBoolean() ?: false)
+            useLegacyPackaging = (findProperty('expo.useLegacyPackaging')?.toBoolean() ?: false)
         }
     }
     androidResources {
