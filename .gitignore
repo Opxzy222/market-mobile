@@ -20,3 +20,10 @@ ios/
 expo-env.d.ts
 # @end expo-cli/android
 /ios
+
+# Don't commit builds
+*.apk
+*.apks
+*.aab
+*.keystore
+
