@@ -47,6 +47,12 @@ jobs:
           echo "$EXPO_ANDROID_KEYSTORE" | base64 -d > android/app/my-release-key.keystore
           ls -l android/app/my-release-key.keystore
           file android/app/my-release-key.keystore
+          keytool -list -keystore android/app/my-release-key.keystore -storepass ${{ secrets.EXPO_ANDROID_KEYSTORE_PASSWORD }} || echo "Keystore verification failed"
+      - name: Verify Signing Configuration
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew signingReport --info
       - name: Build AAB
         env:
           EXPO_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.EXPO_ANDROID_KEYSTORE_PASSWORD }}
@@ -54,9 +60,11 @@ jobs:
           EXPO_ANDROID_KEY_PASSWORD: ${{ secrets.EXPO_ANDROID_KEY_PASSWORD }}
         run: |
           cd android
-          chmod +x gradlew
           ./gradlew clean
           ./gradlew bundleRelease --stacktrace --info --warning-mode all
+      - name: Verify AAB Signing
+        run: |
+          jarsigner -verify -verbose android/app/build/outputs/bundle/release/app-release.aab
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
