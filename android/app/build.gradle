@@ -84,6 +84,35 @@ android {
     }
 }
 
+// Custom task to validate signing configuration before building
+task validateReleaseSigning {
+    doLast {
+        def keystoreFile = file('my-release-key.keystore')
+        def storePass = System.getenv("EXPO_ANDROID_KEYSTORE_PASSWORD")
+        def keyAlias = System.getenv("EXPO_ANDROID_KEY_ALIAS")
+        def keyPass = System.getenv("EXPO_ANDROID_KEY_PASSWORD")
+        if (!keystoreFile.exists()) {
+            throw new GradleException("Pre-build validation: Release Keystore not found at: ${keystoreFile.absolutePath}")
+        }
+        if (!storePass) {
+            throw new GradleException("Pre-build validation: EXPO_ANDROID_KEYSTORE_PASSWORD not set")
+        }
+        if (!keyAlias) {
+            throw new GradleException("Pre-build validation: EXPO_ANDROID_KEY_ALIAS not set")
+        }
+        if (!keyPass) {
+            throw new GradleException("Pre-build validation: EXPO_ANDROID_KEY_PASSWORD not set")
+        }
+        println "Pre-build validation: Release signing config valid, Keystore: ${keystoreFile.absolutePath}, Alias: ${keyAlias}"
+    }
+}
+
+tasks.whenTaskAdded { task ->
+    if (task.name.contains("bundleRelease") || task.name.contains("assembleRelease")) {
+        task.dependsOn validateReleaseSigning
+    }
+}
+
 ["pickFirsts", "excludes", "merges", "doNotStrip"].each { prop ->
     def options = (findProperty("android.packagingOptions.$prop") ?: "").split(",");
     for (i in 0..<options.size()) options[i] = options[i].trim();
