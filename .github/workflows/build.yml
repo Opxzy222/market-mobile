@@ -43,7 +43,10 @@ jobs:
       - name: Decode Keystore
         env:
           EXPO_ANDROID_KEYSTORE: ${{ secrets.EXPO_ANDROID_KEYSTORE }}
-        run: echo "$EXPO_ANDROID_KEYSTORE" | base64 -d > android/app/my-release-key.keystore
+        run: |
+          echo "$EXPO_ANDROID_KEYSTORE" | base64 -d > android/app/my-release-key.keystore
+          ls -l android/app/my-release-key.keystore
+          file android/app/my-release-key.keystore
       - name: Build AAB
         env:
           EXPO_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.EXPO_ANDROID_KEYSTORE_PASSWORD }}
