@@ -39,15 +39,26 @@ android {
         }
         release {
             def keystoreFile = file('my-release-key.keystore')
-            if (keystoreFile.exists()) {
-                storeFile keystoreFile
-                storePassword System.getenv("EXPO_ANDROID_KEYSTORE_PASSWORD")
-                keyAlias System.getenv("EXPO_ANDROID_KEY_ALIAS")
-                keyPassword System.getenv("EXPO_ANDROID_KEY_PASSWORD")
-                println "Release signing config applied: my-release-key.keystore, alias=${System.getenv('EXPO_ANDROID_KEY_ALIAS')}"
-            } else {
-                throw new GradleException("Release Keystore not found: ${keystoreFile.absolutePath}")
+            def storePass = System.getenv("EXPO_ANDROID_KEYSTORE_PASSWORD")
+            def keyAlias = System.getenv("EXPO_ANDROID_KEY_ALIAS")
+            def keyPass = System.getenv("EXPO_ANDROID_KEY_PASSWORD")
+            if (!keystoreFile.exists()) {
+                throw new GradleException("Release Keystore not found at: ${keystoreFile.absolutePath}")
             }
+            if (!storePass) {
+                throw new GradleException("EXPO_ANDROID_KEYSTORE_PASSWORD not set")
+            }
+            if (!keyAlias) {
+                throw new GradleException("EXPO_ANDROID_KEY_ALIAS not set")
+            }
+            if (!keyPass) {
+                throw new GradleException("EXPO_ANDROID_KEY_PASSWORD not set")
+            }
+            storeFile keystoreFile
+            storePassword storePass
+            keyAlias keyAlias
+            keyPassword keyPass
+            println "Release signing config applied: ${keystoreFile.absolutePath}, alias=${keyAlias}"
         }
     }
     buildTypes {
@@ -56,7 +67,7 @@ android {
         }
         release {
             signingConfig signingConfigs.release
-            println "Release build using signingConfig: ${signingConfigs.release.storeFile}"
+            println "Release build using signingConfig: ${signingConfigs.release.storeFile.absolutePath}"
             shrinkResources true
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
