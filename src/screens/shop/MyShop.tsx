@@ -470,7 +470,7 @@ const MyShop = () => {
                         activeOpacity={0.7}
                       >
                         <MaterialIcons name="update" size={28} color="#9c27b0" />
-                        <Text style={styles.actionText}>Status Updates</Text>
+                        <Text style={styles.actionText}>Stories</Text>
                       </TouchableOpacity>
                     </View>
                     <View style={styles.actions}>
