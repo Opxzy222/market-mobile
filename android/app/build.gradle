@@ -1,260 +1,135 @@
-name: Build Expo Android App
-on:
-  push:
-    branches: [main]
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'yarn'
-      - name: Install Yarn
-        run: npm install -g yarn
-      - name: Install Expo CLI
-        run: yarn global add expo-cli
-      - name: Clear Yarn cache
-        run: yarn cache clean
-      - name: Install dependencies
-        run: yarn install --frozen-lockfile
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-      - name: Clear Gradle Cache
-        run: |
-          rm -rf ~/.gradle/caches/
-          rm -rf ~/.gradle/wrapper/
-          rm -rf android/.gradle/
-          echo "Gradle cache cleared"
-      - name: Generate Android folder
-        run: npx expo prebuild --platform android --clean
-      - name: Create android/app directory
-        run: mkdir -p android/app
-      - name: Clean invalid resource files
-        run: find android/app/src/main/res/ -name "*:Zone.Identifier" -delete
-      - name: Patch build.gradle with Release Signing
-        run: |
-          cat << 'EOF' > android/app/build.gradle
-          apply plugin: "com.android.application"
-          apply plugin: "org.jetbrains.kotlin.android"
-          apply plugin: "com.facebook.react"
+apply plugin: "com.android.application"
+apply plugin: "org.jetbrains.kotlin.android"
+apply plugin: "com.facebook.react"
 
-          def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
+def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
 
-          react {
-              entryFile = file(["node", "-e", "require('expo/scripts/resolveAppEntry')", projectRoot, "android", "absolute"].execute(null, rootDir).text.trim())
-              reactNativeDir = new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()).getParentFile().getAbsoluteFile()
-              hermesCommand = new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()).getParentFile().getAbsolutePath() + "/sdks/hermesc/%OS-BIN%/hermesc"
-              codegenDir = new File(["node", "--print", "require.resolve('@react-native/codegen/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim()).getParentFile().getAbsoluteFile()
-              enableBundleCompression = (findProperty('android.enableBundleCompression') ?: false).toBoolean()
-              cliFile = new File(["node", "--print", "require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })"].execute(null, rootDir).text.trim())
-              bundleCommand = "export:embed"
-          }
+/**
+ * This is the configuration block to customize your React Native Android app.
+ */
+react {
+    entryFile = file(["node", "-e", "require('expo/scripts/resolveAppEntry')", projectRoot, "android", "absolute"].execute(null, rootDir).text.trim())
+    reactNativeDir = new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()).getParentFile().getAbsoluteFile()
+    hermesCommand = new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()).getParentFile().getAbsolutePath() + "/sdks/hermesc/%OS-BIN%/hermesc"
+    codegenDir = new File(["node", "--print", "require.resolve('@react-native/codegen/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim()).getParentFile().getAbsoluteFile()
 
-          def enableProguardInReleaseBuilds = (findProperty('android.enableProguardInReleaseBuilds') ?: true).toBoolean()
-          def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
+    enableBundleCompression = (findProperty('android.enableBundleCompression') ?: false).toBoolean()
+    cliFile = new File(["node", "--print", "require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })"].execute(null, rootDir).text.trim())
+    bundleCommand = "export:embed"
 
-          android {
-              ndkVersion rootProject.ext.ndkVersion
-              buildToolsVersion rootProject.ext.buildToolsVersion
-              compileSdk rootProject.ext.compileSdkVersion
-              namespace 'com.timeflies.marketmobile'
-              defaultConfig {
-                  applicationId 'com.timeflies.marketmobile'
-                  minSdkVersion rootProject.ext.minSdkVersion
-                  targetSdkVersion rootProject.ext.targetSdkVersion
-                  versionCode 1
-                  versionName "1.0.0"
-              }
-              signingConfigs {
-                  debug {
-                      storeFile file('debug.keystore')
-                      storePassword 'android'
-                      keyAlias 'androiddebugkey'
-                      keyPassword 'android'
-                      println "Debug signing config applied: debug.keystore"
-                  }
-                  release {
-                      def keystoreFile = file('my-release-key.keystore')
-                      def storePass = System.getenv("EXPO_ANDROID_KEYSTORE_PASSWORD")
-                      def keyAlias = System.getenv("EXPO_ANDROID_KEY_ALIAS")
-                      def keyPass = System.getenv("EXPO_ANDROID_KEY_PASSWORD")
-                      if (!keystoreFile.exists()) {
-                          throw new GradleException("Release Keystore not found at: ${keystoreFile.absolutePath}")
-                      }
-                      if (!storePass) {
-                          throw new GradleException("EXPO_ANDROID_KEYSTORE_PASSWORD not set")
-                      }
-                      if (!keyAlias) {
-                          throw new GradleException("EXPO_ANDROID_KEY_ALIAS not set")
-                      }
-                      if (!keyPass) {
-                          throw new GradleException("EXPO_ANDROID_KEY_PASSWORD not set")
-                      }
-                      storeFile keystoreFile
-                      storePassword storePass
-                      keyAlias keyAlias
-                      keyPassword keyPass
-                      println "Release signing config applied: ${keystoreFile.absolutePath}, alias=${keyAlias}"
-                  }
-              }
-              buildTypes {
-                  debug {
-                      signingConfig signingConfigs.debug
-                  }
-                  release {
-                      signingConfig signingConfigs.release
-                      println "Release build using signingConfig: ${signingConfigs.release.storeFile.absolutePath}"
-                      shrinkResources true
-                      minifyEnabled enableProguardInReleaseBuilds
-                      proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
-                      crunchPngs (findProperty('android.enablePngCrunchInReleaseBuilds')?.toBoolean() ?: true)
-                  }
-              }
-              packaging {
-                  jniLibs {
-                      useLegacyPackaging = (findProperty('expo.useLegacyPackaging')?.toBoolean() ?: false)
-                  }
-              }
-              androidResources {
-                  ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
-              }
-          }
+    autolinkLibrariesWithApp()
+}
 
-          task validateReleaseSigning {
-              doLast {
-                  def keystoreFile = file('my-release-key.keystore')
-                  def storePass = System.getenv("EXPO_ANDROID_KEYSTORE_PASSWORD")
-                  def keyAlias = System.getenv("EXPO_ANDROID_KEY_ALIAS")
-                  def keyPass = System.getenv("EXPO_ANDROID_KEY_PASSWORD")
-                  if (!keystoreFile.exists()) {
-                      throw new GradleException("Pre-build validation: Release Keystore not found at: ${keystoreFile.absolutePath}")
-                  }
-                  if (!storePass) {
-                      throw new GradleException("Pre-build validation: EXPO_ANDROID_KEYSTORE_PASSWORD not set")
-                  }
-                  if (!keyAlias) {
-                      throw new GradleException("Pre-build validation: EXPO_ANDROID_KEY_ALIAS not set")
-                  }
-                  if (!keyPass) {
-                      throw new GradleException("Pre-build validation: EXPO_ANDROID_KEY_PASSWORD not set")
-                  }
-                  println "Pre-build validation: Release signing config valid, Keystore: ${keystoreFile.absolutePath}, Alias: ${keyAlias}"
-              }
-          }
+/**
+ * Set this to true to Run Proguard on Release builds to minify the Java bytecode.
+ */
+def enableProguardInReleaseBuilds = (findProperty('android.enableProguardInReleaseBuilds') ?: false).toBoolean()
 
-          tasks.whenTaskAdded { task ->
-              if (task.name.contains("bundleRelease") || task.name.contains("assembleRelease")) {
-                  task.dependsOn validateReleaseSigning
-              }
-          }
+/**
+ * The preferred build flavor of JavaScriptCore (JSC)
+ */
+def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
-          ["pickFirsts", "excludes", "merges", "doNotStrip"].each { prop ->
-              def options = (findProperty("android.packagingOptions.$prop") ?: "").split(",");
-              for (i in 0..<options.size()) options[i] = options[i].trim();
-              options -= ""
-              if (options.length > 0) {
-                  println "android.packagingOptions.$prop += $options ($options.length)"
-                  options.each {
-                      android.packagingOptions[prop] += it
-                  }
-              }
-          }
+android {
+    ndkVersion rootProject.ext.ndkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
+    compileSdk rootProject.ext.compileSdkVersion
 
-          dependencies {
-              implementation("com.facebook.react:react-android")
-              def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
-              def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";
-              def isWebpAnimatedEnabled = (findProperty('expo.webp.animated') ?: "") == "true";
-              if (isGifEnabled) {
-                  implementation("com.facebook.fresco:animated-gif:2.6.0")
-              }
-              if (isWebpEnabled) {
-                  implementation("com.facebook.fresco:webpsupport:2.6.0")
-                  if (isWebpAnimatedEnabled) {
-                      implementation("com.facebook.fresco:animated-webp:2.6.0")
-                  }
-              }
-              if (hermesEnabled.toBoolean()) {
-                  implementation("com.facebook.react:hermes-android")
-              } else {
-                  implementation jscFlavor
-              }
-              implementation platform('com.google.firebase:firebase-bom:33.1.0')
-              implementation 'com.google.firebase:firebase-messaging:24.0.1'
-          }
+    namespace 'com.timeflies.marketmobile'
+    defaultConfig {
+        applicationId 'com.timeflies.marketmobile'
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "1.0.0"
+    }
+    signingConfigs {
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+        release {
+            if (System.getenv('ANDROID_KEYSTORE_FILE') && System.getenv('ANDROID_KEYSTORE_PASSWORD') && System.getenv('ANDROID_KEY_ALIAS') && System.getenv('ANDROID_KEY_PASSWORD')) {
+                storeFile file(System.getenv('ANDROID_KEYSTORE_FILE'))
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            } else {
+                println "Warning: Release signing credentials not found. EAS will handle signing."
+            }
+        }
+    }
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            signingConfig signingConfigs.release.storeFile ? signingConfigs.release : null
+            shrinkResources (findProperty('android.enableShrinkResourcesInReleaseBuilds')?.toBoolean() ?: false)
+            minifyEnabled enableProguardInReleaseBuilds
+            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+            crunchPngs (findProperty('android.enablePngCrunchInReleaseBuilds')?.toBoolean() ?: true)
+        }
+    }
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging (findProperty('expo.useLegacyPackaging')?.toBoolean() ?: false)
+        }
+    }
+    androidResources {
+        ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
+    }
+}
 
-          apply plugin: 'com.google.gms.google-services'
+// Apply static values from `gradle.properties` to the `android.packagingOptions`
+["pickFirsts", "excludes", "merges", "doNotStrip"].each { prop ->
+    def options = (findProperty("android.packagingOptions.$prop") ?: "").split(",");
+    for (i in 0..<options.size()) options[i] = options[i].trim();
+    options -= ""
+    if (options.length > 0) {
+        println "android.packagingOptions.$prop += $options ($options.length)"
+        options.each {
+            android.packagingOptions[prop] += it
+        }
+    }
+}
 
-          configurations.all {
-              resolutionStrategy {
-                  force 'androidx.core:core:1.13.1'
-                  force 'com.google.firebase:firebase-messaging:24.0.1'
-                  force 'com.google.firebase:firebase-bom:33.1.0'
-                  exclude group: 'com.android.support'
-              }
-          }
-          EOF
-      - name: Verify build.gradle
-        run: |
-          cat android/app/build.gradle | grep -A 20 "signingConfigs.release"
-          cat android/app/build.gradle | grep -A 10 "validateReleaseSigning"
-      - name: Decode Keystore
-        env:
-          EXPO_ANDROID_KEYSTORE: ${{ secrets.EXPO_ANDROID_KEYSTORE }}
-        run: |
-          echo "$EXPO_ANDROID_KEYSTORE" | base64 -d > android/app/my-release-key.keystore
-          ls -l android/app/my-release-key.keystore
-          file android/app/my-release-key.keystore
-          keytool -list -keystore android/app/my-release-key.keystore -storepass ${{ secrets.EXPO_ANDROID_KEYSTORE_PASSWORD }} || echo "Keystore verification failed"
-      - name: Validate Keystore and Environment Variables
-        run: |
-          if [ ! -f android/app/my-release-key.keystore ]; then
-            echo "Error: my-release-key.keystore not found"
-            exit 1
-          fi
-          if [ -z "${{ secrets.EXPO_ANDROID_KEYSTORE_PASSWORD }}" ]; then
-            echo "Error: EXPO_ANDROID_KEYSTORE_PASSWORD not set"
-            exit 1
-          fi
-          if [ -z "${{ secrets.EXPO_ANDROID_KEY_ALIAS }}" ]; then
-            echo "Error: EXPO_ANDROID_KEY_ALIAS not set"
-            exit 1
-          fi
-          if [ -z "${{ secrets.EXPO_ANDROID_KEY_PASSWORD }}" ]; then
-            echo "Error: EXPO_ANDROID_KEY_PASSWORD not set"
-            exit 1
-          fi
-          echo "Keystore and environment variables validated successfully"
-      - name: Validate Release Signing
-        run: |
-          cd android
-          chmod +x gradlew
-          ./gradlew validateReleaseSigning --info
-      - name: Verify Signing Configuration
-        run: |
-          cd android
-          chmod +x gradlew
-          ./gradlew signingReport --info
-      - name: Build AAB
-        env:
-          EXPO_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.EXPO_ANDROID_KEYSTORE_PASSWORD }}
-          EXPO_ANDROID_KEY_ALIAS: ${{ secrets.EXPO_ANDROID_KEY_ALIAS }}
-          EXPO_ANDROID_KEY_PASSWORD: ${{ secrets.EXPO_ANDROID_KEY_PASSWORD }}
-        run: |
-          cd android
-          ./gradlew clean
-          ./gradlew bundleRelease --stacktrace --info --warning-mode all
-      - name: Verify AAB Signing
-        run: |
-          jarsigner -verify -verbose android/app/build/outputs/bundle/release/app-release.aab
-      - name: Upload AAB
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release-aab
-          path: android/app/build/outputs/bundle/release/app-release.aab
+dependencies {
+    implementation("com.facebook.react:react-android")
+
+    def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
+    def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";
+    def isWebpAnimatedEnabled = (findProperty('expo.webp.animated') ?: "") == "true";
+
+    if (isGifEnabled) {
+        implementation("com.facebook.fresco:animated-gif:${expoLibs.versions.fresco.get()}")
+    }
+    if (isWebpEnabled) {
+        implementation("com.facebook.fresco:webpsupport:${expoLibs.versions.fresco.get()}")
+        if (isWebpAnimatedEnabled) {
+            implementation("com.facebook.fresco:animated-webp:${expoLibs.versions.fresco.get()}")
+        }
+    }
+    if (hermesEnabled.toBoolean()) {
+        implementation("com.facebook.react:hermes-android")
+    } else {
+        implementation jscFlavor
+    }
+}
+
+apply plugin: 'com.google.gms.google-services'
+dependencies {
+    implementation platform('com.google.firebase:firebase-bom:33.1.0')
+    implementation 'com.google.firebase:firebase-messaging:24.0.1'
+}
+
+configurations.all {
+    resolutionStrategy {
+        force 'androidx.core:core:1.13.1'
+        force 'com.google.firebase:firebase-messaging:24.0.1'
+        force 'com.google.firebase:firebase-bom:33.1.0'
+        exclude group: 'com.android.support'
+    }
+}

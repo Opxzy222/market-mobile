@@ -18,7 +18,9 @@
       "bundleIdentifier": "com.timeflies.marketmobile",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"],
+        "UIBackgroundModes": [
+          "remote-notification"
+        ],
         "NSUserNotificationsUsageDescription": "Allow this app to send you notifications about new followers, reviews, posts, and receipts.",
         "NSLocationWhenInUseUsageDescription": "Allow this app to use your location to find nearby shops.",
         "NSMotionUsageDescription": "Allow this app to access motion data to estimate small movements."
@@ -82,8 +84,12 @@
       "expo-secure-store",
       "expo-video",
       "expo-web-browser",
-      ["@react-native-firebase/app"],
-      ["@react-native-firebase/messaging"],
+      [
+        "@react-native-firebase/app"
+      ],
+      [
+        "@react-native-firebase/messaging"
+      ],
       [
         "expo-notifications",
         {
@@ -102,7 +108,12 @@
               "name": "Chat Notifications",
               "importance": "high",
               "sound": "chat_notification",
-              "vibrationPattern": [100, 200, 300, 400],
+              "vibrationPattern": [
+                100,
+                200,
+                300,
+                400
+              ],
               "enableVibrate": true
             },
             {
@@ -110,7 +121,12 @@
               "name": "Receipt Notifications",
               "importance": "high",
               "sound": "receipt_notification",
-              "vibrationPattern": [100, 200, 300, 400],
+              "vibrationPattern": [
+                100,
+                200,
+                300,
+                400
+              ],
               "enableVibrate": true
             }
           ]
@@ -124,6 +140,8 @@
             "targetSdkVersion": 35,
             "buildToolsVersion": "35.0.0",
             "minSdkVersion": 24,
+            "ndkVersion": "25.2.9519653",
+            "enableHermes": false,
             "edgeToEdgeEnabled": true
           },
           "ios": {
@@ -158,14 +176,16 @@
     "experiments": {
       "typedRoutes": true
     },
+    "assetBundlePatterns": [
+      "**/*",
+      "assets/sounds/**/*"
+    ],
     "extra": {
-      "router": {
-        "origin": false
-      },
+      "router": {},
       "eas": {
-        "projectId": "f80ca8bf-7b1e-44db-999f-2b562f845d48"
+        "projectId": "075735ef-cbaa-4ccf-b12d-4b4e54c35b38"
       }
     },
-    "assetBundlePatterns": ["**/*", "assets/sounds/**/*"]
+    "owner": "time_flies"
   }
 }
