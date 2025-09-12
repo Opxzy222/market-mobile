@@ -382,7 +382,7 @@ const AdminShopPage = () => {
  return (
  <View style={styles.loadingContainer}>
  <ActivityIndicator size="large" color="#f39c12" />
- <Text style={styles.loadingText}>Loading shop data...</Text>
+ <Text style={styles.loadingText}>Loading space data...</Text>
  </View>
  );
  }

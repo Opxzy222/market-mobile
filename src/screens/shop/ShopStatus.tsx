@@ -560,7 +560,7 @@ const StatusScreen = () => {
                 <TextInput
                   style={styles.input}
                   placeholder="What's on your mind?"
-                  placeholderTextColor="#888"
+                  placeholderTextColor="#5A5A5A"
                   value={statusText}
                   onChangeText={setStatusText}
                   multiline
@@ -605,7 +605,7 @@ const StatusScreen = () => {
                   <TextInput
                     style={styles.input}
                     placeholder="Add a caption (optional)"
-                    placeholderTextColor="#888"
+                    placeholderTextColor="#5A5A5A"
                     value={statusText}
                     onChangeText={setStatusText}
                     multiline

@@ -23,7 +23,11 @@ const LocationSearch = ({ onSearch, onFocusChange, onSuggestionsStateChange }) =
       try {
         const response = await axios.post('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/states/');
         console.log('Top-level locations response:', response.data);
-        setLocations(response.data.locations.map(loc => ({ key: loc.id, value: loc.name })));
+        // Sort locations alphabetically by name
+        const sortedLocations = response.data.locations
+          .map(loc => ({ key: loc.id, value: loc.name }))
+          .sort((a, b) => a.value.localeCompare(b.value)); // Case-insensitive sorting
+        setLocations(sortedLocations);
       } catch (error) {
         console.error('Error fetching top-level locations:', error.message, error.response?.data);
         setFormErrors({ fetch: 'Failed to load locations. Please try again.' });
@@ -51,7 +55,11 @@ const LocationSearch = ({ onSearch, onFocusChange, onSuggestionsStateChange }) =
           { headers: { 'Content-Type': 'multipart/form-data' } }
         );
         console.log('Child locations response:', response.data);
-        setChildLocations(response.data.locations.map(loc => ({ key: loc.id, value: loc.name })));
+        // Sort child locations alphabetically by name
+        const sortedChildLocations = response.data.locations
+          .map(loc => ({ key: loc.id, value: loc.name }))
+          .sort((a, b) => a.value.localeCompare(b.value)); // Case-insensitive sorting
+        setChildLocations(sortedChildLocations);
       } catch (error) {
         console.error('Error fetching child locations:', error.message, error.response?.data);
         setFormErrors({ fetch: 'Failed to load child locations. Please try again.' });
@@ -76,7 +84,11 @@ const LocationSearch = ({ onSearch, onFocusChange, onSuggestionsStateChange }) =
           { headers: { 'Content-Type': 'multipart/form-data' } }
         );
         console.log('Grandchild locations response:', response.data);
-        setGrandChildLocations(response.data.locations.map(loc => ({ key: loc.id, value: loc.name })));
+        // Sort grandchild locations alphabetically by name
+        const sortedGrandChildLocations = response.data.locations
+          .map(loc => ({ key: loc.id, value: loc.name }))
+          .sort((a, b) => a.value.localeCompare(b.value)); // Case-insensitive sorting
+        setGrandChildLocations(sortedGrandChildLocations);
       } catch (error) {
         console.error('Error fetching grandchild locations:', error.message, error.response?.data);
         setFormErrors({ fetch: 'Failed to load grandchild locations. Please try again.' });

@@ -6,7 +6,25 @@ let isInitialized = false;
 let isInitializing = false; // Track initialization in progress
 let dbInstance: any = null; // Singleton database instance
 
-// Initialize SQLite database with locking
+// Database operation queue
+const dbOperationQueue: Array<() => Promise<any>> = [];
+let isProcessingQueue = false;
+
+const processQueue = async () => {
+  if (isProcessingQueue) return;
+  isProcessingQueue = true;
+  while (dbOperationQueue.length > 0) {
+    const operation = dbOperationQueue.shift();
+    try {
+      await operation();
+    } catch (error) {
+      console.error('Queue operation failed:', error);
+    }
+  }
+  isProcessingQueue = false;
+};
+
+// Initialize SQLite database with locking and schema check
 const initializeDatabase = async (): Promise<void> => {
   if (isInitialized && dbInstance) {
     console.log('Database already initialized, returning existing instance');
@@ -28,9 +46,19 @@ const initializeDatabase = async (): Promise<void> => {
     try {
       await initializeSQLiteDatabase();
       dbInstance = await getSQLiteDatabase(); // Use imported getSQLiteDatabase
+      // Ensure secure_data and suggestions tables exist
+      await dbInstance.execAsync(`
+        CREATE TABLE IF NOT EXISTS secure_data (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS suggestions (
+          name TEXT PRIMARY KEY
+        );
+      `);
       isInitialized = true;
       isInitializing = false;
-      console.log('SQLite database initialized');
+      console.log('SQLite database initialized with secure_data and suggestions tables');
       return;
     } catch (error) {
       console.error(`Failed to initialize database (attempt ${attempt + 1}):`, error);
@@ -50,6 +78,7 @@ const initializeDatabase = async (): Promise<void> => {
 
 // Get SQLite database with singleton pattern
 const getSingletonSQLiteDatabase = async (): Promise<any> => {
+  console.log(`getSingletonSQLiteDatabase called, isInitialized: ${isInitialized}, time: ${new Date().toISOString()}`);
   if (isInitialized && dbInstance) {
     return dbInstance;
   }
@@ -72,40 +101,57 @@ const isValidBase64 = (str: string): boolean => {
   }
 };
 
-// Store data in SQLite only
+// Store data in SQLite with queue
 const storeData = async (key: string, value: string): Promise<number> => {
-  if (typeof value !== 'string' || !value.trim()) {
-    console.error('Invalid value for storage:', { key, value });
-    throw new Error('Value must be a non-empty string');
-  }
+  console.log(`storeData called with key: ${key}, time: ${new Date().toISOString()}, caller: ${new Error().stack}`);
+  return new Promise((resolve, reject) => {
+    dbOperationQueue.push(async () => {
+      if (typeof value !== 'string' || !value.trim()) {
+        console.error('Invalid value for storage:', { key, value });
+        reject(new Error('Value must be a non-empty string'));
+        return;
+      }
 
-  let encodedValue;
-  try {
-    encodedValue = btoa(encodeURIComponent(value));
-  } catch (error) {
-    console.error('Error encoding value:', error, { key, value });
-    throw new Error('Failed to encode value as base64');
-  }
+      let encodedValue;
+      try {
+        encodedValue = btoa(encodeURIComponent(value));
+      } catch (error) {
+        console.error('Error encoding value:', error, { key, value });
+        reject(new Error('Failed to encode value as base64'));
+        return;
+      }
 
-  const db = await getSingletonSQLiteDatabase();
-  try {
-    await db.execAsync('BEGIN EXCLUSIVE TRANSACTION;');
-    const result = await db.runAsync(
-      'INSERT OR REPLACE INTO secure_data (key, value) VALUES (?, ?);',
-      [key, encodedValue]
-    );
-    await db.execAsync('COMMIT;');
-    console.log('Stored in SQLite (secure_data):', result.lastInsertRowId, result.changes);
-    return result.lastInsertRowId ?? 0;
-  } catch (error) {
-    console.error('SQLite store failed:', error, { key });
-    await db.execAsync('ROLLBACK;').catch((err) => console.error('Rollback failed:', err));
-    throw error;
-  }
+      const db = await getSingletonSQLiteDatabase();
+      try {
+        await db.execAsync('BEGIN EXCLUSIVE TRANSACTION;');
+        const result = await db.runAsync(
+          'INSERT OR REPLACE INTO secure_data (key, value) VALUES (?, ?);',
+          [key, encodedValue]
+        );
+        await db.execAsync('COMMIT;');
+        console.log('Stored in SQLite (secure_data):', result.lastInsertRowId, result.changes);
+        resolve(result.lastInsertRowId ?? 0);
+      } catch (error) {
+        console.error('SQLite store failed:', error, { key });
+        try {
+          await db.execAsync('ROLLBACK;');
+        } catch (rollbackError) {
+          console.error('Rollback failed:', rollbackError);
+          // Reset database connection if needed
+          isInitialized = false;
+          dbInstance = null;
+          await initializeDatabase();
+        }
+        reject(error);
+      }
+    });
+    processQueue();
+  });
 };
 
-// Retrieve data from SQLite only
+// Retrieve data from SQLite
 const getData = async (key: string): Promise<string | null> => {
+  console.log(`getData called with key: ${key}, time: ${new Date().toISOString()}`);
   try {
     const db = await getSingletonSQLiteDatabase();
     const row = await db.getFirstAsync<{ value: string }>(
@@ -135,25 +181,33 @@ const getData = async (key: string): Promise<string | null> => {
   }
 };
 
-// Clear stale data by prefix in SQLite only
+// Clear stale data by prefix in SQLite
 const clearStaleData = async (prefix: string): Promise<void> => {
-  try {
-    const db = await getSingletonSQLiteDatabase();
-    await db.execAsync('BEGIN EXCLUSIVE TRANSACTION;');
-    await db.runAsync('DELETE FROM secure_data WHERE key LIKE ?;', [`${prefix}%`]);
-    await db.execAsync('COMMIT;');
-    console.log(`Cleared stale secure_data in SQLite with prefix: ${prefix}`);
-  } catch (error) {
-    console.error('Error clearing stale data:', error);
-    if (dbInstance) {
-      await dbInstance.execAsync('ROLLBACK;').catch((err) => console.error('Rollback failed:', err));
-    }
-    throw error;
-  }
+  console.log(`clearStaleData called with prefix: ${prefix}, time: ${new Date().toISOString()}`);
+  return new Promise((resolve, reject) => {
+    dbOperationQueue.push(async () => {
+      try {
+        const db = await getSingletonSQLiteDatabase();
+        await db.execAsync('BEGIN EXCLUSIVE TRANSACTION;');
+        await db.runAsync('DELETE FROM secure_data WHERE key LIKE ?;', [`${prefix}%`]);
+        await db.execAsync('COMMIT;');
+        console.log(`Cleared stale secure_data in SQLite with prefix: ${prefix}`);
+        resolve();
+      } catch (error) {
+        console.error('Error clearing stale data:', error);
+        if (dbInstance) {
+          await dbInstance.execAsync('ROLLBACK;').catch((err) => console.error('Rollback failed:', err));
+        }
+        reject(error);
+      }
+    });
+    processQueue();
+  });
 };
 
 // Fetch suggestions from SQLite
 const getSuggestions = async (query: string, limit: number = 20, offset: number = 0): Promise<string[]> => {
+  console.log(`getSuggestions called with query: ${query}, limit: ${limit}, offset: ${offset}, time: ${new Date().toISOString()}`);
   try {
     const db = await getSingletonSQLiteDatabase();
     const sanitizedQuery = query.trim().toLowerCase().replace(/[^a-zA-Z0-9 ]/g, '');
@@ -173,66 +227,75 @@ const getSuggestions = async (query: string, limit: number = 20, offset: number 
 
 // Cache suggestions in SQLite
 const cacheSuggestions = async (suggestions: string[]): Promise<void> => {
-  try {
-    const db = await getSingletonSQLiteDatabase();
-    const validSuggestions = suggestions
-      .map((s) => (typeof s === 'string' && s.trim().length > 0 ? s.trim() : null))
-      .filter((s): s is string => s !== null);
-    console.log('Valid suggestions to cache:', validSuggestions.length);
-
-    const invalidSuggestions = suggestions.filter((s) => !(typeof s === 'string' && s.trim().length > 0));
-    if (invalidSuggestions.length > 0) {
-      console.log('Invalid suggestions detected:', invalidSuggestions.slice(0, 10));
-    }
-
-    if (validSuggestions.length === 0) {
-      console.log('No valid suggestions to cache');
-      return;
-    }
-
-    const batchSize = 500;
-    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-    let attempt = 0;
-    const maxAttempts = 3;
-    while (attempt < maxAttempts) {
+  console.log(`cacheSuggestions called with ${suggestions.length} suggestions, time: ${new Date().toISOString()}`);
+  return new Promise((resolve, reject) => {
+    dbOperationQueue.push(async () => {
       try {
-        await db.execAsync('BEGIN EXCLUSIVE TRANSACTION;');
-        for (let i = 0; i < validSuggestions.length; i += batchSize) {
-          const batch = validSuggestions.slice(i, i + batchSize);
-          const safeBatch = batch.map((s) => String(s));
-          const placeholders = safeBatch.map(() => '(?)').join(', ');
-          await db.runAsync(
-            `INSERT OR IGNORE INTO suggestions (name) VALUES ${placeholders};`,
-            safeBatch
-          );
-          console.log(`Cached ${i + safeBatch.length} of ${validSuggestions.length} suggestions in SQLite`);
-          await delay(20);
+        const db = await getSingletonSQLiteDatabase();
+        const validSuggestions = suggestions
+          .map((s) => (typeof s === 'string' && s.trim().length > 0 ? s.trim() : null))
+          .filter((s): s is string => s !== null);
+        console.log('Valid suggestions to cache:', validSuggestions.length);
+
+        const invalidSuggestions = suggestions.filter((s) => !(typeof s === 'string' && s.trim().length > 0));
+        if (invalidSuggestions.length > 0) {
+          console.log('Invalid suggestions detected:', invalidSuggestions.slice(0, 10));
         }
-        await db.execAsync('COMMIT;');
-        console.log('Successfully cached suggestions in SQLite:', validSuggestions.length);
-        return;
+
+        if (validSuggestions.length === 0) {
+          console.log('No valid suggestions to cache');
+          resolve();
+          return;
+        }
+
+        const batchSize = 500;
+        const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+        let attempt = 0;
+        const maxAttempts = 3;
+        while (attempt < maxAttempts) {
+          try {
+            await db.execAsync('BEGIN EXCLUSIVE TRANSACTION;');
+            for (let i = 0; i < validSuggestions.length; i += batchSize) {
+              const batch = validSuggestions.slice(i, i + batchSize);
+              const safeBatch = batch.map((s) => String(s));
+              const placeholders = safeBatch.map(() => '(?)').join(', ');
+              await db.runAsync(
+                `INSERT OR IGNORE INTO suggestions (name) VALUES ${placeholders};`,
+                safeBatch
+              );
+              console.log(`Cached ${i + safeBatch.length} of ${validSuggestions.length} suggestions in SQLite`);
+              await delay(20);
+            }
+            await db.execAsync('COMMIT;');
+            console.log('Successfully cached suggestions in SQLite:', validSuggestions.length);
+            resolve();
+            return;
+          } catch (error) {
+            console.error(`Cache attempt ${attempt + 1} failed:`, error);
+            await db.execAsync('ROLLBACK;').catch((err) => console.error('Rollback failed:', err));
+            attempt++;
+            if (attempt < maxAttempts) {
+              console.log(`Retrying cacheSuggestions in 1000ms`);
+              await delay(1000);
+              await initializeDatabase();
+            } else {
+              reject(error);
+            }
+          }
+        }
       } catch (error) {
-        console.error(`Cache attempt ${attempt + 1} failed:`, error);
-        await db.execAsync('ROLLBACK;').catch((err) => console.error('Rollback failed:', err));
-        attempt++;
-        if (attempt < maxAttempts) {
-          console.log(`Retrying cacheSuggestions in 1000ms`);
-          await delay(1000);
-          await initializeDatabase();
-        } else {
-          throw error;
-        }
+        console.error('Error caching suggestions in SQLite:', error);
+        reject(error);
       }
-    }
-  } catch (error) {
-    console.error('Error caching suggestions in SQLite:', error);
-    throw error;
-  }
+    });
+    processQueue();
+  });
 };
 
 // Count suggestions in SQLite
 const getSuggestionsCount = async (): Promise<number> => {
+  console.log(`getSuggestionsCount called, time: ${new Date().toISOString()}`);
   try {
     const db = await getSingletonSQLiteDatabase();
     const row = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM suggestions');
@@ -245,31 +308,38 @@ const getSuggestionsCount = async (): Promise<number> => {
 
 // Clear all non-suggestion data in SQLite
 const clearNonSuggestionData = async (): Promise<void> => {
-  try {
-    const db = await getSingletonSQLiteDatabase();
-    await db.execAsync('BEGIN EXCLUSIVE TRANSACTION;');
-    await db.runAsync('DELETE FROM secure_data;');
-    await db.execAsync('COMMIT;');
-    console.log('Cleared secure_data table in SQLite');
+  console.log(`clearNonSuggestionData called, time: ${new Date().toISOString()}`);
+  return new Promise((resolve, reject) => {
+    dbOperationQueue.push(async () => {
+      try {
+        const db = await getSingletonSQLiteDatabase();
+        await db.execAsync('BEGIN EXCLUSIVE TRANSACTION;');
+        await db.runAsync('DELETE FROM secure_data;');
+        await db.execAsync('COMMIT;');
+        console.log('Cleared secure_data table in SQLite');
 
-    const secureData = await db.getAllAsync('SELECT * FROM secure_data;');
-    if (secureData.length > 0) {
-      console.warn('Secure data persists in SQLite:', secureData);
-    } else {
-      console.log('SQLite secure_data table is empty');
-    }
+        const secureData = await db.getAllAsync('SELECT * FROM secure_data;');
+        if (secureData.length > 0) {
+          console.warn('Secure data persists in SQLite:', secureData);
+        } else {
+          console.log('SQLite secure_data table is empty');
+        }
 
-    const tables = await db.getAllAsync<{ name: string }>(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';"
-    );
-    console.log('Remaining SQLite tables:', tables.map((t) => t.name));
-  } catch (error) {
-    console.error('Error clearing non-suggestion data:', error);
-    if (dbInstance) {
-      await dbInstance.execAsync('ROLLBACK;').catch((err) => console.error('Rollback failed:', err));
-    }
-    throw error;
-  }
+        const tables = await db.getAllAsync<{ name: string }>(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';"
+        );
+        console.log('Remaining SQLite tables:', tables.map((t) => t.name));
+        resolve();
+      } catch (error) {
+        console.error('Error clearing non-suggestion data:', error);
+        if (dbInstance) {
+          await dbInstance.execAsync('ROLLBACK;').catch((err) => console.error('Rollback failed:', err));
+        }
+        reject(error);
+      }
+    });
+    processQueue();
+  });
 };
 
 export {

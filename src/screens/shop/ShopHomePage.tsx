@@ -28,7 +28,7 @@ import SubscriptionProvider, { SubscriptionContext } from '../../components/Subs
 import { LinearGradient } from 'expo-linear-gradient';
 
 const ShopHomePage = () => {
-  const { subscriptionStatus, loading } = useContext(SubscriptionContext);
+  const { subscriptionStatus, loading: subscriptionLoading } = useContext(SubscriptionContext);
   const [data, setData] = useState({
     categories: [],
     followed_shops: [],
@@ -39,14 +39,25 @@ const ShopHomePage = () => {
   const [inputFocused, setInputFocused] = useState(false);
   const [networkError, setNetworkError] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [isPopulating, setIsPopulating] = useState(false); // Track population state
-  const [progress, setProgress] = useState(0); // Track population progress
+  const [isPopulating, setIsPopulating] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [modalTitle, setModalTitle] = useState('Setting Up Your Dashboard');
+  const [modalSubtitle, setModalSubtitle] = useState('Please hold on this could take a few minutes...');
   const hasFetchedOnceRef = useRef(false);
   const sessionTokenRef = useRef(null);
   const flatListRef = useRef(null);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const TAB_BAR_HEIGHT = 60;
+
+  const isValidCache = (parsedData) => {
+    return (
+      parsedData &&
+      (parsedData.categories?.length > 0 ||
+       parsedData.followed_shops?.length > 0 ||
+       parsedData.recently_visited_shops?.length > 0)
+    );
+  };
 
   const loadCachedData = async () => {
     try {
@@ -62,30 +73,27 @@ const ShopHomePage = () => {
       const cachedData = await AsyncStorage.getItem('shopDashboardData');
       if (cachedData) {
         const parsedData = JSON.parse(cachedData);
-        setData(parsedData);
-        console.log('Loaded cached dashboard data:', parsedData);
-        if (
-          !parsedData.categories.length &&
-          !parsedData.followed_shops.length &&
-          !parsedData.recently_visited_shops.length
-        ) {
+        if (isValidCache(parsedData)) {
+          setData(parsedData);
+          setIsLoading(false); // Display cached data immediately
+          console.log('Loaded valid cached dashboard data:', parsedData);
+          return true;
+        } else {
+          console.log('Invalid or empty cached data, keeping loading state');
           return false;
         }
-        return true;
       }
+      console.log('No cached data found');
       return false;
     } catch (error) {
       console.error('Error loading cached data:', error);
       setNetworkError(true);
       return false;
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const fetchData = async () => {
     try {
-      setIsLoading(true);
       setNetworkError(false);
       if (!sessionTokenRef.current) {
         sessionTokenRef.current = await AsyncStorage.getItem('sessionToken');
@@ -107,15 +115,21 @@ const ShopHomePage = () => {
           },
         }
       );
-      setData(response.data);
-
-
-      await AsyncStorage.setItem('shopDashboardData', JSON.stringify(response.data));
-      await AsyncStorage.setItem('user_verified', JSON.stringify(response.data.user_verified));
-      await AsyncStorage.setItem('phone_verified', JSON.stringify(response.data.phone_verified));
-      console.log('Fetched dashboard data:', response.data);
+      const newData = response.data;
+      setData(newData); // Update state with backend data
+      await AsyncStorage.setItem('shopDashboardData', JSON.stringify(newData));
+      await AsyncStorage.setItem('user_verified', JSON.stringify(newData.user_verified));
+      await AsyncStorage.setItem('phone_verified', JSON.stringify(newData.phone_verified));
+      console.log('Fetched and updated dashboard data:', newData);
       hasFetchedOnceRef.current = true;
     } catch (error) {
+      console.log('Error details:', {
+        isAxiosError: axios.isAxiosError(error),
+        status: error.response?.status,
+        response: error.response,
+        message: error.message,
+      });
+
       if (axios.isAxiosError(error) && error.response?.status === 403) {
         console.log('Authentication failed (403), clearing data and navigating to login');
         await clearNonSuggestionData();
@@ -133,12 +147,11 @@ const ShopHomePage = () => {
 
   useFocusEffect(
     useCallback(() => {
-      console.log('Screen focused, loading data');
+      console.log('Screen focused, initializing data');
       const initializeData = async () => {
         const hasValidCache = await loadCachedData();
-        if (!hasValidCache || !hasFetchedOnceRef.current) {
-          await fetchData();
-        }
+        // Always fetch fresh data in the background, even if cache is valid
+        fetchData();
       };
       initializeData();
     }, [])
@@ -151,6 +164,7 @@ const ShopHomePage = () => {
         console.log('Session token changed, resetting fetch state and fetching data');
         sessionTokenRef.current = newToken;
         hasFetchedOnceRef.current = false;
+        setIsLoading(true); // Show loading state during token change
         await fetchData();
       }
     };
@@ -174,10 +188,18 @@ const ShopHomePage = () => {
     console.log('Population state changed:', { isPopulating, progress });
     setIsPopulating(isPopulating);
     setProgress(progress);
+    if (progress >= 99) {
+      setModalTitle('Finalizing Your Dashboard');
+      setModalSubtitle('Almost ready, just a few more moments...');
+    } else {
+      setModalTitle('Setting Up Your Dashboard');
+      setModalSubtitle('Please hold on this could take a few minutes...');
+    }
   }, []);
 
   const handleReload = useCallback(() => {
     console.log('Reload button pressed');
+    setIsLoading(true); // Show loading state during reload
     fetchData();
   }, []);
 
@@ -189,16 +211,16 @@ const ShopHomePage = () => {
         id: 'searchBar',
         onSuggestionsStateChange: handleSuggestionsStateChange,
         onFocusChange: handleFocusChange,
-        onPopulationStateChange: handlePopulationStateChange, // Pass prop
+        onPopulationStateChange: handlePopulationStateChange,
       },
       { type: 'categories', id: 'categories', data: data.categories },
-      { type: 'recentShops', id: 'recentShops', data: data.recently_visited_shops },
       { type: 'followedShops', id: 'followedShops', data: data.followed_shops },
+      { type: 'recentShops', id: 'recentShops', data: data.recently_visited_shops },
     ],
     [
       data.categories,
-      data.recently_visited_shops,
       data.followed_shops,
+      data.recently_visited_shops,
       handleSuggestionsStateChange,
       handleFocusChange,
       handlePopulationStateChange,
@@ -214,21 +236,21 @@ const ShopHomePage = () => {
           <SearchBar
             onSuggestionsStateChange={item.onSuggestionsStateChange}
             onFocusChange={item.onFocusChange}
-            onPopulationStateChange={item.onPopulationStateChange} // Pass prop
+            onPopulationStateChange={item.onPopulationStateChange}
           />
         );
       case 'categories':
         return <Categories categories={item.data} />;
-      case 'recentShops':
-        return <RecentShops shops={item.data} />;
       case 'followedShops':
         return <FollowedShops shops={item.data} />;
+      case 'recentShops':
+        return <RecentShops shops={item.data} />;
       default:
         return <View />;
     }
   };
 
-  if (loading || isLoading) {
+  if (subscriptionLoading || isLoading) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: '#F7FAFC' }]}>
         <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
@@ -298,8 +320,8 @@ const ShopHomePage = () => {
       <Modal visible={isPopulating} animationType="fade" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
-            <Text style={styles.modalTitle}>Setting Up Your Dashboard</Text>
-            <Text style={styles.modalSubtitle}>Please hold on this could take a few minutes...</Text>
+            <Text style={styles.modalTitle}>{modalTitle}</Text>
+            <Text style={styles.modalSubtitle}>{modalSubtitle}</Text>
             <View style={styles.progressBarContainer}>
               <View style={[styles.progressBar, { width: `${progress}%` }]} />
             </View>

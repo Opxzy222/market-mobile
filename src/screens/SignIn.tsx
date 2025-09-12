@@ -77,6 +77,8 @@ async function login(email, password) {
       await AsyncStorage.setItem("user_id", user_id.toString());
       await AsyncStorage.setItem("userId", userId);
       await AsyncStorage.setItem("user_name", user_name);
+      await AsyncStorage.setItem("email", email);
+      console.log(email,'email')
       await AsyncStorage.setItem("user_verified", JSON.stringify(userVerified));
       await AsyncStorage.setItem("phone_verified", JSON.stringify(phoneVerified));
       console.log("userVerified:", userVerified);
@@ -85,6 +87,9 @@ async function login(email, password) {
     throw new Error(response.data.message || "Login failed");
   } catch (error) {
     console.error("Login API error:", error.response?.data?.error || error.message);
+    if (error.isAxiosError && !error.response) {
+      throw new Error("Network error, please check your connection and try again");
+    }
     throw new Error(error.response?.data?.error || "Invalid credentials");
   }
 }

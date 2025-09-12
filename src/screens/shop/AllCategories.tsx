@@ -10,6 +10,7 @@ import {
   View
 } from 'react-native';
 import axios from 'axios';
+import * as SecureStore from 'expo-secure-store';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -50,7 +51,6 @@ const categoryIconMap = {
   'Travel & Luggage': require('../../../assets/G-images/Travel.jpg'),
   'Vehicles': require('../../../assets/G-images/Vehicle.jpg'),
   'Vintage & Thrift': require('../../../assets/G-images/Vintage.jpg'),
-  // Fallback for unknown categories
   '': require('../../../assets/G-images/default.jpg'),
 };
 
@@ -64,16 +64,32 @@ const AllCategories = () => {
   useEffect(() => {
     const fetchCategories = async () => {
       try {
+        // Check for cached categories
+        const cachedCategories = await SecureStore.getItemAsync('categories_cache');
+        if (cachedCategories) {
+          if (__DEV__) {
+            console.log('Using cached categories');
+          }
+          const parsedCategories = JSON.parse(cachedCategories);
+          setCategories(parsedCategories);
+          setLoading(false);
+          return;
+        }
+
+        // Fetch from backend if no cache
         if (__DEV__) {
-          console.log('Fetching all categories');
+          console.log('Fetching all categories from backend');
         }
         setLoading(true);
         const response = await axios.get('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/all-shop-categories/');
         const categoryArray = Object.values(response.data);
         const sortedCategories = categoryArray.sort((a, b) => a.name.localeCompare(b.name));
         setCategories(sortedCategories);
+
+        // Cache the fetched categories
+        await SecureStore.setItemAsync('categories_cache', JSON.stringify(sortedCategories));
         if (__DEV__) {
-          console.log('Fetched categories:', sortedCategories.map(item => item.name));
+          console.log('Fetched and cached categories:', sortedCategories.map(item => item.name));
         }
       } catch (error) {
         console.error('Error fetching categories:', error);
@@ -101,7 +117,6 @@ const AllCategories = () => {
       console.warn(`No image found for category: ${normalizedName}, using fallback`);
     }
 
-    // Check if this is the last item and the total number of categories is odd
     const isLastAndOdd = index === categories.length - 1 && categories.length % 2 !== 0;
 
     return (
@@ -267,7 +282,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   lastCategoryItem: {
-    maxWidth: '48%', // Ensure the last item doesn't stretch across both columns
+    maxWidth: '48%',
   },
   iconContainer: {
     borderRadius: 20,

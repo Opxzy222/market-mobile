@@ -593,7 +593,7 @@ const NotificationModal = () => {
 };
 
 const styles = StyleSheet.create({
-  parentContainer: { position: 'relative' },
+  parentContainer: { position: 'relative', zIndex: 2001, },
   notificationIconContainer: { position: 'relative', marginHorizontal: 10 },
   badge: {
     position: 'absolute',

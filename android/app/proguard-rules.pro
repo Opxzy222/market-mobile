@@ -11,6 +11,4 @@
 -keep class com.swmansion.reanimated.** { *; }
 -keep class com.facebook.react.turbomodule.** { *; }
 
-# AsyncStorage
--keep class com.reactnativecommunity.asyncstorage.** { *; }
--keep interface com.reactnativecommunity.asyncstorage.** { *; }
+# Add any project specific keep options here:

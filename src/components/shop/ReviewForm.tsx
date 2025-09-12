@@ -106,6 +106,7 @@ const ReviewForm = ({ shopId, onReviewSubmitted }) => {
           value={comment}
           onChangeText={(text) => setComment(text)}
           placeholder="Write your review here..."
+          placeholderTextColor="#888"
           multiline
         />
         {error ? <Text style={styles.errorText}>{error}</Text> : null}

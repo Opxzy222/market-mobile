@@ -211,6 +211,7 @@ const SearchResults = () => {
     }
     setIsVerified(tempIsVerified);
     setIsPremium(tempIsPremium);
+    setModalVisible(false)
     // Do not close the modal to allow further filter adjustments
     // setModalVisible(false); // Removed to keep modal open
   }, [tempMinRating, tempMaxRating, tempMinDistance, tempMaxDistance, tempIsVerified, tempIsPremium, allDistancesNull]);
@@ -232,6 +233,7 @@ const SearchResults = () => {
     setIsVerified(false);
     setIsPremium(false);
     setFilteredResults(Array.isArray(searchResults) ? searchResults : []);
+    setModalVisible(false)
   }, [allDistancesNull, searchResults]);
 
   // Memoized shop card renderer

@@ -34,7 +34,6 @@ const GenerateReceipt = () => {
   const [nameLoading, setNameLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [editIndex, setEditIndex] = useState(null);
-  const [signature, setSignature] = useState(null);
 
   const params = useLocalSearchParams();
   const { shopId, senderId } = params;
@@ -162,20 +161,8 @@ const GenerateReceipt = () => {
     qtyRef.current?.focus();
   };
 
-  const pickSignature = async () => {
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 1,
-    });
-    if (!result.canceled) {
-      setSignature(result.assets[0]);
-      console.log("Signature picked:", result.assets[0].uri);
-    }
-  };
-
   const generateReceipt = async () => {
-    console.log("Generating receipt with data:", { customerName, customerId, items, totalAmount, signature });
+    console.log("Generating receipt with data:", { customerName, customerId, items, totalAmount });
     if (!customerName || items.length === 0 || !totalAmount) {
       Alert.alert("Error", "All fields are required!");
       return;
@@ -191,14 +178,6 @@ const GenerateReceipt = () => {
       formData.append("items", JSON.stringify({ items })); // Wrap items in object
       formData.append("total_amount", totalAmount.toString());
       formData.append("customer_id", customerId);
-
-      if (signature) {
-        formData.append("signature", {
-          uri: signature.uri,
-          type: "image/png",
-          name: "signature.png",
-        });
-      }
 
       const response = await axios.post(
         "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/generate-receipt/",
@@ -252,6 +231,7 @@ const GenerateReceipt = () => {
               ref={customerIdRef}
               style={styles.input}
               placeholder="Customer ID"
+              placeholderTextColor="#5A5A5A"
               value={customerId}
               keyboardType="numeric"
               maxLength={8}
@@ -267,20 +247,10 @@ const GenerateReceipt = () => {
           <TextInput
             style={styles.disabledInput}
             placeholder="Customer Name"
+            placeholderTextColor="#5A5A5A"
             value={customerName}
             editable={false}
           />
-
-          {/* Signature Picker */}
-          <TouchableOpacity
-            style={styles.button}
-            onPress={pickSignature}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.buttonText}>
-              {signature ? "Change Signature" : "Add Signature"}
-            </Text>
-          </TouchableOpacity>
 
           {/* Item Input Fields */}
           <View style={styles.itemInputRow}>
@@ -288,6 +258,7 @@ const GenerateReceipt = () => {
               ref={itemNameRef}
               style={[styles.itemInput, styles.itemsInput]}
               placeholder="Item Name"
+              placeholderTextColor="#5A5A5A"
               value={newItem.name}
               onChangeText={(text) => {
                 setNewItem({ ...newItem, name: text });
@@ -302,6 +273,7 @@ const GenerateReceipt = () => {
               ref={qtyRef}
               style={[styles.itemInput, styles.qtyInput]}
               placeholder="Qty"
+              placeholderTextColor="#5A5A5A"
               keyboardType="numeric"
               value={newItem.qty}
               onChangeText={(text) => setNewItem({ ...newItem, qty: text })}
@@ -314,6 +286,7 @@ const GenerateReceipt = () => {
               ref={priceRef}
               style={[styles.itemInput, styles.priceInput]}
               placeholder="Price"
+              placeholderTextColor="#5A5A5A"
               keyboardType="numeric"
               value={newItem.price}
               onChangeText={(text) => setNewItem({ ...newItem, price: text })}
@@ -356,7 +329,7 @@ const GenerateReceipt = () => {
         </View>
       </View>
     ),
-    [customerId, customerName, newItem, filteredProductsMemo, nameLoading, editIndex, signature]
+    [customerId, customerName, newItem, filteredProductsMemo, nameLoading, editIndex]
   );
 
   // Memoize renderContent

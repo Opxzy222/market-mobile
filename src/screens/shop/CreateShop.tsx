@@ -55,6 +55,22 @@ export default function CreateShopScreen({ navigation }) {
   const flatListRef = useRef(null);
   const dropdownRef = useRef(null);
   const cancelTokenSourceRef = useRef(null);
+  const subcategorySectionRef = useRef(null);
+  const addressInputRef = useRef(null);
+
+  // Measure section heights for getItemLayout
+  const sectionHeights = useRef({
+    name: 100,
+    description: 150,
+    category: 80,
+    subcategories: 100,
+    state: 80,
+    childLocation: 80,
+    grandChildLocation: 80,
+    address: 120,
+    geo: 150,
+    submit: 80,
+  }).current;
 
   // Keyboard listeners for debugging
   useEffect(() => {
@@ -109,10 +125,11 @@ export default function CreateShopScreen({ navigation }) {
             key: cat.id,
             value: cat.name,
           }));
+          // Sort categories alphabetically by name
           const sortedCategories = categoryData.sort((a, b) => a.value.localeCompare(b.value));
           setCategories(sortedCategories);
           setFilteredCategories(sortedCategories);
-          console.log("Categories fetched:", sortedCategories);
+          console.log("Sorted categories fetched:", sortedCategories);
         } catch (error) {
           if (!axios.isCancel(error)) {
             console.error("Error fetching categories:", error);
@@ -128,13 +145,15 @@ export default function CreateShopScreen({ navigation }) {
             {},
             { cancelToken: cancelTokenSourceRef.current.token }
           );
-          setLocations(
-            response.data.locations.map((loc) => ({
+          // Sort locations alphabetically by name
+          const sortedLocations = response.data.locations
+            .map((loc) => ({
               key: loc.id,
               value: loc.name,
             }))
-          );
-          console.log("Locations fetched:", response.data.locations);
+            .sort((a, b) => a.value.localeCompare(b.value));
+          setLocations(sortedLocations);
+          console.log("Sorted locations fetched:", sortedLocations);
         } catch (error) {
           if (!axios.isCancel(error)) {
             console.error("Error fetching locations:", error);
@@ -166,10 +185,10 @@ export default function CreateShopScreen({ navigation }) {
   // Handle state selection and fetch LGAs
   const handleLocationChange = useCallback(async (selectedOption) => {
     setSelectedLocation(selectedOption);
-    setSelectedChildLocation(null); // Clear LGA selection
-    setChildLocations([]); // Clear LGA options
-    setSelectedGrandChildLocation(null); // Clear location selection
-    setGrandChildLocations([]); // Clear location options
+    setSelectedChildLocation(null);
+    setChildLocations([]);
+    setSelectedGrandChildLocation(null);
+    setGrandChildLocations([]);
 
     if (selectedOption) {
       try {
@@ -185,12 +204,15 @@ export default function CreateShopScreen({ navigation }) {
           }
         );
 
-        const newChildLocations = response.data.locations.map((loc) => ({
-          key: loc.id,
-          value: loc.name,
-        }));
-        setChildLocations(newChildLocations);
-        console.log("Child locations fetched:", newChildLocations);
+        // Sort child locations alphabetically by name
+        const sortedChildLocations = response.data.locations
+          .map((loc) => ({
+            key: loc.id,
+            value: loc.name,
+          }))
+          .sort((a, b) => a.value.localeCompare(b.value));
+        setChildLocations(sortedChildLocations);
+        console.log("Sorted child locations fetched:", sortedChildLocations);
       } catch (error) {
         if (!axios.isCancel(error)) {
           console.error("Error fetching child locations:", error);
@@ -203,8 +225,8 @@ export default function CreateShopScreen({ navigation }) {
   // Handle LGA selection and fetch locations
   const handleChildLocationChange = useCallback(async (selectedOption) => {
     setSelectedChildLocation(selectedOption);
-    setSelectedGrandChildLocation(null); // Clear location selection
-    setGrandChildLocations([]); // Clear location options
+    setSelectedGrandChildLocation(null);
+    setGrandChildLocations([]);
 
     if (selectedOption) {
       try {
@@ -220,12 +242,15 @@ export default function CreateShopScreen({ navigation }) {
           }
         );
 
-        const newGrandChildLocations = response.data.locations.map((loc) => ({
-          key: loc.id,
-          value: loc.name,
-        }));
-        setGrandChildLocations(newGrandChildLocations);
-        console.log("Grandchild locations fetched:", newGrandChildLocations);
+        // Sort grandchild locations alphabetically by name
+        const sortedGrandChildLocations = response.data.locations
+          .map((loc) => ({
+            key: loc.id,
+            value: loc.name,
+          }))
+          .sort((a, b) => a.value.localeCompare(b.value));
+        setGrandChildLocations(sortedGrandChildLocations);
+        console.log("Sorted grandchild locations fetched:", sortedGrandChildLocations);
       } catch (error) {
         if (!axios.isCancel(error)) {
           console.error("Error fetching grandchild locations:", error);
@@ -259,19 +284,31 @@ export default function CreateShopScreen({ navigation }) {
         }
       );
 
-      const subcats = response.data.subcategories.map((subcat) => ({
-        key: subcat.id,
-        value: subcat.name,
-      }));
-      setSubcategories(subcats);
-      console.log("Subcategories fetched:", subcats);
+      // Sort subcategories alphabetically by name
+      const sortedSubcategories = response.data.subcategories
+        .map((subcat) => ({
+          key: subcat.id,
+          value: subcat.name,
+        }))
+        .sort((a, b) => a.value.localeCompare(b.value));
+      setSubcategories(sortedSubcategories);
+      console.log("Sorted subcategories fetched:", sortedSubcategories);
+
+      // Scroll to subcategories section after fetching
+      setTimeout(() => {
+        const index = formSections.findIndex((section) => section.id === "subcategories");
+        if (flatListRef.current && index !== -1) {
+          console.log("Scrolling to subcategories section after category change, index:", index);
+          flatListRef.current.scrollToIndex({ index, animated: true });
+        }
+      }, 100);
     } catch (error) {
       if (!axios.isCancel(error)) {
         console.error("Error fetching subcategories:", error);
         setSubcategories([]);
       }
     }
-  }, []);
+  }, [formSections]);
 
   const handlePinLocation = useCallback(async () => {
     Alert.alert(
@@ -343,10 +380,11 @@ export default function CreateShopScreen({ navigation }) {
               setGeoError("");
 
               setTimeout(() => {
-                flatListRef.current?.scrollToIndex({
-                  index: formSections.findIndex((section) => section.id === "address"),
-                  animated: true,
-                });
+                const addressIndex = formSections.findIndex((section) => section.id === "address");
+                if (flatListRef.current && addressIndex !== -1) {
+                  console.log("Scrolling to address section after detection, index:", addressIndex);
+                  flatListRef.current.scrollToIndex({ index: addressIndex, animated: true });
+                }
               }, 100);
 
               Alert.alert(
@@ -354,7 +392,24 @@ export default function CreateShopScreen({ navigation }) {
                 `We detected the following address:\n\n${formattedAddress || "No address detected."}\n\nIs this correct? If not, please edit the address in the field provided.`,
                 [
                   { text: "OK", style: "default" },
-                  { text: "Edit Address", style: "default" },
+                  {
+                    text: "Edit Address",
+                    style: "default",
+                    onPress: () => {
+                      const addressIndex = formSections.findIndex((section) => section.id === "address");
+                      if (flatListRef.current && addressIndex !== -1) {
+                        console.log("Scrolling to address section for editing, index:", addressIndex);
+                        flatListRef.current.scrollToIndex({ index: addressIndex, animated: true });
+                        // Focus the address input after scrolling
+                        setTimeout(() => {
+                          if (addressInputRef.current) {
+                            addressInputRef.current.focus();
+                            console.log("Address input focused");
+                          }
+                        }, 300); // Delay to ensure scroll completes
+                      }
+                    },
+                  },
                 ]
               );
             } catch (error) {
@@ -375,7 +430,7 @@ export default function CreateShopScreen({ navigation }) {
       ],
       { cancelable: true }
     );
-  }, []);
+  }, [formSections]);
 
   const handleValidation = useCallback(() => {
     const errors = {};
@@ -439,9 +494,23 @@ export default function CreateShopScreen({ navigation }) {
   const handleInputFocus = useCallback((sectionId) => {
     const index = formSections.findIndex((section) => section.id === sectionId);
     if (flatListRef.current && index !== -1) {
+      console.log("Scrolling to section:", sectionId, "index:", index);
       flatListRef.current.scrollToIndex({ index, animated: true });
     }
-  }, []);
+  }, [formSections]);
+
+  // Handle dropdown focus with scroll adjustment
+  const handleDropdownFocus = useCallback(() => {
+    const index = formSections.findIndex((section) => section.id === "subcategories");
+    if (flatListRef.current && index !== -1) {
+      console.log("Focusing subcategories section, scrolling to index:", index);
+      flatListRef.current.scrollToIndex({ index, animated: true });
+      // Delay to ensure scroll is complete before dropdown renders
+      setTimeout(() => {
+        console.log("Dropdown should open after scroll");
+      }, 300);
+    }
+  }, [formSections]);
 
   const renderCategoryItem = useCallback(({ item }) => (
     <TouchableOpacity
@@ -462,6 +531,7 @@ export default function CreateShopScreen({ navigation }) {
             <TextInput
               style={styles.input}
               placeholder="Input your business name"
+              placeholderTextColor="#5A5A5A"
               value={name}
               onChangeText={setName}
               onFocus={() => handleInputFocus("name")}
@@ -479,6 +549,7 @@ export default function CreateShopScreen({ navigation }) {
             <TextInput
               style={[styles.input, styles.description]}
               placeholder="Tell us about your business"
+              placeholderTextColor="#5A5A5A"
               value={description}
               onChangeText={setDescription}
               multiline
@@ -513,11 +584,19 @@ export default function CreateShopScreen({ navigation }) {
           if (!selectedCategory || !subcategories || subcategories.length === 0) {
             return null;
           }
-          console.log("Rendering subcategories:", subcategories);
+          console.log("Rendering sorted subcategories:", subcategories);
           return (
             <>
               <Text style={styles.label}>Subcategories</Text>
-              <View style={styles.subcategoriesContainer}>
+              <View
+                style={styles.subcategoriesContainer}
+                ref={subcategorySectionRef}
+                onLayout={(event) => {
+                  const { y, height } = event.nativeEvent.layout;
+                  console.log("Subcategories section layout, y:", y, "height:", height);
+                  sectionHeights.subcategories = height;
+                }}
+              >
                 <RNMultiSelect
                   ref={dropdownRef}
                   style={styles.dropdown}
@@ -540,16 +619,8 @@ export default function CreateShopScreen({ navigation }) {
                   maxHeight={350}
                   fontFamily="System"
                   dropdownPosition="bottom"
-                  onFocus={() => {
-                    flatListRef.current?.scrollToIndex({
-                      index: formSections.findIndex((section) => section.id === "subcategories"),
-                      animated: true,
-                    });
-                  }}
-                  onLayout={(event) => {
-                    const { y } = event.nativeEvent.layout;
-                    flatListRef.current?.scrollToOffset({ offset: y - 100, animated: true });
-                  }}
+                  onFocus={handleDropdownFocus}
+                  onBlur={() => console.log("Dropdown blurred")}
                   renderItem={(item, selected) => (
                     <View style={styles.multiSelectItem}>
                       <Text style={selected ? styles.multiSelectTagText : styles.multiSelectText}>
@@ -640,8 +711,10 @@ export default function CreateShopScreen({ navigation }) {
             <>
               <Text style={styles.label}>Address</Text>
               <TextInput
+                ref={addressInputRef}
                 style={[styles.input, styles.addressInput]}
                 placeholder="Edit your business address if needed"
+                placeholderTextColor="#5A5A5A"
                 value={address}
                 onChangeText={setAddress}
                 onFocus={() => handleInputFocus("address")}
@@ -664,6 +737,7 @@ export default function CreateShopScreen({ navigation }) {
                   <TextInput
                     style={[styles.input, styles.readOnly]}
                     placeholder="Auto-filled after detection"
+                    placeholderTextColor="#5A5A5A"
                     value={geoLocation.lat}
                     editable={false}
                   />
@@ -673,6 +747,7 @@ export default function CreateShopScreen({ navigation }) {
                   <TextInput
                     style={[styles.input, styles.readOnly]}
                     placeholder="Auto-filled after detection"
+                    placeholderTextColor="#5A5A5A"
                     value={geoLocation.lng}
                     editable={false}
                   />
@@ -743,6 +818,22 @@ export default function CreateShopScreen({ navigation }) {
     ]
   );
 
+  const getItemLayout = useCallback(
+    (data, index) => {
+      let offset = 0;
+      for (let i = 0; i < index; i++) {
+        const sectionId = formSections[i]?.id;
+        offset += sectionHeights[sectionId] || 100;
+      }
+      return {
+        length: sectionHeights[formSections[index]?.id] || 100,
+        offset,
+        index,
+      };
+    },
+    [formSections]
+  );
+
   const renderFormSection = useCallback(({ item }) => item.render(), []);
 
   return (
@@ -774,11 +865,7 @@ export default function CreateShopScreen({ navigation }) {
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
             nestedScrollEnabled={true}
-            getItemLayout={(data, index) => ({
-              length: 100,
-              offset: 100 * index,
-              index,
-            })}
+            getItemLayout={getItemLayout}
           />
 
           <Modal
@@ -806,6 +893,7 @@ export default function CreateShopScreen({ navigation }) {
               <TextInput
                 style={styles.searchInput}
                 placeholder="Search categories..."
+                placeholderTextColor="#5A5A5A"
                 value={categorySearch}
                 onChangeText={setCategorySearch}
               />
@@ -1092,6 +1180,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 5,
     marginTop: 2,
+    width: "100%",
   },
   multiSelectText: {
     fontSize: 16,

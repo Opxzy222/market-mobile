@@ -29,28 +29,20 @@ const ShopProduct = () => {
   const { shopId, prevRoute, category } = params;
   const router = useRouter();
   const isMountedRef = useRef(true);
-  const { adLoaded } = useInterstitialAd(); // Ensure ad readiness
+  const { adLoaded } = useInterstitialAd();
 
-  // Clean up old cache entries
   const cleanOldCache = useCallback(async () => {
     try {
       const keys = await AsyncStorage.getAllKeys();
       const cacheKeys = keys.filter((key) => key.startsWith("products_"));
       for (const key of cacheKeys) {
-        const cached = await AsyncStorage.getItem(key);
-        if (cached) {
-          const { timestamp } = JSON.parse(cached);
-          if (Date.now() - timestamp > 5 * 60 * 1000) { // 5 minutes TTL
-            await AsyncStorage.removeItem(key);
-          }
-        }
+        await AsyncStorage.removeItem(key);
       }
     } catch (error) {
       console.error("Error cleaning cache:", error);
     }
   }, []);
 
-  // Fetch session token
   useEffect(() => {
     isMountedRef.current = true;
     const fetchSessionId = async () => {
@@ -71,34 +63,18 @@ const ShopProduct = () => {
     };
   }, [cleanOldCache]);
 
-  // Fetch shop products with caching and retry
   const fetchShopProducts = useCallback(
     debounce(async () => {
       if (!isMountedRef.current) return;
 
-      const cacheKey = `products_${shopId}`;
       try {
         setLoading(true);
         setError(null);
         setProducts(null);
 
-        // Check cache
-        const cached = await AsyncStorage.getItem(cacheKey);
-        if (cached) {
-          const { products: cachedProducts, timestamp } = JSON.parse(cached);
-          if (Date.now() - timestamp < 5 * 60 * 1000) { // 5 minutes TTL
-            if (isMountedRef.current) {
-              setProducts(Array.isArray(cachedProducts) ? cachedProducts : []);
-              setLoading(false);
-            }
-            return;
-          }
-        }
-
         const formData = new FormData();
         formData.append("shop_id", shopId);
 
-        // Retry mechanism
         let response;
         for (let attempt = 1; attempt <= 3; attempt++) {
           try {
@@ -110,23 +86,19 @@ const ShopProduct = () => {
                   "Content-Type": "multipart/form-data",
                   Authorization: sessionId ? `Bearer ${sessionId}` : "",
                 },
-                timeout: 10000, // 10-second timeout
+                timeout: 10000,
               }
             );
             break;
           } catch (err) {
             if (attempt === 3) throw err;
-            await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait 1s before retry
+            await new Promise((resolve) => setTimeout(resolve, 1000));
           }
         }
 
         if (isMountedRef.current) {
           const fetchedProducts = response.data.products || [];
           setProducts(fetchedProducts);
-          await AsyncStorage.setItem(
-            cacheKey,
-            JSON.stringify({ products: fetchedProducts, timestamp: Date.now() })
-          );
           console.log("Fetched products:", fetchedProducts.length);
         }
       } catch (err) {
@@ -147,22 +119,23 @@ const ShopProduct = () => {
     [shopId, sessionId]
   );
 
-  // Refetch on focus
   useFocusEffect(
     useCallback(() => {
-      console.log("Screen focused, triggering fetchShopProducts");
+      console.log("Screen mounted, clearing cache and fetching products");
+      cleanOldCache();
       fetchShopProducts();
 
       return () => {
-        console.log("Screen unfocused");
+        console.log("Screen unmounted");
       };
-    }, [fetchShopProducts])
+    }, [fetchShopProducts, cleanOldCache])
   );
 
   const handleTryAgain = useCallback(() => {
     console.log("User clicked Try Again");
+    cleanOldCache();
     fetchShopProducts();
-  }, [fetchShopProducts]);
+  }, [fetchShopProducts, cleanOldCache]);
 
   const handleUpdateProduct = useCallback(() => {
     router.push({ pathname: "/shop/UpdateProduct", params: { shop_id: shopId } });
@@ -180,19 +153,25 @@ const ShopProduct = () => {
                 <Text style={[styles.tableCell, styles.cellWide, styles.headerCell]}>
                   Product Name
                 </Text>
-                <Text style={[styles.tableCell, styles.headerCell]}>Available</Text>
-                <Text style={[styles.tableCell, styles.headerCell]}>Price</Text>
+                <Text style={[styles.tableCell, styles.availableCell, styles.headerCell]}>
+                  Available
+                </Text>
+                <Text style={[styles.tableCell, styles.priceCell, styles.headerCell]}>
+                  Price
+                </Text>
               </View>
               {subcategoryData.products.map((product, index) => (
                 <View
-                  key={product.id}
+                  key={`${categoryData.category}-${subcategoryData.subcategory}-${product.id}-${index}`}
                   style={[styles.tableRow, index % 2 === 0 && styles.alternateRow]}
                 >
                   <Text style={[styles.tableCell, styles.cellWide]}>
                     {product.product_name}
                   </Text>
-                  <Text style={styles.tableCell}>{product.is_available ? "✔️" : "❌"}</Text>
-                  <Text style={styles.tableCell}>
+                  <Text style={[styles.tableCell, styles.availableCell]}>
+                    {product.is_available ? "✔️" : "❌"}
+                  </Text>
+                  <Text style={[styles.tableCell, styles.priceCell]}>
                     {product.price !== null &&
                     product.price !== undefined &&
                     !isNaN(Number(product.price))
@@ -228,10 +207,9 @@ const ShopProduct = () => {
       .filter((category) => category.subcategories.length > 0);
   }, [products, searchQuery]);
 
-  // FlatList item layout for performance
   const getItemLayout = useCallback(
     (data, index) => ({
-      length: 300, // Approximate height of a category card (adjust based on content)
+      length: 300,
       offset: 300 * index,
       index,
     }),
@@ -316,6 +294,7 @@ const ShopProduct = () => {
           <TextInput
             style={styles.searchInput}
             placeholder="Search products..."
+            placeholderTextColor="#5A5A5A"
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
@@ -479,7 +458,7 @@ const styles = StyleSheet.create({
   },
   subcategorySection: {
     marginBottom: 12,
-    padding: 12,
+    padding: 5,
     borderRadius: 12,
     backgroundColor: "#F0F7FF",
     borderLeftWidth: 4,
@@ -492,37 +471,58 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   table: {
-    borderRadius: 10,
-    overflow: "hidden",
+    marginTop: 10,
+    borderRadius: 8,
+    overflow: 'hidden',
   },
   tableHeader: {
-    flexDirection: "row",
-    backgroundColor: "#E0F2FE",
+    flexDirection: 'row',
+    backgroundColor: '#e0f2fe',
     paddingVertical: 12,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
   },
   tableRow: {
-    flexDirection: "row",
+    flexDirection: 'row',
     paddingVertical: 12,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     borderBottomWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: '#cbd5e1',
   },
   alternateRow: {
-    backgroundColor: "#F9FAFB",
+    backgroundColor: '#f9fafb',
   },
   tableCell: {
     flex: 1,
+    paddingHorizontal: 0,
+    flexWrap: 'nowrap',
+  },
+  tableCells: {
+    flexShrink: 0,
+    marginRight: -12,
+    paddingHorizontal: 0,
+  },
+  availableCell: {
+    width: 70,
+    textAlign: 'center',
     fontSize: 14,
-    color: "#1F2937",
-    textAlign: "left",
+    color: '#1e293b',
+    flexWrap: 'nowrap',
+  },
+  priceCell: {
+    width: 160,
+    textAlign: 'left',
+    fontSize: 14,
+    color: '#1e293b',
+    paddingHorizontal: 8,
+    flexWrap: 'nowrap',
   },
   cellWide: {
-    flex: 2,
+    flex: 1.2,
+    textAlign: 'left',
   },
   headerCell: {
-    fontWeight: "700",
-    color: "#0F172A",
+    fontWeight: '700',
+    color: '#0f172a',
   },
 });
 

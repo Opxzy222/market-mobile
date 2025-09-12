@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, StatusBar } from 'react-native';
-import axios from 'axios';
 import { useRouter, usePathname } from 'expo-router';
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { StyleSheet } from 'react-native';
+import axios from 'axios';
 
 const RequestTokenScreen = () => {
   const [email, setEmail] = useState('');
@@ -43,48 +46,137 @@ const RequestTokenScreen = () => {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
-      <View style={{ padding: 20 }}>
-        <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 10 }}>Enter Your Email</Text>
-        <TextInput
-          placeholder="Email Address"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          style={{
-            borderWidth: 1,
-            borderColor: '#ccc',
-            padding: 10,
-            borderRadius: 5,
-            marginBottom: 20
-          }}
-        />
-        <TouchableOpacity 
-          onPress={handleRequestVerification} 
-          style={{
-            backgroundColor: loading || resendDisabled ? '#ccc' : '#007bff', 
-            padding: 15, 
-            borderRadius: 5, 
-            flexDirection: 'row',
-            justifyContent: 'center',
-            alignItems: 'center',
-            marginBottom: 10
-          }}
-          disabled={loading || resendDisabled}
-        >
-          {loading ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <Text style={{ color: '#fff', textAlign: 'center', fontWeight: 'bold' }}>
-              Send Verification Code
-            </Text>
-          )}
-        </TouchableOpacity>
-      </View>
+      <LinearGradient colors={['#F7FAFC', '#E5E7EB']} style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.backButton}
+          >
+            <MaterialIcons name="arrow-back" size={26} color="white" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Enter Your Email</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+        <View style={styles.contentWrapper}>
+          <Text style={styles.title}>Enter Your Email Address</Text>
+          <TextInput
+            placeholder="Email Address"
+            placeholderTextColor="#5A5A5A"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            style={styles.input}
+          />
+          <TouchableOpacity 
+            onPress={handleRequestVerification} 
+            style={[
+              styles.button,
+              (loading || resendDisabled) && styles.buttonDisabled
+            ]}
+            disabled={loading || resendDisabled}
+          >
+            {loading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.buttonText}>Send Verification Code</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </LinearGradient>
     </SafeAreaView>
   );
 };
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    backgroundColor: '#3A7BD5',
+    borderBottomLeftRadius: 35,
+    borderBottomRightRadius: 35,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  backButton: {
+    padding: 5,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    flex: 1,
+  },
+  headerSpacer: {
+    width: 42,
+  },
+  contentWrapper: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 24,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 16,
+    fontFamily: 'System',
+    letterSpacing: 0.2,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+    fontSize: 16,
+    color: '#111827',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  button: {
+    backgroundColor: '#3A7BD5',
+    paddingVertical: 16,
+    borderRadius: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  buttonDisabled: {
+    backgroundColor: '#A3BFFA',
+  },
+  buttonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    fontFamily: 'System',
+    letterSpacing: 0.3,
+  },
+});
 
 export default RequestTokenScreen;

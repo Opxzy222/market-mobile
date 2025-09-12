@@ -4,8 +4,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams, usePathname } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import Animated, { FadeInUp } from "react-native-reanimated";
-
+import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 
 const ReceiptActions = () => {
   const router = useRouter();
@@ -15,9 +14,9 @@ const ReceiptActions = () => {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
-      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
+      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
       <LinearGradient colors={["#F7FAFC", "#E3F2FD"]} style={styles.container}>
-        <View style={styles.header}>
+        <Animated.View entering={FadeInDown.duration(300)} style={styles.header}>
           <TouchableOpacity
             onPress={() => router.navigate("(tabs)/myshop")}
             style={styles.backButton}
@@ -26,9 +25,9 @@ const ReceiptActions = () => {
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Receipt Actions</Text>
           <View style={styles.headerSpacer} />
-        </View>
+        </Animated.View>
         <View style={styles.buttonsContainer}>
-          <Animated.View entering={FadeInUp.delay(100)}>
+          <Animated.View entering={FadeIn.duration(300).delay(100)}>
             <TouchableOpacity
               style={styles.button}
               onPress={() =>
@@ -48,7 +47,7 @@ const ReceiptActions = () => {
               </LinearGradient>
             </TouchableOpacity>
           </Animated.View>
-          <Animated.View entering={FadeInUp.delay(200)}>
+          <Animated.View entering={FadeIn.duration(300).delay(200)}>
             <TouchableOpacity
               style={styles.button}
               onPress={() =>
@@ -95,7 +94,7 @@ const styles = StyleSheet.create({
   backButton: {
     padding: 5,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
   },
   headerTitle: {
     fontSize: 20,
@@ -109,8 +108,8 @@ const styles = StyleSheet.create({
   },
   buttonsContainer: {
     flex: 1,
-    alignItems: "center",
     padding: 16,
+    justifyContent: "flex-start", // Changed from alignItems: "center"
   },
   button: {
     width: "93%",

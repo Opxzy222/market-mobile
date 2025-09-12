@@ -3,6 +3,7 @@ import { View, Text, Image, FlatList, TouchableOpacity, StyleSheet } from 'react
 import { useRouter, usePathname } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { getFullUrl } from '../../utils/imageUtils';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const RecentlyVisitedShops = ({ shops }) => {
   const [showAll, setShowAll] = useState(false);
@@ -41,7 +42,12 @@ const RecentlyVisitedShops = ({ shops }) => {
           style={styles.seeAllContainer}
           onPress={() => router.push({ pathname: '/shop/AllRecentShops', params: { prevRoute: pathname } })}
         >
-          <Text style={styles.seeAll}>See All</Text>
+          <LinearGradient
+            colors={['#3B82F6', '#1D4ED8']}
+            style={styles.seeAllGradient}
+          >
+            <Text style={styles.seeAll}>See More</Text>
+          </LinearGradient>
         </TouchableOpacity>
       </View>
       <FlatList
@@ -77,15 +83,17 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   seeAllContainer: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
-    backgroundColor: 'rgba(30, 144, 255, 0.15)',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  seeAllGradient: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
   seeAll: {
-    fontSize: 16,
-    color: '#1E40AF',
-    fontWeight: 'bold',
+    fontSize: 14,
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   listContainer: {
     paddingBottom: 10,

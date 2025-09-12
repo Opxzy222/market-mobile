@@ -1,4 +1,3 @@
-// metro.config.js
 const { getDefaultConfig } = require('expo/metro-config');
 
 module.exports = (async () => {
@@ -34,9 +33,12 @@ module.exports = (async () => {
         },
       }),
     },
-    serializer: {
-      ...config.serializer,
-      experimentalSerializer: false,
+    server: {
+      ...config.server,
+      enhanceMiddleware: (middleware) => (req, res, next) => {
+        console.log(`[Metro] Request received: ${req.method} ${req.url} from ${req.headers['user-agent']}`);
+        return middleware(req, res, next);
+      },
     },
   };
 })();

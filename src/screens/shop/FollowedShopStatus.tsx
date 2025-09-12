@@ -45,7 +45,7 @@ const FollowedShopStatusScreen = () => {
     return url;
   };
 
-  // Fetch statuses and posts
+  // Fetch combined feed
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
@@ -60,49 +60,55 @@ const FollowedShopStatusScreen = () => {
 
       const userId = parseInt(userIdString, 10);
       setUserId(userId);
+      console.log("Using user_id for request:", userIdString);
 
-      // Fetch statuses
-      const statusResponse = await axios.get(
-        `${BACKEND_URL}/statuses/?user_id=${userId}`,
+      // Fetch combined feed
+      const response = await axios.get(
+        `${BACKEND_URL}/combined-feed/?user_id=${userId}`,
         {
           headers: { Authorization: `Bearer ${userIdString}` },
-          timeout: 10000,
+          timeout: 35000,
         }
       );
-      const fetchedStatuses = Array.isArray(statusResponse.data.statuses)
-        ? statusResponse.data.statuses
-        : [];
 
-      console.log("Fetched statuses:", JSON.stringify(fetchedStatuses, null, 2));
+      const { statuses: fetchedStatuses, followed_posts, nearby_posts } = response.data;
+
+      console.log("Fetched combined feed:", {
+        statuses: JSON.stringify(fetchedStatuses, null, 2),
+        followed_posts: JSON.stringify(followed_posts, null, 2),
+        nearby_posts: JSON.stringify(nearby_posts, null, 2),
+      });
 
       // Group statuses by shop
-      const groupedStatuses = fetchedStatuses
-        .filter((status) => status && status.shop)
-        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-        .reduce((acc, status) => {
-          if (!acc[status.shop.id]) {
-            acc[status.shop.id] = {
-              shopId: status.shop.id,
-              shop: status.shop.name,
-              shopImage: validateUrl(status.shop.image) || FALLBACK_IMAGE,
-              statuses: [],
-              viewed: true,
-            };
-          }
-          acc[status.shop.id].statuses.push({
-            ...status,
-            media: validateUrl(status.media),
-            thumbnail_url: validateUrl(status.thumbnail_url),
-            shop: {
-              ...status.shop,
-              image: validateUrl(status.shop.image),
-            },
-          });
-          if (!status.viewed) {
-            acc[status.shop.id].viewed = false;
-          }
-          return acc;
-        }, {});
+      const groupedStatuses = Array.isArray(fetchedStatuses)
+        ? fetchedStatuses
+            .filter((status) => status && status.shop)
+            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+            .reduce((acc, status) => {
+              if (!acc[status.shop.id]) {
+                acc[status.shop.id] = {
+                  shopId: status.shop.id,
+                  shop: status.shop.name,
+                  shopImage: validateUrl(status.shop.image) || FALLBACK_IMAGE,
+                  statuses: [],
+                  viewed: true,
+                };
+              }
+              acc[status.shop.id].statuses.push({
+                ...status,
+                media: validateUrl(status.media),
+                thumbnail_url: validateUrl(status.thumbnail_url),
+                shop: {
+                  ...status.shop,
+                  image: validateUrl(status.shop.image),
+                },
+              });
+              if (!status.viewed) {
+                acc[status.shop.id].viewed = false;
+              }
+              return acc;
+            }, {})
+        : {};
 
       // Convert to array and split unviewed/viewed
       const groupedArray = Object.values(groupedStatuses).sort((a, b) =>
@@ -111,20 +117,7 @@ const FollowedShopStatusScreen = () => {
       const unviewed = groupedArray.filter((group) => !group.viewed);
       const viewed = groupedArray.filter((group) => group.viewed);
 
-      if (isMountedRef.current) {
-        setStatuses(unviewed);
-        setViewedStatuses(viewed);
-      }
-
-      // Fetch posts
-      const postsResponse = await axios.get(
-        `${BACKEND_URL}/shop-posts/?user_id=${userId}&page=1&page_size=20`,
-        {
-          headers: { Authorization: `Bearer ${userIdString}` },
-          timeout: 10000,
-        }
-      );
-
+      // Transform posts
       const transformPosts = (posts) =>
         Array.isArray(posts)
           ? posts.map((post, index) => ({
@@ -142,8 +135,10 @@ const FollowedShopStatusScreen = () => {
           : [];
 
       if (isMountedRef.current) {
-        setFollowedPosts(transformPosts(postsResponse.data.followed_posts));
-        setNearbyPosts(transformPosts(postsResponse.data.nearby_posts));
+        setStatuses(unviewed);
+        setViewedStatuses(viewed);
+        setFollowedPosts(transformPosts(followed_posts));
+        setNearbyPosts(transformPosts(nearby_posts));
       }
     } catch (error) {
       console.error("Error fetching data:", error.response?.data || error.message);
@@ -187,7 +182,30 @@ const FollowedShopStatusScreen = () => {
     async (viewedStatusGroup) => {
       const shopId = viewedStatusGroup.statuses[0].shop.id;
       console.log(`Statuses viewed for shop ${viewedStatusGroup.shop}:`, viewedStatusGroup.statuses);
-      setStatuses((prev) => prev.filter((group) => group.shopId !== shopId));
+
+      setStatuses((prev) => {
+        const updatedStatuses = prev.map((group) => {
+          if (group.shopId === shopId) {
+            return {
+              ...group,
+              statuses: group.statuses.map((s) => ({
+                ...s,
+                viewed: true,
+                media: validateUrl(s.media),
+                thumbnail_url: validateUrl(s.thumbnail_url),
+                shop: {
+                  ...s.shop,
+                  image: validateUrl(s.shop.image),
+                },
+              })),
+              viewed: true,
+            };
+          }
+          return group;
+        }).filter((group) => !group.viewed); // Remove viewed groups from statuses
+        return updatedStatuses.sort((a, b) => new Date(b.statuses[0].created_at) - new Date(a.statuses[0].created_at));
+      });
+
       setViewedStatuses((prev) => {
         const existingGroup = prev.find((group) => group.shopId === shopId);
         const updatedStatuses = viewedStatusGroup.statuses.map((s) => ({
@@ -200,31 +218,33 @@ const FollowedShopStatusScreen = () => {
             image: validateUrl(s.shop.image),
           },
         }));
+
+        let newViewedStatuses;
         if (existingGroup) {
-          return prev
-            .map((group) =>
-              group.shopId === shopId
-                ? {
-                    ...group,
-                    statuses: [...group.statuses, ...updatedStatuses].sort(
-                      (a, b) => new Date(b.created_at) - new Date(a.created_at)
-                    ),
-                    viewed: true,
-                  }
-                : group
-            )
-            .sort((a, b) => new Date(b.statuses[0].created_at) - new Date(a.statuses[0].created_at));
+          newViewedStatuses = prev.map((group) =>
+            group.shopId === shopId
+              ? {
+                  ...group,
+                  statuses: [...group.statuses, ...updatedStatuses]
+                    .filter((s, index, self) => self.findIndex((t) => t.id === s.id) === index) // Remove duplicates
+                    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
+                  viewed: true,
+                }
+              : group
+          );
+        } else {
+          newViewedStatuses = [
+            ...prev,
+            {
+              shop: viewedStatusGroup.shop,
+              shopId,
+              shopImage: validateUrl(viewedStatusGroup.statuses[0].shop.image) || FALLBACK_IMAGE,
+              statuses: updatedStatuses,
+              viewed: true,
+            },
+          ];
         }
-        return [
-          ...prev,
-          {
-            shop: viewedStatusGroup.shop,
-            shopId,
-            shopImage: validateUrl(viewedStatusGroup.statuses[0].shop.image) || FALLBACK_IMAGE,
-            statuses: updatedStatuses,
-            viewed: true,
-          },
-        ].sort((a, b) => new Date(b.statuses[0].created_at) - new Date(a.statuses[0].created_at));
+        return newViewedStatuses.sort((a, b) => new Date(b.statuses[0].created_at) - new Date(a.statuses[0].created_at));
       });
     },
     []
@@ -295,6 +315,10 @@ const FollowedShopStatusScreen = () => {
           const shopId =
             statuses.find((group) => group.statuses.some((s) => s.id === statusId))?.shopId ||
             viewedStatuses.find((group) => group.statuses.some((s) => s.id === statusId))?.shopId;
+          if (!shopId) {
+            console.error(`No shopId found for status ID ${statusId}`);
+            return null;
+          }
           const response = await axios.get(
             `${BACKEND_URL}/shops/regenerate-image-url/?shop_id=${shopId}`,
             {
@@ -350,7 +374,7 @@ const FollowedShopStatusScreen = () => {
           return { media, thumbnail_url };
         }
       } catch (error) {
-        console.error(`Error regenerating ${type} URL for status ID ${statusId}:`, error);
+        console.error(`Error regenerating ${type} URL for status ID ${statusId}:`, error.response?.data || error.message);
         return null;
       }
     },
@@ -363,6 +387,10 @@ const FollowedShopStatusScreen = () => {
       console.log(`Regenerating ${type} URL for post ID ${postId}, media index ${mediaIndex}`);
       try {
         if (type === "shop_image") {
+          if (!shopId) {
+            console.error(`No shopId provided for post ID ${postId}`);
+            return null;
+          }
           const response = await axios.get(
             `${BACKEND_URL}/shops/regenerate-image-url/?shop_id=${shopId}`,
             {
@@ -418,7 +446,7 @@ const FollowedShopStatusScreen = () => {
           return { media_url, thumbnail_url };
         }
       } catch (error) {
-        console.error(`Error regenerating ${type} URL for post ID ${postId}:`, error);
+        console.error(`Error regenerating ${type} URL for post ID ${postId}:`, error.response?.data || error.message);
         return null;
       }
     },

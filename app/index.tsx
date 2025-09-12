@@ -1,6 +1,6 @@
 import { AppRegistry } from 'react-native';
 import { View, Text } from 'react-native';
-import Homepage from '@/screens/homepage';
+import Homepage from '../src/screens/homepage';
 import React from 'react';
 import Toast from 'react-native-toast-message';
 

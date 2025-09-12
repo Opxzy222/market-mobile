@@ -6,7 +6,6 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator,
 import axios from 'axios';
 import { Checkbox } from 'expo-checkbox';
 import { useLocalSearchParams, useRouter } from 'expo-router'; 
-import { SelectList } from "react-native-dropdown-select-list";
 import { Table, Row, Rows } from "react-native-table-component";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -29,6 +28,7 @@ const UpdateShopProducts = () => {
   const [isSubcategoryDropdownOpen, setIsSubcategoryDropdownOpen] = useState(false);
   const [subcategorySearchQuery, setSubcategorySearchQuery] = useState("");
   const customNameInputRef = useRef(null);
+  const [isFetching, setIsFetching] = useState(true); // New state for fetch loading
 
   // To control the modal's visibility
   const [priceModalVisible, setPriceModalVisible] = useState(false);
@@ -91,95 +91,98 @@ const savePriceFromModal = () => {
 
 
   useEffect(() => {
-    const fetchProductSuggestions = async () => {
-  try {
-    const response = await fetch("https://retail-alvinia-goza-f6a0e4f7.koyeb.app/product-suggestion/", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({ shop_id: shop_id }).toString(),
-    });
+  const fetchProductSuggestions = async () => {
+    setIsFetching(true); // Start loading
+    try {
+      const response = await fetch("https://retail-alvinia-goza-f6a0e4f7.koyeb.app/product-suggestion/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ shop_id: shop_id }).toString(),
+      });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
+      if (!response.ok) {
+        throw new Error(`HTTP error! Status: ${response.status}`);
+      }
 
-    const data = await response.json();
-    console.log("Fetch Success:", data);
+      const data = await response.json();
+      console.log("Fetch Success:", data);
 
-    // Destructure the response
-    const { product_suggestions, selected_products } = data;
+      // Destructure the response
+      const { product_suggestions, selected_products } = data;
 
-        if (product_suggestions && selected_products) {
-          setGroupedProductSuggestions(product_suggestions);
+      if (product_suggestions && selected_products) {
+        setGroupedProductSuggestions(product_suggestions);
 
-          const preselectedProducts = selected_products
-            .filter(product => !product.custom_name)
-            .reduce((acc, product) => {
-              const suggestion = Object.values(product_suggestions)
-                .flatMap(subcats => Object.values(subcats).flat())
-                .find(s => s.id === product.product_suggestion_id);
-              if (suggestion) {
-                const category = Object.keys(product_suggestions).find(key =>
-                  Object.values(product_suggestions[key]).flat().some(s => s.id === product.product_suggestion_id)
+        const preselectedProducts = selected_products
+          .filter(product => !product.custom_name)
+          .reduce((acc, product) => {
+            const suggestion = Object.values(product_suggestions)
+              .flatMap(subcats => Object.values(subcats).flat())
+              .find(s => s.id === product.product_suggestion_id);
+            if (suggestion) {
+              const category = Object.keys(product_suggestions).find(key =>
+                Object.values(product_suggestions[key]).flat().some(s => s.id === product.product_suggestion_id)
+              );
+              if (category) {
+                const subcategory = Object.keys(product_suggestions[category]).find(subcat =>
+                  product_suggestions[category][subcat].some(s => s.id === product.product_suggestion_id)
                 );
-                if (category) {
-                  const subcategory = Object.keys(product_suggestions[category]).find(subcat =>
-                    product_suggestions[category][subcat].some(s => s.id === product.product_suggestion_id)
-                  );
-                  if (subcategory) {
-                    acc[category] = acc[category] || {};
-                    acc[category][subcategory] = acc[category][subcategory] || [];
-                    acc[category][subcategory].push({
-                      value: product.product_suggestion_id,
-                      label: suggestion.name,
-                      is_available: product.is_available,
-                      price: product.price || '',
-                      custom_name: product.custom_name,
-                      category_id: suggestion.category_id,
-                      subcategory_id: suggestion.subcategory_id,
-                      category_name: category,
-                      subcategory_name: subcategory,
-                    });
-                  }
+                if (subcategory) {
+                  acc[category] = acc[category] || {};
+                  acc[category][subcategory] = acc[category][subcategory] || [];
+                  acc[category][subcategory].push({
+                    value: product.product_suggestion_id,
+                    label: suggestion.name,
+                    is_available: product.is_available,
+                    price: product.price || '',
+                    custom_name: product.custom_name,
+                    category_id: suggestion.category_id,
+                    subcategory_id: suggestion.subcategory_id,
+                    category_name: category,
+                    subcategory_name: subcategory,
+                  });
                 }
               }
-              return acc;
-            }, {});
+            }
+            return acc;
+          }, {});
 
-          setSelectedProducts(preselectedProducts);
+        setSelectedProducts(preselectedProducts);
 
-          const customProductsList = selected_products
-            .filter(product => product.custom_name)
-            .map(product => {
-              const category = Object.keys(product_suggestions).find(key => key === product.category_name);
-              const subcategory = category ? Object.keys(product_suggestions[category]).find(subcat => subcat === product.subcategory_name) : undefined;
+        const customProductsList = selected_products
+          .filter(product => product.custom_name)
+          .map(product => {
+            const category = Object.keys(product_suggestions).find(key => key === product.category_name);
+            const subcategory = category ? Object.keys(product_suggestions[category]).find(subcat => subcat === product.subcategory_name) : undefined;
 
-              return {
-                name: product.custom_name,
-                category: category,
-                subcategory: subcategory,
-                is_available: product.is_available,
-                price: product.price || '',
-                category_id: product.category_id,
-                subcategory_id: product.subcategory_id,
-                category_name: category,
-                subcategory_name: subcategory,
-              };
-            });
+            return {
+              name: product.custom_name,
+              category: category,
+              subcategory: subcategory,
+              is_available: product.is_available,
+              price: product.price || '',
+              category_id: product.category_id,
+              subcategory_id: product.subcategory_id,
+              category_name: category,
+              subcategory_name: subcategory,
+            };
+          });
 
-          setCustomProducts(customProductsList);
-        } else {
-          console.error('Error: Missing product suggestions or selected products in the response.');
-        }
-      } catch (error) {
-        console.error('Error fetching product suggestions:', error);
+        setCustomProducts(customProductsList);
+      } else {
+        console.error('Error: Missing product suggestions or selected products in the response.');
       }
-    };
+    } catch (error) {
+      console.error('Error fetching product suggestions:', error);
+    } finally {
+      setIsFetching(false); // Stop loading
+    }
+  };
 
-    fetchProductSuggestions();
-  }, [shop_id]);
+  fetchProductSuggestions();
+}, [shop_id]);
 
   const openPriceModalForCustomCreate = () => {
     setModalTargetInfo({ type: "custom", phase: "create" });
@@ -361,9 +364,9 @@ const handleCustomProductPriceChange = (index, value) => {
 };
 
 const handleCustomProductNameChange = (index, value) => {
-    const updatedProducts = [...customProducts];
-    updatedProducts[index].name = value;
-    setCustomProducts(updatedProducts);
+  const updatedProducts = [...customProducts];
+  updatedProducts[index].name = value.trim();
+  setCustomProducts(updatedProducts);
 };
 
 
@@ -436,6 +439,7 @@ allProducts.forEach(product => {
         router.push({pathname: 'shop/ShopProduct', params: { shopId: shop_id }, });
     } catch (error) {
         console.error('Error updating products:', error);
+        Alert.alert('Error', 'Failed to update products. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -534,733 +538,633 @@ const debouncedSetDropdownState = useCallback(
 
 return (
   <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
-    <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
+    <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
     <View style={styles.header}>
-              <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-                <MaterialIcons name="arrow-back" size={26} color="white" />
-              </TouchableOpacity>
-              <Text style={styles.headerTitle}>Edit Space Listings</Text>
-              <View style={styles.headerSpacer} />
-            </View>
-  <KeyboardAvoidingView
-    behavior={Platform.OS === "ios" ? "padding" : "height"}
-    style={{ flex: 1 }}
-    keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
-  >
-    <FlatList
-      data={contentData}
-      keyExtractor={(item) => item.key}
-      contentContainerStyle={styles.scrollContainer}
-      keyboardShouldPersistTaps="handled"
-      nestedScrollEnabled={true}
-      renderItem={() => (
-        <View style={styles.shopManagerContent}>
-          {/* Submit Button 
-          <TouchableOpacity
-            onPress={handleSubmitProducts}
-            style={styles.submitButton}
-          >
-            <Text style={styles.submitButtonText}>Update Listings</Text>
-          </TouchableOpacity> */}
-
-          {/* Custom Product Section */}
-          <View style={styles.customProductContainer}>
-            {customProducts.length > 0 && (
-              <View style={styles.tableWrapper}>
-                <Text style={styles.customTableTitle}>Create Your Own Listing</Text>
-                <Table borderStyle={{ borderWidth: 1, borderColor: "#ddd" }}>
-                  <Row
-                    data={[
-                      "Item Name",
-                      "Category",
-                      "Subcategory",
-                      "Available",
-                      "Price",
-                      "Action",
-                    ]}
-                    flexArr={[2.5, 1.2, 1.5, 0.8, 1.2, 0.8]}
-                    style={styles.tableHeader}
-                    textStyle={styles.tableHeaderText}
-                  />
-                  {customProducts.map((product, index) => (
-                    <Rows
-                      key={index}
-                      data={[
-                        [
-                          editingIndex === index ? (
-                            <TextInput
-                              style={styles.customNameInput}
-                              value={product.name}
-                              onChangeText={(text) =>
-                                handleCustomProductNameChange(index, text)
-                              }
-                              onBlur={() =>
-                                handleSaveProductName(index, product.name)
-                              }
-                              onSubmitEditing={() =>
-                                handleSaveProductName(index, product.name)
-                              }
-                              placeholder="Enter listing name"
-                              autoFocus
-                            />
-                          ) : (
-                            <TouchableOpacity
-                              onPress={() => setEditingIndex(index)}
-                            >
-                              <Text style={styles.tableText}>
-                                {product.name}
-                              </Text>
-                            </TouchableOpacity>
-                          ),
-                          <Text
-                            numberOfLines={1}
-                            ellipsizeMode="tail"
-                            style={styles.tableText}
-                          >
-                            {product.category_name}
-                          </Text>,
-                          <Text
-                            numberOfLines={1}
-                            ellipsizeMode="tail"
-                            style={styles.tableText}
-                          >
-                            {product.subcategory_name}
-                          </Text>,
-                          <Checkbox
-                            value={product.is_available}
-                            onValueChange={() =>
-                              handleCustomProductCheckboxChange(index)
-                            }
-                            style={styles.checkBox}
-                          />,
-                          <TouchableOpacity
-                            style={styles.priceInput}
-                            onPress={() => {
-                              setModalTargetInfo({ type: "custom", index });
-                              setModalValue(product.price || "");
-                              setShowModal(true);
-                            }}
-                          >
-                            <Text
-                              style={[{ flexShrink: 1, numberOfLines: 1 }]}
-                              numberOfLines={1}
-                              ellipsizeMode="tail"
-                            >
-                              {product.price
-                                ? `₦${Number(product.price).toLocaleString()}`
-                                : "Set Price"}
-                            </Text>
-                          </TouchableOpacity>,
-                          <TouchableOpacity
-                            onPress={() => handleRemoveCustomProduct(index)}
-                            style={styles.removeButton}
-                          >
-                            <Text style={styles.removeButtonText}>X</Text>
-                          </TouchableOpacity>,
-                        ],
-                      ]}
-                      flexArr={[2.5, 1.2, 1.5, 0.8, 1.2, 0.8]}
-                      textStyle={styles.tableText}
-                    />
-                  ))}
-                </Table>
-              </View>
-            )}
-
-<View style={styles.customProductInputs}>
-  <TextInput
-    ref={customNameInputRef}
-    style={styles.customNameInput}
-    placeholder="Input your listing name"
-    value={customProductName}
-    onChangeText={(text) => setCustomProductName(text)}
-    onSubmitEditing={() => Keyboard.dismiss()}
-    returnKeyType="done"
-    blurOnSubmit={true}
-  />
-  <View style={styles.customCard}>
-    {/* Custom Category Dropdown */}
-    <TouchableOpacity
-      style={styles.dropdownBox}
-      onPress={() => {
-        Keyboard.dismiss();
-        customNameInputRef.current?.blur();
-        setIsCategoryDropdownOpen(true);
-      }}
-      activeOpacity={0.7}
-    >
-      <Text style={customProductCategory ? styles.dropdownText : styles.placeholderText}>
-        {customProductCategory || "Select Category"}
-      </Text>
-      <MaterialCommunityIcons name="chevron-down" size={20} color="#666" />
-    </TouchableOpacity>
-
-    {/* Category Dropdown Modal */}
-    <Modal
-      visible={isCategoryDropdownOpen}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={() => setIsCategoryDropdownOpen(false)}
-    >
-      <TouchableWithoutFeedback onPress={() => setIsCategoryDropdownOpen(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Select Category</Text>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search Categories..."
-              placeholderTextColor="#999"
-              value={categorySearchQuery}
-              onChangeText={(text) => setCategorySearchQuery(text)}
-            />
-            <FlatList
-              data={Object.keys(groupedProductSuggestions)
-                .filter((category) =>
-                  category.toLowerCase().includes(categorySearchQuery.toLowerCase())
-                )
-                .map((category) => ({ key: category, value: category }))}
-              keyExtractor={(item) => item.key}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.dropdownItem,
-                    { backgroundColor: customProductCategory === item.value ? '#e6f0ff' : '#fff' }
-                  ]}
-                  onPress={() => {
-                    setCustomProductCategory(item.value);
-                    setCustomProductSubcategory("");
-                    setSubcategoryTouched(false);
-                    setSubcategoryResetTrigger((prev) => prev + 1);
-                    setIsCategoryDropdownOpen(false);
-                    setCategorySearchQuery("");
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.dropdownItemText}>{item.value}</Text>
-                </TouchableOpacity>
-              )}
-              style={styles.dropdownList}
-              keyboardShouldPersistTaps="handled"
-            />
-            <TouchableOpacity
-              style={styles.modalCancelButton}
-              onPress={() => {
-                setIsCategoryDropdownOpen(false);
-                setCategorySearchQuery("");
-              }}
-            >
-              <Text style={styles.modalCancelButtonText}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </TouchableWithoutFeedback>
-    </Modal>
-
-    {/* Custom Subcategory Dropdown */}
-    <TouchableOpacity
-      style={[
-        styles.dropdownBox,
-        { opacity: customProductCategory ? 1 : 0.5 }
-      ]}
-      onPress={() => {
-        if (!customProductCategory) return;
-        Keyboard.dismiss();
-        customNameInputRef.current?.blur();
-        setIsSubcategoryDropdownOpen(true);
-      }}
-      activeOpacity={0.7}
-      disabled={!customProductCategory}
-    >
-      <Text style={customProductSubcategory ? styles.dropdownText : styles.placeholderText}>
-        {customProductSubcategory || "Select Subcategory"}
-      </Text>
-      <MaterialCommunityIcons name="chevron-down" size={20} color="#666" />
-    </TouchableOpacity>
-
-    {/* Subcategory Dropdown Modal */}
-    <Modal
-      visible={isSubcategoryDropdownOpen}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={() => setIsSubcategoryDropdownOpen(false)}
-    >
-      <TouchableWithoutFeedback onPress={() => setIsSubcategoryDropdownOpen(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Select Subcategory</Text>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search Subcategories..."
-              placeholderTextColor="#999"
-              value={subcategorySearchQuery}
-              onChangeText={(text) => setSubcategorySearchQuery(text)}
-            />
-            <FlatList
-              data={customProductCategory
-                ? Object.keys(groupedProductSuggestions[customProductCategory] || {})
-                    .filter((subcategory) =>
-                      subcategory.toLowerCase().includes(subcategorySearchQuery.toLowerCase())
-                    )
-                    .map((subcategory) => ({ key: subcategory, value: subcategory }))
-                : []
-              }
-              keyExtractor={(item) => item.key}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.dropdownItem,
-                    { backgroundColor: customProductSubcategory === item.value ? '#e6f0ff' : '#fff' }
-                  ]}
-                  onPress={() => {
-                    setCustomProductSubcategory(item.value);
-                    setSubcategoryTouched(true);
-                    setIsSubcategoryDropdownOpen(false);
-                    setSubcategorySearchQuery("");
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.dropdownItemText}>{item.value}</Text>
-                </TouchableOpacity>
-              )}
-              style={styles.dropdownList}
-              keyboardShouldPersistTaps="handled"
-            />
-            <TouchableOpacity
-              style={styles.modalCancelButton}
-              onPress={() => {
-                setIsSubcategoryDropdownOpen(false);
-                setSubcategorySearchQuery("");
-              }}
-            >
-              <Text style={styles.modalCancelButtonText}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </TouchableWithoutFeedback>
-    </Modal>
-  </View>
-  <TouchableOpacity
-    onPress={handleAddCustomProduct}
-    style={styles.addButton}
-  >
-    <Text style={styles.addButtonText}>Add New Listing</Text>
-  </TouchableOpacity>
-</View>
-          </View>
-
-          {/* Product Suggestions Section */}
-          <View>
-  {Object.entries(groupedProductSuggestions).map(([category, subcategories]) => (
-    <View key={category} style={styles.categoryContainer}>
-      <View style={styles.categoryHeader}>
-        <Text style={styles.categoryTitle}>{category}</Text>
-        <TouchableOpacity onPress={() => toggleCategory(category)}>
-          <MaterialCommunityIcons
-            name={expandedCategories[category] ? "chevron-up" : "chevron-down"}
-            size={24}
-            color="#4682B4"
-          />
-        </TouchableOpacity>
+      <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <MaterialIcons name="arrow-back" size={26} color="white" />
+      </TouchableOpacity>
+      <Text style={styles.headerTitle}>Edit Space Listings</Text>
+      <View style={styles.headerSpacer} />
+    </View>
+    {isFetching ? (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#2563EB" />
+        <Text style={styles.loadingText}>Loading...</Text>
       </View>
-      {expandedCategories[category] && (
-        <View>
-          {sortedSubcategories[category].map((subcategory) => {
-            const products = subcategories[subcategory];
-            const dropdownKey = getDropdownKey(category, subcategory);
-            const dropdownData = dropdownState[dropdownKey] || {
-              isOpen: false,
-              searchQuery: "",
-              filteredItems: products.map((product) => ({
-                id: product.id,
-                name: product.name,
-              })),
-            };
-            const selectedValues =
-              selectedProducts[category]?.[subcategory]
-                ?.map((p) => p.value)
-                .filter((id) => id !== undefined) || [];
-
-            return (
-              <View key={subcategory} style={styles.subcategoryContainer}>
-                <Text style={styles.subcategoryTitle}>{subcategory}</Text>
-                {/* Custom Dropdown Trigger */}
-                <TouchableOpacity
-                  style={styles.dropdownBox}
-                  onPress={() => {
-                    setDropdownState((prev) => ({
-                      ...prev,
-                      [dropdownKey]: {
-                        ...dropdownData,
-                        isOpen: true,
-                      },
-                    }));
-                  }}
-                >
-                  <Text
-                    style={
-                      selectedValues.length > 0
-                        ? styles.dropdownText
-                        : styles.placeholderText
-                    }
-                  >
-                    {selectedValues.length > 0
-                      ? `${selectedValues.length} listing(s) selected`
-                      : "Pick Products"}
-                  </Text>
-                  <MaterialCommunityIcons
-                    name="chevron-down"
-                    size={20}
-                    color="black"
-                  />
-                </TouchableOpacity>
-
-                {/* Custom Dropdown Modal */}
-                <Modal
-                  visible={dropdownData.isOpen}
-                  animationType="fade"
-                  transparent={true}
-                  onRequestClose={() => {
-                    setDropdownState((prev) => ({
-                      ...prev,
-                      [dropdownKey]: {
-                        ...dropdownData,
-                        isOpen: false,
-                        searchQuery: "",
-                        filteredItems: products.map((product) => ({
-                          id: product.id,
-                          name: product.name,
-                        })),
-                      },
-                    }));
-                  }}
-                >
-                  <View
-                    style={{
-                      flex: 1,
-                      backgroundColor: "rgba(0,0,0,0.5)",
-                      justifyContent: "center",
-                      alignItems: "center",
-                    }}
-                  >
-                    <View
-                      style={{
-                        backgroundColor: "#fff",
-                        borderRadius: 8,
-                        width: "90%",
-                        maxHeight: "80%",
-                        shadowColor: "#000",
-                        shadowOffset: { width: 0, height: 2 },
-                        shadowOpacity: 0.1,
-                        shadowRadius: 4,
-                        elevation: 3,
-                      }}
-                    >
-                      {/* Search Bar */}
-                      <TextInput
-                        style={{
-                          padding: 10,
-                          borderBottomWidth: 1,
-                          borderBottomColor: "#ddd",
-                          fontSize: 16,
-                          color: "#000",
-                        }}
-                        placeholder="Search Products..."
-                        placeholderTextColor="#CCC"
-                        value={dropdownData.searchQuery}
-                        onChangeText={(text) => debouncedSetDropdownState(dropdownKey, dropdownData, text, products)}
-                      />
-                      {/* Product List */}
-                      <FlatList
-                        data={dropdownData.filteredItems}
-                        keyExtractor={(item) => item.id.toString()}
-                        renderItem={({ item }) => {
-                          const isSelected = selectedValuesMap[
-                            `${category}_${subcategory}`
-                          ].has(item.id);
-                          return (
-                            <ProductItem
-                              item={item}
-                              isSelected={isSelected}
-                              onSelect={() =>
-                                handleSelection(
-                                  category,
-                                  subcategory,
-                                  item.id,
-                                  isSelected,
-                                  selectedValues,
-                                  products,
-                                  productsMap,
-                                  selectedProducts
-                                )
-                              }
-                            />
-                          );
-                        }}
-                        style={{ maxHeight: 300 }}
-                        initialNumToRender={15} // Increased for better initial load
-                        windowSize={10} // Increased for smoother scrolling
-                        maxToRenderPerBatch={15} // Increased for faster batch rendering
-                        getItemLayout={(data, index) => ({
-                          length: 40,
-                          offset: 40 * index,
-                          index,
-                        })}
-                        removeClippedSubviews={true}
-                        extraData={selectedValuesMap[`${category}_${subcategory}`]}
-                        keyboardShouldPersistTaps="handled"
-                      />
-                      {/* Close Button */}
-                      <TouchableOpacity
-                        style={{
-                          padding: 10,
-                          backgroundColor: "#4682B4",
-                          borderRadius: 4,
-                          margin: 10,
-                          alignItems: "center",
-                        }}
-                        onPress={() => {
-                          setDropdownState((prev) => ({
-                            ...prev,
-                            [dropdownKey]: {
-                              ...dropdownData,
-                              isOpen: false,
-                              searchQuery: "",
-                              filteredItems: products.map((product) => ({
-                                id: product.id,
-                                name: product.name,
-                              })),
-                            },
-                          }));
-                        }}
-                      >
-                        <Text
-                          style={{
-                            color: "#fff",
-                            fontSize: 16,
-                          }}
-                        >
-                          Done
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </Modal>
-
-                {/* Selected Products Table */}
-                {selectedProducts[category]?.[subcategory]?.length > 0 && (
+    ) : (
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
+      >
+        <FlatList
+          data={contentData}
+          keyExtractor={(item) => item.key}
+          contentContainerStyle={styles.scrollContainer}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled={true}
+          renderItem={() => (
+            <View style={styles.shopManagerContent}>
+              {/* Custom Product Section */}
+              <View style={styles.customProductContainer}>
+                {customProducts.length > 0 && (
                   <View style={styles.tableWrapper}>
+                    <Text style={styles.customTableTitle}>Create Your Own Listing</Text>
                     <Table borderStyle={{ borderWidth: 1, borderColor: "#ddd" }}>
                       <Row
-                        data={["Listing Name", "Available", "Price", "Delete"]}
-                        flexArr={[2.7, 0.8, 1.3, 1]}
+                        data={["Item Name", "Category", "Subcategory", "Available", "Price", "Action"]}
+                        flexArr={[2.5, 1.2, 1.5, 0.8, 1.2, 0.8]}
                         style={styles.tableHeader}
                         textStyle={styles.tableHeaderText}
                       />
-                      {selectedProducts[category][subcategory].map((product) => (
+                      {customProducts.map((product, index) => (
                         <Rows
-                          key={product.value}
+                          key={index}
                           data={[
                             [
-                              <View style={{ paddingVertical: 10 }}>
-                                <Text
-                                  style={[styles.tableText, { flexShrink: 1, numberOfLines: 1 }]}
-                                >
-                                  {product.label}
-                                </Text>
-                              </View>,
-                              <View style={{ paddingVertical: 10 }}>
-                                <Checkbox
-                                  value={product.is_available}
-                                  onValueChange={() =>
-                                    handleCheckboxChange(category, subcategory, product.value)
-                                  }
-                                  style={styles.checkBox}
+                              editingIndex === index ? (
+                                <TextInput
+                                  style={styles.customNameInput}
+                                  value={product.name}
+                                  onChangeText={(text) => handleCustomProductNameChange(index, text)}
+                                  onBlur={() => setEditingIndex(null)} // Temporarily replace handleSaveProductName
+                                  onSubmitEditing={() => setEditingIndex(null)} // Temporarily replace handleSaveProductName
+                                  placeholder="Enter listing name"
+                                  placeholderTextColor="#5A5A5A"
+                                  autoFocus
                                 />
-                              </View>,
-                              <View style={{ paddingVertical: 10 }}>
-                                <TouchableOpacity
-                                  onPress={() => {
-                                    setModalValue(product.price || "");
-                                    setModalTargetInfo({
-                                      category,
-                                      subcategory,
-                                      productId: product.value,
-                                    });
-                                    setShowModal(true);
-                                  }}
-                                >
-                                  <Text
-                                    style={[styles.tableText, { flexShrink: 1, numberOfLines: 1 }]}
-                                    numberOfLines={1}
-                                    ellipsizeMode="tail"
-                                  >
-                                    {product.price
-                                      ? `₦${Number(product.price).toLocaleString()}`
-                                      : "Set Price"}
-                                  </Text>
+                              ) : (
+                                <TouchableOpacity onPress={() => setEditingIndex(index)}>
+                                  <Text style={styles.tableText}>{product.name}</Text>
                                 </TouchableOpacity>
-                              </View>,
-                              <View style={{ paddingVertical: 10 }}>
-                                <TouchableOpacity
-                                  onPress={() => {
-                                    setPendingDeleteInfo({
-                                      category,
-                                      subcategory,
-                                      productId: product.value,
-                                    });
-                                    setShowDeleteModal(true);
-                                  }}
-                                  style={styles.removeButton}
+                              ),
+                              <Text numberOfLines={1} ellipsizeMode="tail" style={styles.tableText}>
+                                {product.category_name}
+                              </Text>,
+                              <Text numberOfLines={1} ellipsizeMode="tail" style={styles.tableText}>
+                                {product.subcategory_name}
+                              </Text>,
+                              <Checkbox
+                                value={product.is_available}
+                                onValueChange={() => handleCustomProductCheckboxChange(index)}
+                                style={styles.checkBox}
+                              />,
+                              <TouchableOpacity
+                                style={styles.priceInput}
+                                onPress={() => {
+                                  setModalTargetInfo({ type: "custom", index });
+                                  setModalValue(product.price || "");
+                                  setShowModal(true);
+                                }}
+                              >
+                                <Text
+                                  style={[{ flexShrink: 1, numberOfLines: 1 }]}
+                                  numberOfLines={1}
+                                  ellipsizeMode="tail"
                                 >
-                                  <Text style={styles.removeButtonText}>X</Text>
-                                </TouchableOpacity>
-                              </View>,
+                                  {product.price ? `₦${Number(product.price).toLocaleString()}` : "Set Price"}
+                                </Text>
+                              </TouchableOpacity>,
+                              <TouchableOpacity
+                                onPress={() => handleRemoveCustomProduct(index)}
+                                style={styles.removeButton}
+                              >
+                                <Text style={styles.removeButtonText}>X</Text>
+                              </TouchableOpacity>,
                             ],
                           ]}
-                          flexArr={[2.7, 0.8, 1.3, 1]}
+                          flexArr={[2.5, 1.2, 1.5, 0.8, 1.2, 0.8]}
                           textStyle={styles.tableText}
                         />
                       ))}
                     </Table>
                   </View>
                 )}
-              </View>
-            );
-          })}
-        </View>
-      )}
-    </View>
-  ))}
-</View>
 
-          {/* Final Submit */}
-          <TouchableOpacity
-            onPress={handleSubmitProducts}
-            style={[styles.submitButton, loading && styles.searchButtonDisabled]}
-            disabled={loading}
-            activeOpacity={0.8}
-          >
-            {loading ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={styles.submitButtonText}>Update Products</Text>
-              )}
-          </TouchableOpacity>
-
-          {/* Price Edit Modal */}
-          {showModal && (
-            <Modal transparent animationType="fade" visible={showModal}>
-              <View style={styles.modalOverlay}>
-                <View style={styles.modalContent}>
-                  <Text style={styles.modalTitle}>Edit Listing Price</Text>
-                  <Text style={styles.modalText}>Enter a new price:</Text>
+                <View style={styles.customProductInputs}>
                   <TextInput
-                    style={[
-                      styles.priceInput,
-                      { marginBottom: 20, width: "100%" },
-                    ]}
-                    value={modalValue ? formatWithCommas(modalValue) : ""}
-                    onChangeText={(text) => {
-                      const raw = text.replace(/[^0-9]/g, ""); // Strip non-numeric
-                      setModalValue(raw);
-                    }}
-                    keyboardType="numeric"
-                    placeholder="e.g. 1500"
-                    autoFocus={true}
+                    ref={customNameInputRef}
+                    style={styles.customNameInput}
+                    placeholder="Input your listing name"
+                    placeholderTextColor="#5A5A5A"
+                    value={customProductName}
+                    onChangeText={(text) => setCustomProductName(text)}
+                    onSubmitEditing={() => Keyboard.dismiss()}
+                    returnKeyType="done"
+                    blurOnSubmit={true}
                   />
-                  <View style={styles.modalButtonRow}>
+                  <View style={styles.customCard}>
+                    {/* Custom Category Dropdown */}
                     <TouchableOpacity
-                      style={styles.modalConfirmButton}
+                      style={styles.dropdownBox}
                       onPress={() => {
-                        if (modalTargetInfo) {
-                          if (modalTargetInfo.type === "custom") {
-                            handleCustomProductPriceChange(
-                              modalTargetInfo.index,
-                              modalValue
-                            );
-                          } else {
-                            const { category, subcategory, productId } =
-                              modalTargetInfo;
-                            handleProductPriceChange(
-                              category,
-                              subcategory,
-                              productId,
-                              modalValue
-                            );
-                          }
-                        }
-                        setShowModal(false);
-                        setModalTargetInfo(null);
-                        setModalValue("");
+                        Keyboard.dismiss();
+                        customNameInputRef.current?.blur();
+                        setIsCategoryDropdownOpen(true);
                       }}
+                      activeOpacity={0.7}
                     >
-                      <Text style={styles.modalConfirmButtonText}>Save</Text>
+                      <Text style={customProductCategory ? styles.dropdownText : styles.placeholderText}>
+                        {customProductCategory || "Select Category"}
+                      </Text>
+                      <MaterialCommunityIcons name="chevron-down" size={20} color="#666" />
                     </TouchableOpacity>
 
-                    <TouchableOpacity
-                      style={styles.modalCancelButton}
-                      onPress={() => {
-                        setShowModal(false);
-                        setModalTargetInfo(null);
-                        setModalValue("");
-                      }}
+                    {/* Category Dropdown Modal */}
+                    <Modal
+                      visible={isCategoryDropdownOpen}
+                      animationType="slide"
+                      transparent={true}
+                      onRequestClose={() => setIsCategoryDropdownOpen(false)}
                     >
-                      <Text style={styles.modalCancelButtonText}>Cancel</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </View>
-            </Modal>
-          )}
+                      <TouchableWithoutFeedback onPress={() => setIsCategoryDropdownOpen(false)}>
+                        <View style={styles.modalOverlay}>
+                          <View style={styles.modalContent}>
+                            <Text style={styles.modalTitle}>Select Category</Text>
+                            <TextInput
+                              style={styles.searchInput}
+                              placeholder="Search Categories..."
+                              placeholderTextColor="#5A5A5A"
+                              value={categorySearchQuery}
+                              onChangeText={(text) => setCategorySearchQuery(text)}
+                            />
+                            <FlatList
+                              data={Object.keys(groupedProductSuggestions)
+                                .filter((category) => category.toLowerCase().includes(categorySearchQuery.toLowerCase()))
+                                .map((category) => ({ key: category, value: category }))}
+                              keyExtractor={(item) => item.key}
+                              renderItem={({ item }) => (
+                                <TouchableOpacity
+                                  style={[
+                                    styles.dropdownItem,
+                                    { backgroundColor: customProductCategory === item.value ? '#e6f0ff' : '#fff' },
+                                  ]}
+                                  onPress={() => {
+                                    setCustomProductCategory(item.value);
+                                    setCustomProductSubcategory("");
+                                    setSubcategoryTouched(false);
+                                    setSubcategoryResetTrigger((prev) => prev + 1);
+                                    setIsCategoryDropdownOpen(false);
+                                    setCategorySearchQuery("");
+                                  }}
+                                  activeOpacity={0.8}
+                                >
+                                  <Text style={styles.dropdownItemText}>{item.value}</Text>
+                                </TouchableOpacity>
+                              )}
+                              style={styles.dropdownList}
+                              keyboardShouldPersistTaps="handled"
+                            />
+                            <TouchableOpacity
+                              style={styles.modalCancelButton}
+                              onPress={() => {
+                                setIsCategoryDropdownOpen(false);
+                                setCategorySearchQuery("");
+                              }}
+                            >
+                              <Text style={styles.modalCancelButtonText}>Close</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      </TouchableWithoutFeedback>
+                    </Modal>
 
-          {/* Delete Confirmation Modal */}
-          {showDeleteModal && (
-            <Modal transparent animationType="fade" visible={showDeleteModal}>
-              <View style={styles.modalOverlay}>
-                <View style={styles.modalContent}>
-                  <Text style={styles.modalTitle}>Confirm Delete</Text>
-                  <Text style={styles.modalText}>
-                    Are you sure you want to remove this listing?
-                  </Text>
-                  <View style={styles.modalButtonRow}>
+                    {/* Custom Subcategory Dropdown */}
                     <TouchableOpacity
-                      style={styles.modalConfirmButton}
+                      style={[styles.dropdownBox, { opacity: customProductCategory ? 1 : 0.5 }]}
                       onPress={() => {
-                        if (pendingDeleteInfo) {
-                          const { category, subcategory, productId } =
-                            pendingDeleteInfo;
-                          setSelectedProducts((prev) => {
-                            const updatedCategory = { ...prev[category] };
-                            updatedCategory[subcategory] = updatedCategory[
-                              subcategory
-                            ].filter((p) => p.value !== productId);
-                            return { ...prev, [category]: updatedCategory };
-                          });
-                          setShowDeleteModal(false);
-                          setPendingDeleteInfo(null);
-                        }
+                        if (!customProductCategory) return;
+                        Keyboard.dismiss();
+                        customNameInputRef.current?.blur();
+                        setIsSubcategoryDropdownOpen(true);
                       }}
+                      activeOpacity={0.7}
+                      disabled={!customProductCategory}
                     >
-                      <Text style={styles.modalConfirmButtonText}>Delete</Text>
+                      <Text style={customProductSubcategory ? styles.dropdownText : styles.placeholderText}>
+                        {customProductSubcategory || "Select Subcategory"}
+                      </Text>
+                      <MaterialCommunityIcons name="chevron-down" size={20} color="#666" />
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.modalCancelButton}
-                      onPress={() => {
-                        setShowDeleteModal(false);
-                        setPendingDeleteInfo(null);
-                      }}
+
+                    {/* Subcategory Dropdown Modal */}
+                    <Modal
+                      visible={isSubcategoryDropdownOpen}
+                      animationType="slide"
+                      transparent={true}
+                      onRequestClose={() => setIsSubcategoryDropdownOpen(false)}
                     >
-                      <Text style={styles.modalCancelButtonText}>Cancel</Text>
-                    </TouchableOpacity>
+                      <TouchableWithoutFeedback onPress={() => setIsSubcategoryDropdownOpen(false)}>
+                        <View style={styles.modalOverlay}>
+                          <View style={styles.modalContent}>
+                            <Text style={styles.modalTitle}>Select Subcategory</Text>
+                            <TextInput
+                              style={styles.searchInput}
+                              placeholder="Search Subcategories..."
+                              placeholderTextColor="#5A5A5A"
+                              value={subcategorySearchQuery}
+                              onChangeText={(text) => setSubcategorySearchQuery(text)}
+                            />
+                            <FlatList
+                              data={
+                                customProductCategory
+                                  ? Object.keys(groupedProductSuggestions[customProductCategory] || {})
+                                      .filter((subcategory) =>
+                                        subcategory.toLowerCase().includes(subcategorySearchQuery.toLowerCase())
+                                      )
+                                      .map((subcategory) => ({ key: subcategory, value: subcategory }))
+                                  : []
+                              }
+                              keyExtractor={(item) => item.key}
+                              renderItem={({ item }) => (
+                                <TouchableOpacity
+                                  style={[
+                                    styles.dropdownItem,
+                                    { backgroundColor: customProductSubcategory === item.value ? '#e6f0ff' : '#fff' },
+                                  ]}
+                                  onPress={() => {
+                                    setCustomProductSubcategory(item.value);
+                                    setSubcategoryTouched(true);
+                                    setIsSubcategoryDropdownOpen(false);
+                                    setSubcategorySearchQuery("");
+                                  }}
+                                  activeOpacity={0.8}
+                                >
+                                  <Text style={styles.dropdownItemText}>{item.value}</Text>
+                                </TouchableOpacity>
+                              )}
+                              style={styles.dropdownList}
+                              keyboardShouldPersistTaps="handled"
+                            />
+                            <TouchableOpacity
+                              style={styles.modalCancelButton}
+                              onPress={() => {
+                                setIsSubcategoryDropdownOpen(false);
+                                setSubcategorySearchQuery("");
+                              }}
+                            >
+                              <Text style={styles.modalCancelButtonText}>Close</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      </TouchableWithoutFeedback>
+                    </Modal>
                   </View>
+                  <TouchableOpacity onPress={handleAddCustomProduct} style={styles.addButton}>
+                    <Text style={styles.addButtonText}>Add New Listing</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
-            </Modal>
+
+              {/* Product Suggestions Section */}
+              <View>
+                {Object.entries(groupedProductSuggestions).map(([category, subcategories]) => (
+                  <View key={category} style={styles.categoryContainer}>
+                    <View style={styles.categoryHeader}>
+                      <Text style={styles.categoryTitle}>{category}</Text>
+                      <TouchableOpacity onPress={() => toggleCategory(category)}>
+                        <MaterialCommunityIcons
+                          name={expandedCategories[category] ? "chevron-up" : "chevron-down"}
+                          size={24}
+                          color="#4682B4"
+                        />
+                      </TouchableOpacity>
+                    </View>
+                    {expandedCategories[category] && (
+                      <View>
+                        {sortedSubcategories[category].map((subcategory) => {
+                          const products = subcategories[subcategory];
+                          const dropdownKey = getDropdownKey(category, subcategory);
+                          const dropdownData = dropdownState[dropdownKey] || {
+                            isOpen: false,
+                            searchQuery: "",
+                            filteredItems: products.map((product) => ({
+                              id: product.id,
+                              name: product.name,
+                            })),
+                          };
+                          const selectedValues =
+                            selectedProducts[category]?.[subcategory]?.map((p) => p.value).filter((id) => id !== undefined) || [];
+
+                          return (
+                            <View key={subcategory} style={styles.subcategoryContainer}>
+                              <Text style={styles.subcategoryTitle}>{subcategory}</Text>
+                              <TouchableOpacity
+                                style={styles.dropdownBox}
+                                onPress={() => {
+                                  setDropdownState((prev) => ({
+                                    ...prev,
+                                    [dropdownKey]: { ...dropdownData, isOpen: true },
+                                  }));
+                                }}
+                              >
+                                <Text
+                                  style={selectedValues.length > 0 ? styles.dropdownText : styles.placeholderText}
+                                >
+                                  {selectedValues.length > 0 ? `${selectedValues.length} listing(s) selected` : "Pick Products"}
+                                </Text>
+                                <MaterialCommunityIcons name="chevron-down" size={20} color="black" />
+                              </TouchableOpacity>
+
+                              <Modal
+                                visible={dropdownData.isOpen}
+                                animationType="fade"
+                                transparent={true}
+                                onRequestClose={() => {
+                                  setDropdownState((prev) => ({
+                                    ...prev,
+                                    [dropdownKey]: {
+                                      ...dropdownData,
+                                      isOpen: false,
+                                      searchQuery: "",
+                                      filteredItems: products.map((product) => ({
+                                        id: product.id,
+                                        name: product.name,
+                                      })),
+                                    },
+                                  }));
+                                }}
+                              >
+                                <View
+                                  style={{
+                                    flex: 1,
+                                    backgroundColor: "rgba(0,0,0,0.5)",
+                                    justifyContent: "center",
+                                    alignItems: "center",
+                                  }}
+                                >
+                                  <View
+                                    style={{
+                                      backgroundColor: "#fff",
+                                      borderRadius: 8,
+                                      width: "90%",
+                                      maxHeight: "80%",
+                                      shadowColor: "#000",
+                                      shadowOffset: { width: 0, height: 2 },
+                                      shadowOpacity: 0.1,
+                                      shadowRadius: 4,
+                                      elevation: 3,
+                                    }}
+                                  >
+                                    <TextInput
+                                      style={{
+                                        padding: 10,
+                                        borderBottomWidth: 1,
+                                        borderBottomColor: "#ddd",
+                                        fontSize: 16,
+                                        color: "#000",
+                                      }}
+                                      placeholder="Search Products..."
+                                      placeholderTextColor="#5A5A5A"
+                                      value={dropdownData.searchQuery}
+                                      onChangeText={(text) => debouncedSetDropdownState(dropdownKey, dropdownData, text, products)}
+                                    />
+                                    <FlatList
+                                      data={dropdownData.filteredItems}
+                                      keyExtractor={(item) => item.id.toString()}
+                                      renderItem={({ item }) => {
+                                        const isSelected = selectedValuesMap[`${category}_${subcategory}`].has(item.id);
+                                        return (
+                                          <ProductItem
+                                            item={item}
+                                            isSelected={isSelected}
+                                            onSelect={() =>
+                                              handleSelection(
+                                                category,
+                                                subcategory,
+                                                item.id,
+                                                isSelected,
+                                                selectedValues,
+                                                products,
+                                                productsMap,
+                                                selectedProducts
+                                              )
+                                            }
+                                          />
+                                        );
+                                      }}
+                                      style={{ maxHeight: 300 }}
+                                      initialNumToRender={15}
+                                      windowSize={10}
+                                      maxToRenderPerBatch={15}
+                                      getItemLayout={(data, index) => ({
+                                        length: 40,
+                                        offset: 40 * index,
+                                        index,
+                                      })}
+                                      removeClippedSubviews={true}
+                                      extraData={selectedValuesMap[`${category}_${subcategory}`]}
+                                      keyboardShouldPersistTaps="handled"
+                                    />
+                                    <TouchableOpacity
+                                      style={{
+                                        padding: 10,
+                                        backgroundColor: "#4682B4",
+                                        borderRadius: 4,
+                                        margin: 10,
+                                        alignItems: "center",
+                                      }}
+                                      onPress={() => {
+                                        setDropdownState((prev) => ({
+                                          ...prev,
+                                          [dropdownKey]: {
+                                            ...dropdownData,
+                                            isOpen: false,
+                                            searchQuery: "",
+                                            filteredItems: products.map((product) => ({
+                                              id: product.id,
+                                              name: product.name,
+                                            })),
+                                          },
+                                        }));
+                                      }}
+                                    >
+                                      <Text style={{ color: "#fff", fontSize: 16 }}>Done</Text>
+                                    </TouchableOpacity>
+                                  </View>
+                                </View>
+                              </Modal>
+
+                              {selectedProducts[category]?.[subcategory]?.length > 0 && (
+                                <View style={styles.tableWrapper}>
+                                  <Table borderStyle={{ borderWidth: 1, borderColor: "#ddd" }}>
+                                    <Row
+                                      data={["Listing Name", "Available", "Price", "Delete"]}
+                                      flexArr={[2.7, 0.8, 1.3, 1]}
+                                      style={styles.tableHeader}
+                                      textStyle={styles.tableHeaderText}
+                                    />
+                                    {selectedProducts[category][subcategory].map((product) => (
+                                      <Rows
+                                        key={product.value}
+                                        data={[
+                                          [
+                                            <View style={{ paddingVertical: 10 }}>
+                                              <Text style={[styles.tableText, { flexShrink: 1, numberOfLines: 1 }]}>
+                                                {product.label}
+                                              </Text>
+                                            </View>,
+                                            <View style={{ paddingVertical: 10 }}>
+                                              <Checkbox
+                                                value={product.is_available}
+                                                onValueChange={() => handleCheckboxChange(category, subcategory, product.value)}
+                                                style={styles.checkBox}
+                                              />
+                                            </View>,
+                                            <View style={{ paddingVertical: 10 }}>
+                                              <TouchableOpacity
+                                                onPress={() => {
+                                                  setModalValue(product.price || "");
+                                                  setModalTargetInfo({ category, subcategory, productId: product.value });
+                                                  setShowModal(true);
+                                                }}
+                                              >
+                                                <Text
+                                                  style={[styles.tableText, { flexShrink: 1, numberOfLines: 1 }]}
+                                                  numberOfLines={1}
+                                                  ellipsizeMode="tail"
+                                                >
+                                                  {product.price ? `₦${Number(product.price).toLocaleString()}` : "Set Price"}
+                                                </Text>
+                                              </TouchableOpacity>
+                                            </View>,
+                                            <View style={{ paddingVertical: 10 }}>
+                                              <TouchableOpacity
+                                                onPress={() => {
+                                                  setPendingDeleteInfo({ category, subcategory, productId: product.value });
+                                                  setShowDeleteModal(true);
+                                                }}
+                                                style={styles.removeButton}
+                                              >
+                                                <Text style={styles.removeButtonText}>X</Text>
+                                              </TouchableOpacity>
+                                            </View>,
+                                          ],
+                                        ]}
+                                        flexArr={[2.7, 0.8, 1.3, 1]}
+                                        textStyle={styles.tableText}
+                                      />
+                                    ))}
+                                  </Table>
+                                </View>
+                              )}
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </View>
+                ))}
+              </View>
+
+              {/* Final Submit */}
+              <TouchableOpacity
+                onPress={handleSubmitProducts}
+                style={[styles.submitButton, loading && styles.searchButtonDisabled]}
+                disabled={loading}
+                activeOpacity={0.8}
+              >
+                {loading ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.submitButtonText}>Update Products</Text>}
+              </TouchableOpacity>
+
+              {/* Price Edit Modal */}
+              {showModal && (
+                <Modal transparent animationType="fade" visible={showModal}>
+                  <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                      <Text style={styles.modalTitle}>Edit Listing Price</Text>
+                      <Text style={styles.modalText}>Enter a new price:</Text>
+                      <TextInput
+                        style={[styles.priceInput, { marginBottom: 20, width: "100%" }]}
+                        value={modalValue ? formatWithCommas(modalValue) : ""}
+                        onChangeText={(text) => {
+                          const raw = text.replace(/[^0-9]/g, "");
+                          setModalValue(raw);
+                        }}
+                        keyboardType="numeric"
+                        placeholder="e.g. 1500"
+                        placeholderTextColor="#5A5A5A"
+                        autoFocus={true}
+                      />
+                      <View style={styles.modalButtonRow}>
+                        <TouchableOpacity
+                          style={styles.modalConfirmButton}
+                          onPress={() => {
+                            if (modalTargetInfo) {
+                              if (modalTargetInfo.type === "custom") {
+                                handleCustomProductPriceChange(modalTargetInfo.index, modalValue);
+                              } else {
+                                const { category, subcategory, productId } = modalTargetInfo;
+                                handleProductPriceChange(category, subcategory, productId, modalValue);
+                              }
+                            }
+                            setShowModal(false);
+                            setModalTargetInfo(null);
+                            setModalValue("");
+                          }}
+                        >
+                          <Text style={styles.modalConfirmButtonText}>Save</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.modalCancelButton}
+                          onPress={() => {
+                            setShowModal(false);
+                            setModalTargetInfo(null);
+                            setModalValue("");
+                          }}
+                        >
+                          <Text style={styles.modalCancelButtonText}>Cancel</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                </Modal>
+              )}
+
+              {/* Delete Confirmation Modal */}
+              {showDeleteModal && (
+                <Modal transparent animationType="fade" visible={showDeleteModal}>
+                  <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                      <Text style={styles.modalTitle}>Confirm Delete</Text>
+                      <Text style={styles.modalText}>Are you sure you want to remove this listing?</Text>
+                      <View style={styles.modalButtonRow}>
+                        <TouchableOpacity
+                          style={styles.modalConfirmButton}
+                          onPress={() => {
+                            if (pendingDeleteInfo) {
+                              const { category, subcategory, productId } = pendingDeleteInfo;
+                              setSelectedProducts((prev) => {
+                                const updatedCategory = { ...prev[category] };
+                                updatedCategory[subcategory] = updatedCategory[subcategory].filter((p) => p.value !== productId);
+                                return { ...prev, [category]: updatedCategory };
+                              });
+                              setShowDeleteModal(false);
+                              setPendingDeleteInfo(null);
+                            }
+                          }}
+                        >
+                          <Text style={styles.modalConfirmButtonText}>Delete</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.modalCancelButton}
+                          onPress={() => {
+                            setShowDeleteModal(false);
+                            setPendingDeleteInfo(null);
+                          }}
+                        >
+                          <Text style={styles.modalCancelButtonText}>Cancel</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                </Modal>
+              )}
+            </View>
           )}
-        </View>
-      )}
-    />
-  </KeyboardAvoidingView>
+        />
+      </KeyboardAvoidingView>
+    )}
   </SafeAreaView>
 );
 }
@@ -1597,7 +1501,19 @@ categoryHeader: {
   alignItems: 'center',
   paddingVertical: 10,
   paddingHorizontal: 15,
-},
+  },
+loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#495057',
+    fontWeight: '500',
+  },
 
 });
 

@@ -9,18 +9,21 @@ import {
   ActivityIndicator,
   Dimensions,
   SafeAreaView,
+  Image,
 } from "react-native";
-import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import ImageViewer from "react-native-image-zoom-viewer";
 import { Ionicons } from "@expo/vector-icons";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
+import { useRouter, useLocalSearchParams } from "expo-router";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
+const BASE_URL = "https://retail-alvinia-goza-f6a0e4f7.koyeb.app";
+const FALLBACK_IMAGE = "https://via.placeholder.com/150";
+
 const getFullUrl = (url) => {
-  const BASE_URL = "https://retail-alvinia-goza-f6a0e4f7.koyeb.app";
   return url && url.startsWith("http") ? url : `${BASE_URL}${url || ""}`;
 };
 
@@ -32,16 +35,124 @@ const isRecentPost = (createdAt) => {
   return hoursDifference < 3;
 };
 
-const ShopPostsFeed = ({ posts, showDistance = false, onSeeMore, hasMore, regenerateMediaUrl, onThumbnailError }) => {
+// Thumbnail Component
+const Thumbnail = ({ media, onThumbnailError }) => {
+  const [isThumbnailLoading, setIsThumbnailLoading] = useState(true);
+  const isVideo = media?.type === "video";
+  let thumbnailUri = media.thumbnail_url
+    ? getFullUrl(media.thumbnail_url)
+    : isVideo
+    ? FALLBACK_IMAGE
+    : getFullUrl(media.url);
+
+  if (thumbnailUri) {
+    return (
+      <View style={styles.thumbnailContainer}>
+        {isThumbnailLoading && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#fff" />
+            <Text style={styles.loadingText}>Loading...</Text>
+          </View>
+        )}
+        <Image
+          source={{ uri: thumbnailUri }}
+          style={[styles.thumbnail, isThumbnailLoading && { opacity: 0 }]}
+          resizeMode="cover"
+          onLoadStart={() => setIsThumbnailLoading(true)}
+          onLoad={() => setIsThumbnailLoading(false)}
+          onError={(e) => {
+            console.error("Thumbnail load error:", thumbnailUri, e.nativeEvent.error);
+            setIsThumbnailLoading(false);
+            if (onThumbnailError && media) {
+              onThumbnailError(media.id, media.shop_id, media.index);
+            }
+          }}
+        />
+      </View>
+    );
+  }
+  return (
+    <View style={styles.fallbackContainer}>
+      <Ionicons
+        name={isVideo ? "videocam-outline" : "image-outline"}
+        size={40}
+        color="#888"
+      />
+      <Text style={styles.errorText}>No thumbnail available</Text>
+    </View>
+  );
+};
+
+// Custom Image Viewer Wrapper
+const CustomImageViewer = ({ imageUrls, index, onChange, isFullscreen }) => {
+  const [isImageLoading, setIsImageLoading] = useState(true);
+  const timeoutRef = useRef(null);
+
+  useEffect(() => {
+    setIsImageLoading(true);
+    // Fallback timeout to hide loading indicator after 5 seconds
+    timeoutRef.current = setTimeout(() => {
+      setIsImageLoading(false);
+    }, 5000);
+
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, [index]);
+
+  return (
+    <View style={[styles.imageViewerContainer, isFullscreen && styles.fullscreenImage]}>
+      {isImageLoading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#fff" />
+          <Text style={styles.loadingText}>Loading image...</Text>
+        </View>
+      )}
+      <ImageViewer
+        imageUrls={imageUrls}
+        index={index}
+        onChange={onChange}
+        saveToLocalByLongPress={true}
+        backgroundColor="transparent"
+        renderIndicator={() => null}
+        style={[styles.imageViewer, isFullscreen && styles.fullscreenImageViewer]}
+      />
+      {/* Preload the current image to trigger loading events */}
+      {imageUrls[index] && (
+        <Image
+          source={{ uri: imageUrls[index].url }}
+          style={{ width: 0, height: 0, position: "absolute" }}
+          onLoad={() => {
+            setIsImageLoading(false);
+            if (timeoutRef.current) {
+              clearTimeout(timeoutRef.current);
+            }
+          }}
+          onError={() => {
+            setIsImageLoading(false);
+            console.error("Image preload error:", imageUrls[index].url);
+            if (timeoutRef.current) {
+              clearTimeout(timeoutRef.current);
+            }
+          }}
+        />
+      )}
+    </View>
+  );
+};
+
+const ShopPostsFeed = ({ posts, showDistance = false, onSeeMore, hasMore, onThumbnailError }) => {
   const [selectedPost, setSelectedPost] = useState(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isVideoLoading, setIsVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(true);
+  const router = useRouter();
 
   const playerRef = useRef(null);
 
-  // Initialize useVideoPlayer at the top level with an empty URI
   const player = useVideoPlayer({ uri: "" }, (p) => {
     playerRef.current = p;
     p.loop = false;
@@ -58,7 +169,7 @@ const ShopPostsFeed = ({ posts, showDistance = false, onSeeMore, hasMore, regene
       const fullUrl = getFullUrl(media.url);
       const isVideo = isVideoFile(media);
 
-      if (isVideo) {
+      if (isVideo && playerRef.current) {
         const loadVideo = async () => {
           try {
             setIsVideoLoading(true);
@@ -75,13 +186,16 @@ const ShopPostsFeed = ({ posts, showDistance = false, onSeeMore, hasMore, regene
           }
         };
         loadVideo();
+      } else {
+        setIsVideoLoading(false);
+        setVideoError(null);
       }
     }
 
     return () => {
-      if (playerRef.current) {
+      if (playerRef.current && typeof playerRef.current.pause === "function") {
         try {
-          playerRef.current.pause?.();
+          playerRef.current.pause();
         } catch (error) {
           console.warn("Error pausing video during cleanup:", error.message);
         }
@@ -101,37 +215,6 @@ const ShopPostsFeed = ({ posts, showDistance = false, onSeeMore, hasMore, regene
 
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);
-  };
-
-  const renderThumbnail = (media, post) => {
-    let thumbnailUri;
-    if (isVideoFile(media) && media.thumbnail_url) {
-      thumbnailUri = getFullUrl(media.thumbnail_url);
-    } else {
-      thumbnailUri = getFullUrl(media.url);
-    }
-    if (thumbnailUri) {
-      return (
-        <Image
-          source={{ uri: thumbnailUri }}
-          style={styles.thumbnail}
-          contentFit="cover"
-          cachePolicy="memory-disk"
-          onError={(e) => {
-            console.error("Thumbnail load error:", thumbnailUri, e.error);
-            if (onThumbnailError && post) {
-              onThumbnailError(post.id, post.shop_id, post.media.indexOf(media));
-            }
-          }}
-        />
-      );
-    }
-    return (
-      <View style={styles.fallbackContainer}>
-        <Ionicons name={isVideoFile(media) ? "videocam-outline" : "image-outline"} size={40} color="#888" />
-        <Text style={styles.errorText}>No thumbnail available</Text>
-      </View>
-    );
   };
 
   const renderMediaItem = () => {
@@ -199,16 +282,13 @@ const ShopPostsFeed = ({ posts, showDistance = false, onSeeMore, hasMore, regene
         colors={["rgba(0, 0, 0, 0.7)", "rgba(0, 0, 0, 0.9)"]}
         style={[styles.imageViewerContainer, isFullscreen && styles.fullscreenImage]}
       >
-        <ImageViewer
+        <CustomImageViewer
           imageUrls={imageUrls}
           index={currentImageIndex >= 0 ? currentImageIndex : 0}
           onChange={(index) => {
             setCurrentIndex(selectedPost.media.indexOf(imageItems[index]));
           }}
-          saveToLocalByLongPress={true}
-          backgroundColor="transparent"
-          renderIndicator={() => null}
-          style={[styles.imageViewer, isFullscreen && styles.fullscreenImageViewer]}
+          isFullscreen={isFullscreen}
         />
       </LinearGradient>
     );
@@ -252,53 +332,86 @@ const ShopPostsFeed = ({ posts, showDistance = false, onSeeMore, hasMore, regene
 
     return (
       <Animated.View entering={FadeInDown.duration(300)} style={styles.postItem}>
-        <TouchableOpacity onPress={() => handleMediaClick(item)} activeOpacity={0.8}>
+        <TouchableOpacity 
+          onPress={() => handleMediaClick(item)} 
+          activeOpacity={0.8}
+          style={styles.thumbnailWrapper}
+        >
           <LinearGradient
             colors={["#ffffff", "#f8fafc"]}
             style={styles.thumbnailContainer}
           >
             {firstMedia ? (
-              <>
-                {renderThumbnail(firstMedia, item)}
-                {isNew && (
-                  <LinearGradient
-                    colors={["#f39c12", "#e67e22"]}
-                    style={styles.newBadge}
-                  >
-                    <Text style={styles.newBadgeText}>New</Text>
-                  </LinearGradient>
-                )}
-                {isVideo && (
+              isVideo ? (
+                <>
+                  <Thumbnail media={firstMedia} onThumbnailError={onThumbnailError} />
+                  {isNew && (
+                    <LinearGradient
+                      colors={["#f39c12", "#e67e22"]}
+                      style={styles.newBadge}
+                    >
+                      <Text style={styles.newBadgeText}>New</Text>
+                    </LinearGradient>
+                  )}
                   <View style={styles.playIconOverlay}>
                     <Ionicons name="play-circle" size={40} color="white" />
                   </View>
-                )}
-                {item.media.length > 1 && (
-                  <View style={styles.multiMediaIndicator}>
-                    <Ionicons name="images-outline" size={20} color="#fff" />
-                  </View>
-                )}
-              </>
+                  {item.media.length > 1 && (
+                    <View style={styles.multiMediaIndicator}>
+                      <Ionicons name="images-outline" size={20} color="#fff" />
+                    </View>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Thumbnail media={firstMedia} onThumbnailError={onThumbnailError} />
+                  {isNew && (
+                    <LinearGradient
+                      colors={["#f39c12", "#e67e22"]}
+                      style={styles.newBadge}
+                    >
+                      <Text style={styles.newBadgeText}>New</Text>
+                    </LinearGradient>
+                  )}
+                  {item.media.length > 1 && (
+                    <View style={styles.multiMediaIndicator}>
+                      <Ionicons name="images-outline" size={20} color="#fff" />
+                    </View>
+                  )}
+                </>
+              )
             ) : (
               <View style={styles.fallbackContainer}>
                 <Text style={styles.errorText}>No media</Text>
               </View>
             )}
           </LinearGradient>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.shopInfoContainer}
+          onPress={() => {
+            router.push({
+              pathname: '/shop/shop-page',
+              params: { shopId: item.shop_id },
+            });
+          }}
+        >
           <View style={styles.shopInfo}>
-            <View>
-              <Text style={styles.shopName} numberOfLines={1}>
-                {item.shop_name}
+            <Text style={styles.shopName} numberOfLines={1}>
+              {item.shop_name}
+            </Text>
+            <Text style={styles.createdAt}>{item.created_at}</Text>
+            {showDistance && item.distance && (
+              <Text style={styles.distance}>
+                {(item.distance / 1000).toFixed(1)} km away
               </Text>
-              <Text style={styles.createdAt}>{item.created_at}</Text>
-              {showDistance && item.distance && (
-                <Text style={styles.distance}>
-                  {(item.distance / 1000).toFixed(1)} km away
-                </Text>
-              )}
-            </View>
+            )}
           </View>
-          <Text style={styles.description} numberOfLines={2}>
+          <Text 
+            style={styles.description} 
+            numberOfLines={2}
+            ellipsizeMode="tail"
+          >
             {item.description}
           </Text>
         </TouchableOpacity>
@@ -381,11 +494,18 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 4,
     right: 7,
+    backgroundColor: "#fff",
+  },
+  thumbnailWrapper: {
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    overflow: "hidden",
   },
   thumbnailContainer: {
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     overflow: "hidden",
+    position: "relative",
   },
   thumbnail: {
     width: "100%",
@@ -410,12 +530,15 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
   },
-  shopInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
+  shopInfoContainer: {
     paddingTop: 8,
+    paddingHorizontal: 10,
+    paddingBottom: 10,
     backgroundColor: "#fff",
+    minHeight: 100,
+  },
+  shopInfo: {
+    flexDirection: "column",
   },
   shopName: {
     fontSize: 14,
@@ -435,10 +558,9 @@ const styles = StyleSheet.create({
   description: {
     fontSize: 13,
     color: "#34495e",
-    paddingHorizontal: 10,
-    paddingBottom: 10,
     lineHeight: 18,
-    backgroundColor: "#fff",
+    marginTop: 8,
+    maxHeight: 36,
   },
   multiMediaIndicator: {
     position: "absolute",
@@ -584,6 +706,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(0, 0, 0, 0.6)",
     borderRadius: 12,
+    position: "absolute",
+    zIndex: 10,
   },
   playIconOverlay: {
     position: "absolute",

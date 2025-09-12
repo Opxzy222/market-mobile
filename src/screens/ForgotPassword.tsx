@@ -12,6 +12,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, usePathname } from 'expo-router';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
@@ -56,7 +58,18 @@ export default function ForgotPasswordScreen() {
   };
 
   return (
+    <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
     <LinearGradient colors={['#f6f9ff', '#e0e7ff']} style={styles.gradient}>
+      <View style={styles.header}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={styles.backButton}
+        >
+          <MaterialIcons name="arrow-back" size={26} color="white" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Forgot Password</Text>
+        <View style={styles.headerSpacer} />
+      </View>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.wrapper}>
         <View style={styles.card}>
           <Text style={styles.title}>Forgot Password</Text>
@@ -91,17 +104,47 @@ export default function ForgotPasswordScreen() {
         </View>
       </KeyboardAvoidingView>
     </LinearGradient>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   gradient: {
     flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    backgroundColor: '#3A7BD5',
+    borderBottomLeftRadius: 35,
+    borderBottomRightRadius: 35,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  backButton: {
+    padding: 5,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    flex: 1,
+  },
+  headerSpacer: {
+    width: 42,
   },
   wrapper: {
     width: '100%',
+    flex: 1,
+    paddingHorizontal: 24,
   },
   card: {
     backgroundColor: '#fff',

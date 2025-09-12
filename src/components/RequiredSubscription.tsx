@@ -14,7 +14,7 @@ const SubscriptionRequired = () => {
       </Text>
       <TouchableOpacity 
         style={styles.button} 
-        onPress={() => router.push('/subscription')}
+        onPress={() => router.push('/shop/Subscription')}
       >
         <Text style={styles.buttonText}>View Subscription Plans</Text>
       </TouchableOpacity>

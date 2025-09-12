@@ -6,7 +6,7 @@ module.exports = {
           sourceDir: './node_modules/@react-native-community/datetimepicker/android',
           packageImportPath: 'com.reactnativecommunity.datetimepicker',
           packageInstance: 'new RNDateTimePickerPackage()',
-          codegenConfig: null // Disable codegen
+          // codegenConfig: null // Disable codegen
         }
       }
     }

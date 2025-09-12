@@ -86,12 +86,12 @@ const ProfileScreen = () => {
           <MenuItem
             icon="shield-checkmark"
             title="Account Verification"
-            onPress={() => router.push({ pathname: 'VerificationStatus'})}
+            onPress={() => router.push({ pathname: 'VerificationStatus' })}
           />
           <MenuItem
             icon="trash"
             title="Delete Account"
-            onPress={() => router.push('login')}
+            onPress={() => router.push({ pathname: 'DeleteUser' })}
             color="#D32F2F"
           />
           <Logout

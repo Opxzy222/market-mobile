@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const Categories = ({ categories }) => {
   const router = useRouter();
@@ -85,7 +86,12 @@ const Categories = ({ categories }) => {
           style={styles.seeAllContainer}
           onPress={() => router.push({ pathname: '/shop/AllCategories', params: { prevRoute: pathname } })}
         >
-          <Text style={styles.seeAll}>See All</Text>
+          <LinearGradient
+            colors={['#3B82F6', '#1D4ED8']}
+            style={styles.seeAllGradient}
+          >
+            <Text style={styles.seeAll}>See All</Text>
+          </LinearGradient>
         </TouchableOpacity>
       </View>
       <FlatList
@@ -117,15 +123,17 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   seeAllContainer: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
-    backgroundColor: 'rgba(30, 144, 255, 0.15)',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  seeAllGradient: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
   seeAll: {
-    fontSize: 16,
-    color: '#1E40AF',
-    fontWeight: 'bold',
+    fontSize: 14,
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   row: {
     justifyContent: 'space-between',

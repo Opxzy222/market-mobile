@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,8 +14,7 @@ import {
 import { useVideoPlayer, VideoView } from 'expo-video';
 import ImageViewer from 'react-native-image-zoom-viewer';
 import { Ionicons } from '@expo/vector-icons';
-import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -26,136 +25,181 @@ const getFullUrl = (url) => {
   return url && url.startsWith('http') ? url : `${BASE_URL}${url || ''}`;
 };
 
+const isVideoFile = (media) => {
+  if (!media || !media.url) return false;
+  if (media.type) return media.type === 'video';
+  const extension = media.url.toLowerCase().split('.').pop();
+  return ['mp4', 'mov', 'avi', 'mkv'].includes(extension);
+};
+
+// Thumbnail Component
+const Thumbnail = ({ media }) => {
+  const [isThumbnailLoading, setIsThumbnailLoading] = useState(true);
+  let thumbnailUri = media.thumbnail_url
+    ? getFullUrl(media.thumbnail_url)
+    : isVideoFile(media)
+    ? FALLBACK_IMAGE
+    : getFullUrl(media.url);
+
+  if (thumbnailUri) {
+    return (
+      <View style={styles.thumbnailContainer}>
+        {isThumbnailLoading && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#fff" />
+            <Text style={styles.loadingText}>Loading...</Text>
+          </View>
+        )}
+        <Image
+          source={{ uri: thumbnailUri }}
+          style={[styles.thumbnail, isThumbnailLoading && { opacity: 0 }]}
+          resizeMode="cover"
+          onLoadStart={() => setIsThumbnailLoading(true)}
+          onLoad={() => setIsThumbnailLoading(false)}
+          onError={(e) => {
+            console.error('Thumbnail load error:', thumbnailUri, e.nativeEvent.error);
+            setIsThumbnailLoading(false);
+          }}
+        />
+      </View>
+    );
+  }
+  return (
+    <View style={styles.fallbackContainer}>
+      <Ionicons
+        name={isVideoFile(media) ? 'videocam-outline' : 'image-outline'}
+        size={40}
+        color="#888"
+      />
+      <Text style={styles.errorText}>No thumbnail available</Text>
+    </View>
+  );
+};
+
+// Custom Image Viewer Component
+const CustomImageViewer = ({ imageUrls, index, onChange, isFullscreen }) => {
+  const [isImageLoading, setIsImageLoading] = useState(true);
+  const timeoutRef = useRef(null);
+
+  useEffect(() => {
+    setIsImageLoading(true);
+    // Fallback timeout to hide loading indicator after 5 seconds
+    timeoutRef.current = setTimeout(() => {
+      setIsImageLoading(false);
+    }, 5000);
+
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, [index]);
+
+  return (
+    <View style={[styles.imageViewerContainer, isFullscreen && styles.fullscreenImage]}>
+      {isImageLoading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#fff" />
+          <Text style={styles.loadingText}>Loading image...</Text>
+        </View>
+      )}
+      <ImageViewer
+        imageUrls={imageUrls}
+        index={index}
+        onChange={onChange}
+        saveToLocalByLongPress={true}
+        backgroundColor="transparent"
+        renderIndicator={() => null}
+        style={[styles.imageViewer, isFullscreen && styles.fullscreenImageViewer]}
+      />
+      {imageUrls[index] && (
+        <Image
+          source={{ uri: imageUrls[index].url }}
+          style={{ width: 0, height: 0, position: 'absolute' }}
+          onLoad={() => {
+            setIsImageLoading(false);
+            if (timeoutRef.current) {
+              clearTimeout(timeoutRef.current);
+            }
+          }}
+          onError={() => {
+            setIsImageLoading(false);
+            console.error('Image preload error:', imageUrls[index].url);
+            if (timeoutRef.current) {
+              clearTimeout(timeoutRef.current);
+            }
+          }}
+        />
+      )}
+    </View>
+  );
+};
+
 const ShopPosts = ({ posts, scrollEnabled = false }) => {
   const [selectedPost, setSelectedPost] = useState(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isVideoLoading, setIsVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(true);
-  const [mediaUrls, setMediaUrls] = useState({}); // Cache regenerated URLs
 
   const playerRef = useRef(null);
-  const player = useVideoPlayer(null, (p) => {
+  const player = useVideoPlayer({ uri: '' }, (p) => {
     playerRef.current = p;
     p.loop = false;
   });
 
-  const isVideoFile = (media) => {
-    if (!media || !media.url) return false;
-    if (media.type) return media.type === 'video';
-    const extension = media.url.toLowerCase().split('.').pop();
-    return ['mp4', 'mov', 'avi', 'mkv'].includes(extension);
-  };
-
-  const regenerateMediaUrl = useCallback(async (mediaId) => {
-    try {
-      const sessionToken = await AsyncStorage.getItem('sessionToken');
-      if (!sessionToken) throw new Error('No session token');
-
-      const response = await axios.get(`${BASE_URL}/posts/regenerate-url/`, {
-        params: { post_media_id: mediaId },
-        headers: { Authorization: sessionToken },
-      });
-
-      console.log(`Regenerated URL for media ID ${mediaId}:`, response.data);
-      setMediaUrls((prev) => ({
-        ...prev,
-        [mediaId]: {
-          url: response.data.url,
-          thumbnail_url: response.data.thumbnail_url,
-          type: response.data.type,
-        },
-      }));
-      return response.data;
-    } catch (error) {
-      console.error(`Error regenerating URL for media ID ${mediaId}:`, error.message);
-      return null;
-    }
-  }, []);
-
   useEffect(() => {
     if (selectedPost && selectedPost.items && selectedPost.items[currentIndex]) {
       const media = selectedPost.items[currentIndex];
-      const mediaId = media.id;
-      const fullUrl = mediaUrls[mediaId]?.url || getFullUrl(media.url);
-      const isVideo = isVideoFile(mediaUrls[mediaId] || media);
+      const fullUrl = getFullUrl(media.url);
+      const isVideo = isVideoFile(media);
 
       if (isVideo && playerRef.current) {
         const loadVideo = async () => {
           try {
             setIsVideoLoading(true);
             setVideoError(null);
-            await playerRef.current.replaceAsync({ uri: fullUrl });
-            setIsVideoLoading(false);
+            if (playerRef.current && playerRef.current.source?.uri !== fullUrl) {
+              await playerRef.current.replaceAsync({ uri: fullUrl });
+            }
             playerRef.current.play();
+            setIsVideoLoading(false);
           } catch (error) {
             console.error('Video load error:', fullUrl, error.message);
-            if (error.message.includes('403')) {
-              const newUrls = await regenerateMediaUrl(mediaId);
-              if (newUrls) {
-                await playerRef.current.replaceAsync({ uri: newUrls.url });
-                setIsVideoLoading(false);
-                playerRef.current.play();
-              } else {
-                setIsVideoLoading(false);
-                setVideoError('Failed to load video: Unauthorized access');
-              }
-            } else {
-              setIsVideoLoading(false);
-              setVideoError('Failed to load video');
-            }
+            setVideoError('Failed to load video');
+            setIsVideoLoading(false);
           }
         };
         loadVideo();
+      } else {
+        setIsVideoLoading(false);
+        setVideoError(null);
       }
     }
-  }, [selectedPost, currentIndex, mediaUrls, regenerateMediaUrl]);
+
+    return () => {
+      if (playerRef.current && typeof playerRef.current.pause === 'function') {
+        try {
+          playerRef.current.pause();
+        } catch (error) {
+          console.warn('Error pausing video during cleanup:', error.message);
+        }
+      }
+    };
+  }, [selectedPost, currentIndex]);
 
   const pausePlayer = () => {
     if (playerRef.current && typeof playerRef.current.pause === 'function') {
-      playerRef.current.pause();
+      try {
+        playerRef.current.pause();
+      } catch (error) {
+        console.warn('Error pausing video:', error.message);
+      }
     }
   };
 
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);
-  };
-
-  const renderThumbnail = (media) => {
-    const mediaId = media.id;
-    let thumbnailUri;
-    // Prioritize regenerated thumbnail_url, then backend thumbnail_url, then FALLBACK_IMAGE for videos
-    if (mediaUrls[mediaId]?.thumbnail_url) {
-      thumbnailUri = getFullUrl(mediaUrls[mediaId].thumbnail_url);
-    } else if (media.thumbnail_url) {
-      thumbnailUri = getFullUrl(media.thumbnail_url);
-    } else {
-      thumbnailUri = isVideoFile(media) ? FALLBACK_IMAGE : getFullUrl(media.url);
-    }
-
-    console.log('Rendering thumbnail for:', thumbnailUri, 'Media:', JSON.stringify(media, null, 2));
-
-    if (thumbnailUri) {
-      return (
-        <Image
-          source={{ uri: thumbnailUri }}
-          style={styles.thumbnail}
-          resizeMode="cover"
-          onError={async (e) => {
-            console.error('Thumbnail load error:', thumbnailUri, e.nativeEvent.error);
-            if (e.nativeEvent.error.includes('403') && mediaId) {
-              await regenerateMediaUrl(mediaId);
-            }
-          }}
-        />
-      );
-    }
-    return (
-      <View style={styles.fallbackContainer}>
-        <Ionicons name={isVideoFile(media) ? 'videocam-outline' : 'image-outline'} size={40} color="#888" />
-        <Text style={styles.errorText}>No thumbnail available</Text>
-      </View>
-    );
   };
 
   const renderMediaItem = () => {
@@ -168,13 +212,15 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
     }
 
     const media = selectedPost.items[currentIndex];
-    const mediaId = media.id;
-    const fullUrl = mediaUrls[mediaId]?.url || getFullUrl(media.url);
-    const isVideo = isVideoFile(mediaUrls[mediaId] || media);
+    const fullUrl = getFullUrl(media.url);
+    const isVideo = isVideoFile(media);
 
     if (isVideo) {
       return (
-        <View style={[styles.mediaContainer, isFullscreen && styles.fullscreenMedia]}>
+        <LinearGradient
+          colors={['rgba(0, 0, 0, 0.7)', 'rgba(0, 0, 0, 0.9)']}
+          style={[styles.mediaContainer, isFullscreen && styles.fullscreenMedia]}
+        >
           {isVideoLoading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#fff" />
@@ -192,31 +238,21 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
               allowsFullscreen={true}
               allowsPictureInPicture={false}
               nativeControls={true}
-              onError={async (error) => {
+              onError={(error) => {
                 console.error('VideoView error:', fullUrl, error);
-                if (error.includes('403') && mediaId) {
-                  const newUrls = await regenerateMediaUrl(mediaId);
-                  if (newUrls) {
-                    await playerRef.current.replaceAsync({ uri: newUrls.url });
-                    playerRef.current.play();
-                  } else {
-                    setVideoError('Video playback failed: Unauthorized access');
-                  }
-                } else {
-                  setVideoError('Video playback failed');
-                }
+                setVideoError('Video playback failed');
               }}
             />
           )}
-        </View>
+        </LinearGradient>
       );
     }
 
-    const imageItems = selectedPost.items.filter((item) => !isVideoFile(mediaUrls[item.id] || item));
+    const imageItems = selectedPost.items.filter((item) => !isVideoFile(item));
     const imageUrls = imageItems.map((item) => ({
-      url: mediaUrls[item.id]?.url || getFullUrl(item.url),
+      url: getFullUrl(item.url),
     }));
-    const currentImageIndex = imageItems.findIndex((item) => (mediaUrls[item.id]?.url || getFullUrl(item.url)) === fullUrl);
+    const currentImageIndex = imageItems.findIndex((item) => getFullUrl(item.url) === fullUrl);
 
     if (imageUrls.length === 0) {
       return (
@@ -227,25 +263,19 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
     }
 
     return (
-      <View style={[styles.imageViewerContainer, isFullscreen && styles.fullscreenImage]}>
-        <ImageViewer
+      <LinearGradient
+        colors={['rgba(0, 0, 0, 0.7)', 'rgba(0, 0, 0, 0.9)']}
+        style={[styles.imageViewerContainer, isFullscreen && styles.fullscreenImage]}
+      >
+        <CustomImageViewer
           imageUrls={imageUrls}
           index={currentImageIndex >= 0 ? currentImageIndex : 0}
           onChange={(index) => {
             setCurrentIndex(selectedPost.items.indexOf(imageItems[index]));
           }}
-          saveToLocalByLongPress={true}
-          backgroundColor="transparent"
-          renderIndicator={() => null}
-          style={[styles.imageViewer, isFullscreen && styles.fullscreenImageViewer]}
-          onError={async (e) => {
-            console.error('ImageViewer error:', fullUrl, e);
-            if (e.includes('403') && mediaId) {
-              await regenerateMediaUrl(mediaId);
-            }
-          }}
+          isFullscreen={isFullscreen}
         />
-      </View>
+      </LinearGradient>
     );
   };
 
@@ -290,30 +320,20 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
           scrollEnabled={scrollEnabled}
           renderItem={({ item }) => {
             const firstMedia = item.media && item.media.length > 0 ? item.media[0] : null;
-            const isVideo = firstMedia ? isVideoFile(mediaUrls[firstMedia.id] || firstMedia) : false;
+            const isVideo = firstMedia ? isVideoFile(firstMedia) : false;
 
             return (
               <TouchableOpacity style={styles.postItem} onPress={() => handleMediaClick(item)}>
                 {firstMedia ? (
                   isVideo ? (
                     <View>
-                      {renderThumbnail(firstMedia)}
+                      <Thumbnail media={firstMedia} />
                       <View style={styles.playIconOverlay}>
                         <Ionicons name="play-circle" size={40} color="white" />
                       </View>
                     </View>
                   ) : (
-                    <Image
-                      source={{ uri: mediaUrls[firstMedia.id]?.url || getFullUrl(firstMedia.url) }}
-                      style={styles.thumbnail}
-                      resizeMode="cover"
-                      onError={async (e) => {
-                        console.error('Post image error:', firstMedia.url, e.nativeEvent.error);
-                        if (e.nativeEvent.error.includes('403') && firstMedia.id) {
-                          await regenerateMediaUrl(firstMedia.id);
-                        }
-                      }}
-                    />
+                    <Thumbnail media={firstMedia} />
                   )
                 ) : (
                   <View style={styles.fallbackContainer}>
@@ -332,38 +352,42 @@ const ShopPosts = ({ posts, scrollEnabled = false }) => {
       {selectedPost && (
         <Modal visible={true} transparent={true} animationType="fade">
           <SafeAreaView style={[styles.modalContainer, isFullscreen && styles.fullscreenModal]}>
-            <View style={styles.modalHeader}>
-              <TouchableOpacity style={styles.modalClose} onPress={handleCloseModal}>
-                <Ionicons name="close" size={28} color="#fff" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.fullscreenButton} onPress={toggleFullscreen}>
-                <Ionicons
-                  name={isFullscreen ? 'contract-outline' : 'expand-outline'}
-                  size={24}
-                  color="#fff"
-                />
-              </TouchableOpacity>
-            </View>
+            <LinearGradient
+              colors={['rgba(0, 0, 0, 0.7)', 'rgba(0, 0, 0, 0.95)']}
+              style={styles.modalBackground}
+            >
+              <View style={styles.modalHeader}>
+                <TouchableOpacity style={styles.modalClose} onPress={handleCloseModal}>
+                  <Ionicons name="close" size={28} color="#fff" />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.fullscreenButton} onPress={toggleFullscreen}>
+                  <Ionicons
+                    name={isFullscreen ? 'contract-outline' : 'expand-outline'}
+                    size={24}
+                    color="#fff"
+                  />
+                </TouchableOpacity>
+              </View>
 
-            {renderMediaItem()}
+              {renderMediaItem()}
 
-            <View style={styles.controlsContainer}>
-              <Text style={styles.descriptionText}>{selectedPost.description}</Text>
-
-              {selectedPost.items && selectedPost.items.length > 1 && (
-                <View style={styles.slideControls}>
-                  <TouchableOpacity style={styles.navButton} onPress={handlePrevMedia}>
-                    <Ionicons name="chevron-back" size={24} color="#fff" />
-                  </TouchableOpacity>
-                  <Text style={styles.slideIndicator}>
-                    {`${currentIndex + 1} / ${selectedPost.items.length}`}
-                  </Text>
-                  <TouchableOpacity style={styles.navButton} onPress={handleNextMedia}>
-                    <Ionicons name="chevron-forward" size={24} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
+              <View style={styles.controlsContainer}>
+                <Text style={styles.descriptionText}>{selectedPost.description}</Text>
+                {selectedPost.items && selectedPost.items.length > 1 && (
+                  <View style={styles.slideControls}>
+                    <TouchableOpacity style={styles.navButton} onPress={handlePrevMedia}>
+                      <Ionicons name="chevron-back" size={24} color="#fff" />
+                    </TouchableOpacity>
+                    <Text style={styles.slideIndicator}>
+                      {`${currentIndex + 1} / ${selectedPost.items.length}`}
+                    </Text>
+                    <TouchableOpacity style={styles.navButton} onPress={handleNextMedia}>
+                      <Ionicons name="chevron-forward" size={24} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            </LinearGradient>
           </SafeAreaView>
         </Modal>
       )}
@@ -384,6 +408,12 @@ const styles = StyleSheet.create({
     margin: 5,
     aspectRatio: 1,
   },
+  thumbnailContainer: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 8,
+    position: 'relative',
+  },
   thumbnail: {
     width: '100%',
     height: '100%',
@@ -399,6 +429,11 @@ const styles = StyleSheet.create({
     padding: 0,
     margin: 0,
   },
+  modalBackground: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   modalHeader: {
     position: 'absolute',
     top: 20,
@@ -411,20 +446,27 @@ const styles = StyleSheet.create({
   },
   modalClose: {
     padding: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 20,
   },
   fullscreenButton: {
     padding: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 20,
   },
   mediaContainer: {
     width: SCREEN_WIDTH * 0.95,
     height: SCREEN_HEIGHT * 0.7,
     borderRadius: 10,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#e8ecef',
   },
   fullscreenMedia: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
     borderRadius: 0,
+    borderWidth: 0,
   },
   imageViewerContainer: {
     width: SCREEN_WIDTH,
@@ -527,6 +569,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     borderRadius: 10,
+    position: 'absolute',
+    zIndex: 10,
   },
 });
 

@@ -43,7 +43,7 @@ const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusVi
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const lastStatusesRef = useRef(null);
-  const isNavigating = useRef(false); // Prevent concurrent navigation
+  const isNavigating = useRef(false);
 
   const progress = useRef(new Animated.Value(0)).current;
   const timerRef = useRef(null);
@@ -121,19 +121,21 @@ const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusVi
 
   const player = useVideoPlayer(playerSource, (p) => {
     console.log("Player initialized, source:", playerSource?.uri || "none");
-    playerRef.current = p;
-    p.loop = false;
-    p.onError = (error) => {
-      console.error("Video player error:", error);
-      setIsLoading(false);
-      setLoadError(error.message || "Failed to load video");
-      if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
-      setTimeout(() => handleNext(true), 2000);
-    };
+    if (playerRef.current !== p) {
+      playerRef.current = p;
+      p.loop = false;
+      p.onError = (error) => {
+        console.error("Video player error:", error);
+        setIsLoading(false);
+        setLoadError(error.message || "Failed to load video");
+        if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
+        setTimeout(() => handleNext(true), 2000);
+      };
+    }
   });
 
   const isPlayerValid = (player) => {
-    return player && typeof player.pause === "function";
+    return player && (typeof player.pause === "function" || typeof player.pauseAsync === "function");
   };
 
   const getStatusDuration = useCallback(() => {
@@ -165,7 +167,7 @@ const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusVi
         }
       });
     },
-    [handleNext]
+    []
   );
 
   const handleNext = useCallback(
@@ -188,29 +190,41 @@ const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusVi
         isNavigating.current = false;
         return;
       }
+
+      // Pause video if applicable
       if (isVideo && isPlayerValid(playerRef.current)) {
         try {
-          playerRef.current.pause();
-          console.log("Paused player before next");
+          console.log("Player state before pause:", {
+            player: playerRef.current,
+            type: typeof playerRef.current,
+            hasPause: !!playerRef.current?.pause,
+            hasPauseAsync: !!playerRef.current?.pauseAsync,
+          });
+          if (typeof playerRef.current.pauseAsync === "function") {
+            playerRef.current.pauseAsync();
+            console.log("Paused player before next (async)");
+          } else {
+            playerRef.current.pause();
+            console.log("Paused player before next (sync)");
+          }
         } catch (error) {
-          console.error("Pause error in handleNext:", error);
+          console.warn("Pause error in handleNext (handled):", error);
         }
       }
+
+      // Stop animations and reset state
       Animated.timing(progress).stop();
       progress.setValue(0);
       setIsLoading(false);
       setLoadError(null);
       if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
 
-      if (currentIndex < sortedStatusesRef.current.length - 1) {
-        setCurrentIndex((prev) => {
-          const nextIndex = Math.min(prev + 1, sortedStatusesRef.current.length - 1);
-          console.log("Moving to next index:", nextIndex);
-          return nextIndex;
+      // Check if at the last status
+      if (currentIndex >= sortedStatusesRef.current.length - 1) {
+        console.log("Reached last status, closing StatusViewer", {
+          currentIndex,
+          sortedStatusesRefLength: sortedStatusesRef.current.length,
         });
-        isNavigating.current = false;
-      } else {
-        console.log("Reached end of statuses, calling onClose");
         const currentShopId = currentStatus.shop?.id ?? 0;
         const shopStatuses = sortedStatusesRef.current.filter((s) => s.shop?.id === currentShopId);
         console.log("Shop statuses for onStatusViewed:", { shopStatuses, currentShopId });
@@ -218,8 +232,18 @@ const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusVi
           onStatusViewed({ shop: currentStatus.shop.name, statuses: shopStatuses });
         }
         onClose();
+        setCurrentIndex(0); // Reset index to prevent stale state
         isNavigating.current = false;
+        return;
       }
+
+      // Move to next status
+      setCurrentIndex((prev) => {
+        const nextIndex = Math.min(prev + 1, sortedStatusesRef.current.length - 1);
+        console.log("Moving to next index:", nextIndex);
+        return nextIndex;
+      });
+      isNavigating.current = false;
     },
     [currentIndex, currentStatus, onStatusViewed, onClose, isVideo]
   );
@@ -233,10 +257,21 @@ const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusVi
     console.log("handlePrev called", { currentIndex, sortedStatusesRefLength: sortedStatusesRef.current.length });
     if (isVideo && isPlayerValid(playerRef.current)) {
       try {
-        playerRef.current.pause();
-        console.log("Paused player before prev");
+        console.log("Player state before pause:", {
+          player: playerRef.current,
+          type: typeof playerRef.current,
+          hasPause: !!playerRef.current?.pause,
+          hasPauseAsync: !!playerRef.current?.pauseAsync,
+        });
+        if (typeof playerRef.current.pauseAsync === "function") {
+          playerRef.current.pauseAsync();
+          console.log("Paused player before prev (async)");
+        } else {
+          playerRef.current.pause();
+          console.log("Paused player before prev (sync)");
+        }
       } catch (error) {
-        console.error("Pause error in handlePrev:", error);
+        console.warn("Pause error in handlePrev (handled):", error);
       }
     }
     Animated.timing(progress).stop();
@@ -270,10 +305,21 @@ const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusVi
       if (timerRef.current) clearTimeout(timerRef.current);
       if (isVideo && isPlayerValid(playerRef.current)) {
         try {
-          playerRef.current.pause();
-          console.log("Video paused");
+          console.log("Player state before pause:", {
+            player: playerRef.current,
+            type: typeof playerRef.current,
+            hasPause: !!playerRef.current?.pause,
+            hasPauseAsync: !!playerRef.current?.pauseAsync,
+          });
+          if (typeof playerRef.current.pauseAsync === "function") {
+            playerRef.current.pauseAsync();
+            console.log("Video paused (async)");
+          } else {
+            playerRef.current.pause();
+            console.log("Video paused (sync)");
+          }
         } catch (error) {
-          console.error("Pause error in togglePause:", error);
+          console.warn("Pause error in togglePause (handled):", error);
         }
       }
     } else {
@@ -296,28 +342,68 @@ const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusVi
 
   const markStatusAsViewed = useCallback(
     async (status) => {
-      if (!status || status.viewed || !userId) return;
+      if (!status || status.viewed || !userId) {
+        console.log("markStatusAsViewed skipped", {
+          statusExists: !!status,
+          statusId: status?.id,
+          isViewed: status?.viewed,
+          userIdExists: !!userId,
+        });
+        return;
+      }
+
+      console.log("Attempting to mark status as viewed", {
+        statusId: status.id,
+        userId,
+        mediaType: status.media_type,
+        media: status.media,
+      });
+
       try {
-        console.log("Marking status as viewed:", status.id);
+        console.log("Sending API request to mark status as viewed", { statusId: status.id });
         const formData = new FormData();
         formData.append("user_id", userId.toString());
         formData.append("status_ids[]", status.id);
 
-        await axios.post(
+        const response = await axios.post(
           "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/mark_status_viewed/",
           formData,
-          { headers: { "Content-Type": "multipart/form-data", Authorization: `Bearer ${authToken}` } }
+          {
+            headers: {
+              "Content-Type": "multipart/form-data",
+              Authorization: `Bearer ${authToken}`,
+            },
+          }
         );
+
+        console.log("API response for marking status as viewed", {
+          statusId: status.id,
+          responseStatus: response.status,
+          responseData: response.data,
+        });
+
         status.viewed = true;
+        console.log("Status marked as viewed locally", { statusId: status.id, viewed: status.viewed });
 
         if (status.media_type === "video" && status.media && !videoCache[status.media]) {
+          console.log("Caching video after marking status as viewed", { media: status.media });
           const newCache = { ...videoCache, [status.media]: status.media };
           setVideoCache(newCache);
           await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(newCache));
-          console.log("Cached video:", status.media);
+          console.log("Video cache updated and saved", {
+            statusId: status.id,
+            media: status.media,
+            cacheKeys: Object.keys(newCache),
+          });
         }
       } catch (error) {
-        console.error("Error marking status as viewed:", error);
+        console.error("Error marking status as viewed", {
+          statusId: status.id,
+          error: error.message,
+          response: error.response
+            ? { status: error.response.status, data: error.response.data }
+            : null,
+        });
       }
     },
     [userId, videoCache, authToken]
@@ -385,6 +471,9 @@ const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusVi
     console.log("Statuses prop changed:", { statusesLength: statuses?.length, statuses });
     if (!visible || !statuses?.length) {
       console.log("Not visible or no statuses, preserving sortedStatusesRef");
+      setSortedStatuses([]); // Reset state to ensure consistency
+      sortedStatusesRef.current = [];
+      setCurrentIndex(0);
       return;
     }
 
@@ -416,6 +505,7 @@ const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusVi
 
     let startIndex = initialIndex;
     if (initialIndex >= sorted.length) {
+      console.warn("Initial index out of bounds, resetting to 0", { initialIndex, sortedLength: sorted.length });
       startIndex = 0;
     }
 
@@ -428,7 +518,7 @@ const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusVi
 
   useEffect(() => {
     if (!visible) {
-      console.log("Modal closing, resetting state but preserving sortedStatusesRef");
+      console.log("Modal closing, resetting state");
       setSortedStatuses([]);
       setCurrentIndex(0);
       setIsLoading(false);
@@ -438,25 +528,47 @@ const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusVi
       if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
       if (isPlayerValid(playerRef.current)) {
         try {
-          playerRef.current.pause();
-          console.log("Paused player on modal close");
+          console.log("Player state before modal close:", {
+            player: playerRef.current,
+            type: typeof playerRef.current,
+            hasPause: !!playerRef.current?.pause,
+            hasPauseAsync: !!playerRef.current?.pauseAsync,
+          });
+          if (typeof playerRef.current.pauseAsync === "function") {
+            playerRef.current.pauseAsync();
+            console.log("Paused player on modal close (async)");
+          } else {
+            playerRef.current.pause();
+            console.log("Paused player on modal close (sync)");
+          }
+          if (typeof playerRef.current.unloadAsync === "function") {
+            playerRef.current.unloadAsync();
+            console.log("Unloaded player on modal close");
+          }
         } catch (error) {
-          console.error("Modal close pause error:", error);
+          console.warn("Modal close pause/unload error (handled):", error);
         }
       }
       return;
     }
 
-    if (currentIndex >= sortedStatusesRef.current.length) {
-      console.log("Invalid currentIndex, closing StatusViewer", { currentIndex, sortedStatusesRefLength: sortedStatusesRef.current.length });
+    if (!sortedStatusesRef.current.length || currentIndex >= sortedStatusesRef.current.length) {
+      console.log("No statuses or invalid index, closing StatusViewer", {
+        currentIndex,
+        sortedStatusesRefLength: sortedStatusesRef.current.length,
+      });
       onClose();
+      setCurrentIndex(0);
+      setSortedStatuses([]);
+      sortedStatusesRef.current = [];
       return;
     }
 
     const status = sortedStatusesRef.current[currentIndex];
     if (!status) {
-      console.log("No status available, closing StatusViewer");
+      console.log("No status available at index, closing StatusViewer", { currentIndex });
       onClose();
+      setCurrentIndex(0);
       return;
     }
 
@@ -547,10 +659,25 @@ const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusVi
       if (loadTimeoutRef.current) clearTimeout(loadTimeoutRef.current);
       if (isVideo && isPlayerValid(playerRef.current)) {
         try {
-          playerRef.current.pause();
-          console.log("Paused player on cleanup");
+          console.log("Player state before cleanup:", {
+            player: playerRef.current,
+            type: typeof playerRef.current,
+            hasPause: !!playerRef.current?.pause,
+            hasPauseAsync: !!playerRef.current?.pauseAsync,
+          });
+          if (typeof playerRef.current.pauseAsync === "function") {
+            playerRef.current.pauseAsync();
+            console.log("Paused player on cleanup (async)");
+          } else {
+            playerRef.current.pause();
+            console.log("Paused player on cleanup (sync)");
+          }
+          if (typeof playerRef.current.unloadAsync === "function") {
+            playerRef.current.unloadAsync();
+            console.log("Unloaded player on cleanup");
+          }
         } catch (error) {
-          console.error("Cleanup pause error:", error);
+          console.warn("Cleanup pause/unload error (handled):", error);
         }
       }
     };

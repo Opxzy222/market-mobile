@@ -1,37 +1,39 @@
 {
   "expo": {
-    "name": "market-mobile",
-    "slug": "market-mobile",
+    "name": "Gogo Market",
+    "slug": "gogo-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
+    "icon": "./assets/images/icon2.png",
+    "scheme": "gogo-mobile",
     "userInterfaceStyle": "automatic",
     "sdkVersion": "53.0.0",
     "splash": {
-      "image": "./assets/images/splash.png",
+      "image": "./assets/images/icon2.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.timeflies.marketmobile",
+      "bundleIdentifier": "com.timeflies.gogomarket",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "UIBackgroundModes": [
+          "remote-notification",
           "remote-notification"
         ],
         "NSUserNotificationsUsageDescription": "Allow this app to send you notifications about new followers, reviews, posts, and receipts.",
         "NSLocationWhenInUseUsageDescription": "Allow this app to use your location to find nearby shops.",
-        "NSMotionUsageDescription": "Allow this app to access motion data to estimate small movements."
+        "NSMotionUsageDescription": "Allow this app to access motion data to estimate small movements.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "./assets/images/icon2.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.timeflies.marketmobile",
+      "package": "com.timeflies.gogomarket",
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "android.permission.RECEIVE_BOOT_COMPLETED",
@@ -62,8 +64,6 @@
         "expo-image-picker",
         {
           "photosPermission": "Allow this app to access your photos and videos to share them in chats.",
-          "cameraPermission": "Allow this app to access your camera for capturing videos.",
-          "microphonePermission": "Allow this app to access your microphone for video recording."
         }
       ],
       [
@@ -183,9 +183,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "075735ef-cbaa-4ccf-b12d-4b4e54c35b38"
+        "projectId": "11a350ba-590c-4271-9e5a-a2ba71d36ffc"
       }
     },
-    "owner": "time_flies"
+    "owner": "opxzy"
   }
 }

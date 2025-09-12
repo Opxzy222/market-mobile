@@ -10,27 +10,30 @@ import {
   Pressable,
   ScrollView,
   StatusBar,
+  FlatList,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { Picker } from '@react-native-picker/picker';
 import axios from 'axios';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Animated, { FadeInDown, useSharedValue, useAnimatedStyle, withRepeat, withTiming } from 'react-native-reanimated';
+import Animated, { FadeInDown, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing } from 'react-native-reanimated';
 import SubscriptionProvider, { SubscriptionContext } from '../../components/SubscriptionProvider';
 
 const Subscription = () => {
   const [selectedPlan, setSelectedPlan] = useState('');
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
+  const [dropdownVisible, setDropdownVisible] = useState(false);
   const [modalMessage, setModalMessage] = useState('');
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const { currentPlan, endDate } = useLocalSearchParams();
   const router = useRouter();
   const { refreshSubscription } = useContext(SubscriptionContext);
   const scrollViewRef = useRef(null);
+  const dropdownOpacity = useSharedValue(0);
+  const dropdownTranslateY = useSharedValue(20);
 
   const API_BASE_URL = 'https://retail-alvinia-goza-f6a0e4f7.koyeb.app';
 
@@ -63,6 +66,11 @@ const Subscription = () => {
     },
   };
 
+  const PLAN_OPTIONS = [
+    { label: 'Regular Plan - ₦2,500/month', value: 'regular' },
+    { label: 'Standard Plan - ₦5,000/month', value: 'standard' },
+  ];
+
   // Animation for swipe indicator
   const translateX = useSharedValue(0);
   React.useEffect(() => {
@@ -76,6 +84,30 @@ const Subscription = () => {
   const animatedArrowStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }],
   }));
+
+  const animatedDropdownStyle = useAnimatedStyle(() => ({
+    opacity: dropdownOpacity.value,
+    transform: [{ translateY: dropdownTranslateY.value }],
+  }));
+
+  const toggleDropdown = () => {
+    setDropdownVisible(!dropdownVisible);
+    dropdownOpacity.value = withTiming(dropdownVisible ? 0 : 1, {
+      duration: 300,
+      easing: Easing.out(Easing.cubic),
+    });
+    dropdownTranslateY.value = withTiming(dropdownVisible ? 20 : 0, {
+      duration: 300,
+      easing: Easing.out(Easing.cubic),
+    });
+  };
+
+  const selectPlan = (value) => {
+    setSelectedPlan(value);
+    setDropdownVisible(false);
+    dropdownOpacity.value = withTiming(0, { duration: 300 });
+    dropdownTranslateY.value = withTiming(20, { duration: 300 });
+  };
 
   const purchasePlan = async () => {
     if (!selectedPlan) {
@@ -140,10 +172,23 @@ const Subscription = () => {
 
   const handleScroll = (event) => {
     const contentOffsetX = event.nativeEvent.contentOffset.x;
-    const cardWidth = 260; // Width of each plan card
+    const cardWidth = 260;
     const index = Math.round(contentOffsetX / cardWidth);
     setCurrentCardIndex(index);
   };
+
+  const renderDropdownItem = ({ item }) => (
+    <TouchableOpacity
+      style={styles.dropdownItem}
+      onPress={() => selectPlan(item.value)}
+      activeOpacity={0.7}
+    >
+      <Text style={styles.dropdownItemText}>{item.label}</Text>
+      {selectedPlan === item.value && (
+        <MaterialIcons name="check-circle" size={20} color="#3B82F6" />
+      )}
+    </TouchableOpacity>
+  );
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
@@ -200,7 +245,7 @@ const Subscription = () => {
               contentContainerStyle={styles.planScrollContent}
               onScroll={handleScroll}
               scrollEventThrottle={16}
-              snapToInterval={260} // Match card width for snapping
+              snapToInterval={260}
               decelerationRate="fast"
             >
               {Object.entries(PLAN_DETAILS).map(([planKey, plan], index) => (
@@ -214,14 +259,14 @@ const Subscription = () => {
                     onPress={() => setSelectedPlan(planKey)}
                   >
                     <LinearGradient
-                      colors={planKey === 'standard' ? ['#FBBF24', '#F59E0B'] : ['#FFFFFF', '#F3F4F6']}
+                      colors={planKey === 'standard' ? ['#FFFFFF', '#BFDBFE'] : ['#FFFFFF', '#F3F4F6']}
                       style={styles.planCardGradient}
                     >
                       <View style={styles.planHeader}>
                         <Text style={styles.planCardTitle}>{plan.name}</Text>
                         {planKey === 'standard' && (
                           <View style={styles.premiumBadge}>
-                            <Text style={styles.premiumBadgeText}>Space</Text>
+                            <Text style={styles.premiumBadgeText}>Business</Text>
                           </View>
                         )}
                       </View>
@@ -252,18 +297,40 @@ const Subscription = () => {
                 />
               ))}
             </View>
-            <Animated.View entering={FadeInDown.duration(400).delay(600)} style={styles.pickerContainer}>
-              <Picker
-                selectedValue={selectedPlan}
-                onValueChange={(itemValue) => setSelectedPlan(itemValue)}
-                style={styles.picker}
-                itemStyle={styles.pickerItem}
+            <Animated.View entering={FadeInDown.duration(400).delay(600)} style={styles.dropdownTriggerContainer}>
+              <TouchableOpacity
+                style={styles.dropdownTrigger}
+                onPress={toggleDropdown}
+                activeOpacity={0.7}
               >
-                <Picker.Item label="Select a Plan" value="" />
-                <Picker.Item label="Regular Plan - ₦2,500/month" value="regular" />
-                <Picker.Item label="Standard Plan - ₦5,000/month" value="standard" />
-              </Picker>
+                <Text style={styles.dropdownTriggerText}>
+                  {selectedPlan ? PLAN_OPTIONS.find(opt => opt.value === selectedPlan)?.label : 'Select a Plan'}
+                </Text>
+                
+              </TouchableOpacity>
             </Animated.View>
+            <Modal
+              animationType="none"
+              transparent
+              visible={dropdownVisible}
+              onRequestClose={() => setDropdownVisible(false)}
+            >
+              <TouchableOpacity
+                style={styles.dropdownOverlay}
+                onPress={() => setDropdownVisible(false)}
+                activeOpacity={1}
+              >
+                <Animated.View style={[styles.dropdownContainer, animatedDropdownStyle]}>
+                  <FlatList
+                    data={PLAN_OPTIONS}
+                    renderItem={renderDropdownItem}
+                    keyExtractor={(item) => item.value}
+                    style={styles.dropdownList}
+                    contentContainerStyle={styles.dropdownListContent}
+                  />
+                </Animated.View>
+              </TouchableOpacity>
+            </Modal>
             <Animated.View entering={FadeInDown.duration(400).delay(700)}>
               <TouchableOpacity
                 accessibilityLabel="Subscribe to selected plan"
@@ -526,22 +593,66 @@ const styles = StyleSheet.create({
   inactiveDot: {
     backgroundColor: '#D1D5DB',
   },
-  pickerContainer: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 12,
-    overflow: 'hidden',
+  dropdownTriggerContainer: {
     marginBottom: 16,
+  },
+  dropdownTrigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  picker: {
-    height: 48,
-    color: '#1F2A44',
-  },
-  pickerItem: {
+  dropdownTriggerText: {
     fontSize: 16,
-    color: '#1F2A44',
     fontWeight: '500',
+    color: '#1F2A44',
+  },
+  dropdownOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dropdownContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    width: '90%',
+    maxHeight: 200,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  dropdownList: {
+    borderRadius: 12,
+  },
+  dropdownListContent: {
+    paddingVertical: 8,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  dropdownItemText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#1F2A44',
   },
   purchaseButton: {
     borderRadius: 12,

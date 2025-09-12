@@ -114,9 +114,8 @@ const AutocompleteInput = ({
       }
 
       const finalSuggestions = rawSuggestions.slice(0, TOTAL_SUGGESTIONS);
-      console.time('cacheSuggestions');
+      
       await cacheSuggestions(finalSuggestions);
-      console.timeEnd('cacheSuggestions');
       console.log('Suggestions cached successfully in SQLite');
       setProgress(100);
       onPopulationStateChange?.({ isPopulating: true, progress: 100 });

@@ -1,13 +1,14 @@
-// app/shop/WelcomeWorkingHours.tsx
-import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform, StatusBar } from "react-native";
+import React, { useState, useEffect, useCallback } from "react";
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform, StatusBar, Modal } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import axios from "axios";
 import { Provider, Button, Switch } from "react-native-paper";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import DatePicker from "react-native-date-picker";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
-import CheckmarkModal from "@/components/shop/ModalComponent";
 import { SafeAreaView } from "react-native-safe-area-context";
+
+// Adjust the import path for CheckmarkModal based on your project structure
+import CheckmarkModal from "@/components/shop/ModalComponent";
 
 interface OpeningHours {
   [key: string]: { open: string | null; close: string | null };
@@ -15,7 +16,8 @@ interface OpeningHours {
 
 export default function WelcomeWorkingHours() {
   const router = useRouter();
-  const { shopId } = useLocalSearchParams<{ shopId: string }>();
+  const params = useLocalSearchParams();
+  const shopId = typeof params.shopId === "string" ? params.shopId : undefined;
 
   const [is24_7, setIs24_7] = useState<boolean>(false);
   const [openingHours, setOpeningHours] = useState<OpeningHours>({});
@@ -27,8 +29,10 @@ export default function WelcomeWorkingHours() {
   const [sameAsMonday, setSameAsMonday] = useState<boolean>(false);
 
   useEffect(() => {
-    fetchWorkingHours();
-  }, []);
+    if (shopId) {
+      fetchWorkingHours();
+    }
+  }, [shopId]);
 
   const fetchWorkingHours = async () => {
     try {
@@ -55,47 +59,46 @@ export default function WelcomeWorkingHours() {
   };
 
   const updateWorkingHours = async () => {
+    if (!shopId) return;
     try {
       const formattedHours = {
         is_24_7: is24_7,
         monday: {
-          open: openingHours.Monday?.open || null,
-          close: openingHours.Monday?.close || null,
-          closed: !openingHours.Monday?.open && !openingHours.Monday?.close,
+          open: is24_7 ? null : openingHours.Monday?.open || null,
+          close: is24_7 ? null : openingHours.Monday?.close || null,
+          closed: is24_7 ? false : !openingHours.Monday?.open && !openingHours.Monday?.close,
         },
         tuesday: {
-          open: openingHours.Tuesday?.open || null,
-          close: openingHours.Tuesday?.close || null,
-          closed: !openingHours.Tuesday?.open && !openingHours.Tuesday?.close,
+          open: is24_7 ? null : openingHours.Tuesday?.open || null,
+          close: is24_7 ? null : openingHours.Tuesday?.close || null,
+          closed: is24_7 ? false : !openingHours.Tuesday?.open && !openingHours.Tuesday?.close,
         },
         wednesday: {
-          open: openingHours.Wednesday?.open || null,
-          close: openingHours.Wednesday?.close || null,
-          closed: !openingHours.Wednesday?.open && !openingHours.Wednesday?.close,
+          open: is24_7 ? null : openingHours.Wednesday?.open || null,
+          close: is24_7 ? null : openingHours.Wednesday?.close || null,
+          closed: is24_7 ? false : !openingHours.Wednesday?.open && !openingHours.Wednesday?.close,
         },
         thursday: {
-          open: openingHours.Thursday?.open || null,
-          close: openingHours.Thursday?.close || null,
-          closed: !openingHours.Thursday?.open && !openingHours.Thursday?.close,
+          open: is24_7 ? null : openingHours.Thursday?.open || null,
+          close: is24_7 ? null : openingHours.Thursday?.close || null,
+          closed: is24_7 ? false : !openingHours.Thursday?.open && !openingHours.Thursday?.close,
         },
         friday: {
-          open: openingHours.Friday?.open || null,
-          close: openingHours.Friday?.close || null,
-          closed: !openingHours.Friday?.open && !openingHours.Friday?.close,
+          open: is24_7 ? null : openingHours.Friday?.open || null,
+          close: is24_7 ? null : openingHours.Friday?.close || null,
+          closed: is24_7 ? false : !openingHours.Friday?.open && !openingHours.Friday?.close,
         },
         saturday: {
-          open: openingHours.Saturday?.open || null,
-          close: openingHours.Saturday?.close || null,
-          closed: !openingHours.Saturday?.open && !openingHours.Saturday?.close,
+          open: is24_7 ? null : openingHours.Saturday?.open || null,
+          close: is24_7 ? null : openingHours.Saturday?.close || null,
+          closed: is24_7 ? false : !openingHours.Saturday?.open && !openingHours.Saturday?.close,
         },
         sunday: {
-          open: openingHours.Sunday?.open || null,
-          close: openingHours.Sunday?.close || null,
-          closed: !openingHours.Sunday?.open && !openingHours.Sunday?.close,
+          open: is24_7 ? null : openingHours.Sunday?.open || null,
+          close: is24_7 ? null : openingHours.Sunday?.close || null,
+          closed: is24_7 ? false : !openingHours.Sunday?.open && !openingHours.Sunday?.close,
         },
       };
-
-      console.log("Sending formattedHours:", JSON.stringify(formattedHours, null, 2));
 
       await axios.post(
         `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop/${shopId}/working-hours/`,
@@ -112,12 +115,10 @@ export default function WelcomeWorkingHours() {
     }
   };
 
-  const handleConfirmTime = (event: any, selectedDate?: Date) => {
-    console.log("DateTimePicker event:", event.type, selectedDate);
-    setShowTimePicker(Platform.OS === "ios");
+  const handleConfirmTime = useCallback((selectedDate: Date) => {
+    console.log("DatePicker selectedDate:", selectedDate);
     if (selectedDate && selectedDay && selectedType) {
-      // Adjust for WAT (UTC+1) to avoid 1969 dates
-      const adjustedDate = new Date(selectedDate.getTime() + 1 * 60 * 60 * 1000);
+      const adjustedDate = new Date(selectedDate.getTime() + 1 * 60 * 60 * 1000); // Adjust for WAT (UTC+1)
       const hours = adjustedDate.getUTCHours().toString().padStart(2, "0");
       const minutes = adjustedDate.getUTCMinutes().toString().padStart(2, "0");
       const newTime = `${hours}:${minutes}:00`;
@@ -129,6 +130,14 @@ export default function WelcomeWorkingHours() {
         },
       }));
     }
+    setShowTimePicker(false);
+  }, [selectedDay, selectedType]);
+
+  const parseTimeToDate = (timeString: string | null): Date => {
+    if (!timeString || !/^\d{2}:\d{2}:\d{2}$/.test(timeString)) {
+      return new Date(new Date().setHours(9, 0, 0, 0));
+    }
+    return new Date(`1970-01-01T${timeString}Z`);
   };
 
   const applySameAsMonday = () => {
@@ -155,10 +164,20 @@ export default function WelcomeWorkingHours() {
     }));
   };
 
+  if (!shopId) {
+    return (
+      <SafeAreaView style={{ flex: 1 }}>
+        <View style={styles.container}>
+          <Text style={styles.errorText}>Error: Shop ID not provided.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
       <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
-      <ScrollView>
+      <ScrollView scrollEnabled={!showTimePicker}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <MaterialIcons name="arrow-back" size={26} color="white" />
@@ -167,13 +186,33 @@ export default function WelcomeWorkingHours() {
           <View style={styles.headerSpacer} />
         </View>
         <Provider>
-          <ScrollView contentContainerStyle={styles.container}>
+          <ScrollView contentContainerStyle={styles.container} scrollEnabled={!showTimePicker}>
             <View style={styles.heading}>
               <Text style={styles.label}>24/7 Open</Text>
-              <Switch value={is24_7} onValueChange={() => setIs24_7(!is24_7)} />
+              <Switch
+                value={is24_7}
+                onValueChange={() => {
+                  setIs24_7(!is24_7);
+                  if (!is24_7) {
+                    setOpeningHours({
+                      Monday: { open: null, close: null },
+                      Tuesday: { open: null, close: null },
+                      Wednesday: { open: null, close: null },
+                      Thursday: { open: null, close: null },
+                      Friday: { open: null, close: null },
+                      Saturday: { open: null, close: null },
+                      Sunday: { open: null, close: null },
+                    });
+                  }
+                }}
+              />
             </View>
 
-            {!is24_7 && (
+            {is24_7 ? (
+              <View style={styles.infoContainer}>
+                <Text style={styles.infoText}>Business is open 24/7. No specific hours needed.</Text>
+              </View>
+            ) : (
               <>
                 <Button
                   mode="outlined"
@@ -204,10 +243,11 @@ export default function WelcomeWorkingHours() {
                               setSelectedType("open");
                               setTempTime(
                                 openingHours[day]?.open
-                                  ? new Date(`1970-01-01T${openingHours[day].open}`)
-                                  : new Date()
+                                  ? parseTimeToDate(openingHours[day].open)
+                                  : new Date(new Date().setHours(9, 0, 0, 0))
                               );
                               setShowTimePicker(true);
+                              console.log("showTimePicker set to true for open");
                             }
                           }}
                           disabled={isClosed}
@@ -225,10 +265,11 @@ export default function WelcomeWorkingHours() {
                               setSelectedType("close");
                               setTempTime(
                                 openingHours[day]?.close
-                                  ? new Date(`1970-01-01T${openingHours[day].close}`)
-                                  : new Date()
+                                  ? parseTimeToDate(openingHours[day].close)
+                                  : new Date(new Date().setHours(17, 0, 0, 0))
                               );
                               setShowTimePicker(true);
+                              console.log("showTimePicker set to true for close");
                             }
                           }}
                           disabled={isClosed}
@@ -244,16 +285,44 @@ export default function WelcomeWorkingHours() {
               </>
             )}
 
-            {showTimePicker && (
-              <DateTimePicker
-                value={tempTime}
-                mode="time"
-                is24Hour={true}
-                onChange={handleConfirmTime}
-                minuteInterval={15}
-                display={Platform.OS === "ios" ? "spinner" : "default"}
-              />
-            )}
+            <Modal
+              visible={showTimePicker}
+              transparent={true}
+              animationType="fade"
+              onRequestClose={() => setShowTimePicker(false)}
+            >
+              <View style={styles.modalOverlay}>
+                <View style={styles.datePickerContainer}>
+                  <DatePicker
+                    date={tempTime}
+                    mode="time"
+                    is24Hour={true}
+                    onDateChange={setTempTime}
+                    minuteInterval={5}
+                    theme="auto"
+                  />
+                  <View style={styles.modalButtonContainer}>
+                    <Button
+                      mode="contained"
+                      onPress={() => handleConfirmTime(tempTime)}
+                      style={[styles.modalButton, styles.confirmButton]}
+                      labelStyle={styles.buttonLabel}
+                    >
+                      Confirm
+                    </Button>
+                    <Button
+                      mode="outlined"
+                      onPress={() => setShowTimePicker(false)}
+                      style={[styles.modalButton, styles.cancelButton]}
+                      labelStyle={styles.buttonLabel}
+                    >
+                      Cancel
+                    </Button>
+                  </View>
+                </View>
+              </View>
+            </Modal>
+
             <Button
               mode="contained"
               onPress={updateWorkingHours}
@@ -272,8 +341,8 @@ export default function WelcomeWorkingHours() {
 
 const styles = StyleSheet.create({
   container: {
-    padding: 24,
-    backgroundColor: "#F9FAFB",
+    padding: 20,
+    backgroundColor: "#F0F4F8",
   },
   header: {
     flexDirection: "row",
@@ -308,36 +377,40 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    padding: 16,
     backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    marginBottom: 16,
+    borderRadius: 16,
+    marginBottom: 20,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 4,
+    borderLeftWidth: 4,
+    borderLeftColor: "#10B981",
   },
   label: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#1F2A44",
+    color: "#1C2526",
     fontFamily: "System",
   },
   dayContainer: {
-    marginBottom: 12,
+    marginBottom: 16,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 16,
     backgroundColor: "#FFFFFF",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 4,
+    borderLeftWidth: 4,
+    borderLeftColor: "#3B82F6",
   },
   closedDay: {
     backgroundColor: "#FFF1F1",
+    borderLeftColor: "#EF4444",
   },
   closedDayText: {
     color: "#EF4444",
@@ -346,57 +419,127 @@ const styles = StyleSheet.create({
   dayLabel: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#1F2A44",
-    marginBottom: 8,
+    color: "#1C2526",
+    marginBottom: 12,
   },
   timeRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginTop: 12,
+    marginTop: 8,
   },
   timeButton: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: "#F3F4F6",
-    marginHorizontal: 4,
+    borderRadius: 12,
+    backgroundColor: "#EFF6FF",
+    marginHorizontal: 6,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: "#BFDBFE",
+    alignItems: "center",
   },
   disabledButton: {
-    backgroundColor: "#F9FAFB",
-    borderColor: "#E5E7EB",
-    opacity: 0.6,
+    backgroundColor: "#F1F5F9",
+    borderColor: "#D1D5DB",
+    opacity: 0.7,
   },
   timeText: {
     fontSize: 14,
-    color: "#374151",
+    color: "#1C2526",
+    fontWeight: "500",
     textAlign: "center",
   },
   disabledText: {
-    color: "#9CA3AF",
+    color: "#6B7280",
     fontSize: 14,
+    fontWeight: "500",
     textAlign: "center",
   },
   updateButton: {
     marginTop: 24,
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderRadius: 12,
-    backgroundColor: "#3A7BD5",
+    backgroundColor: "#10B981",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 6,
+    elevation: 5,
   },
   sameAsMondayButton: {
-    borderRadius: 8,
-    borderColor: "#E5E7EB",
+    borderRadius: 12,
+    borderColor: "#BFDBFE",
     backgroundColor: "#FFFFFF",
-    marginBottom: 16,
+    marginBottom: 20,
+    paddingVertical: 10,
+    borderWidth: 2,
   },
   buttonLabel: {
     fontWeight: "600",
+    fontSize: 15,
+    color: "#1C2526",
+  },
+  infoContainer: {
+    padding: 16,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    marginBottom: 20,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 4,
+    borderLeftWidth: 4,
+    borderLeftColor: "#10B981",
+  },
+  infoText: {
+    fontSize: 15,
+    color: "#1C2526",
+    fontWeight: "500",
+  },
+  errorText: {
+    fontSize: 15,
+    color: "#EF4444",
+    textAlign: "center",
+    marginTop: 20,
+    fontWeight: "500",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  datePickerContainer: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 24,
+    alignItems: "center",
+    elevation: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+  },
+  modalButtonContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 20,
+    width: "100%",
+  },
+  modalButton: {
+    flex: 1,
+    marginHorizontal: 8,
+    borderRadius: 10,
+  },
+  confirmButton: {
+    backgroundColor: "#10B981",
+  },
+  cancelButton: {
+    borderColor: "#BFDBFE",
+    borderWidth: 2,
   },
 });

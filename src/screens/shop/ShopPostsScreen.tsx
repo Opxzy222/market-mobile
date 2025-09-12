@@ -37,6 +37,105 @@ const isRecentPost = (createdAt) => {
   return hoursDifference < 3;
 };
 
+// Thumbnail Component
+const Thumbnail = ({ media, isVideo }) => {
+  const [isThumbnailLoading, setIsThumbnailLoading] = useState(true);
+  const thumbnailUri = isVideo && media.thumbnail_url ? getFullUrl(media.thumbnail_url) : getFullUrl(media.url);
+
+  if (!media || !media.url) {
+    return (
+      <View style={styles.fallbackContainer}>
+        <Ionicons name="image-outline" size={40} color="#888" />
+        <Text style={styles.errorText}>No thumbnail available</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.thumbnailContainer}>
+      {isThumbnailLoading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#fff" />
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      )}
+      <Image
+        source={{ uri: thumbnailUri }}
+        style={[styles.thumbnail, isThumbnailLoading && { opacity: 0 }]}
+        contentFit="cover"
+        cachePolicy="memory-disk"
+        onLoadStart={() => setIsThumbnailLoading(true)}
+        onLoad={() => setIsThumbnailLoading(false)}
+        onError={(e) => {
+          console.error("Thumbnail load error:", thumbnailUri, e.error);
+          setIsThumbnailLoading(false);
+        }}
+      />
+    </View>
+  );
+};
+
+// Custom Image Viewer Component
+const CustomImageViewer = ({ imageUrls, index, onChange, isFullscreen }) => {
+  const [isImageLoading, setIsImageLoading] = useState(true);
+  const timeoutRef = useRef(null);
+
+  useEffect(() => {
+    setIsImageLoading(true);
+
+    // Short initial timeout to handle cached images
+    timeoutRef.current = setTimeout(() => {
+      setIsImageLoading(false);
+    }, 100); // 100ms for cached images
+
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, [index]);
+
+  return (
+    <View style={[styles.imageViewerContainer, isFullscreen && styles.fullscreenImage]}>
+      {isImageLoading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#fff" />
+          <Text style={styles.loadingText}>Loading image...</Text>
+        </View>
+      )}
+      <ImageViewer
+        imageUrls={imageUrls}
+        index={index}
+        onChange={onChange}
+        saveToLocalByLongPress={true}
+        backgroundColor="transparent"
+        renderIndicator={() => null}
+        style={[styles.imageViewer, isFullscreen && styles.fullscreenImageViewer]}
+      />
+      {imageUrls[index] && (
+        <Image
+          source={{ uri: imageUrls[index].url }}
+          style={{ width: 0, height: 0, position: "absolute" }}
+          cachePolicy="none" // Disable caching for hidden Image to ensure onLoad fires
+          onLoad={() => {
+            setIsImageLoading(false);
+            if (timeoutRef.current) {
+              clearTimeout(timeoutRef.current);
+            }
+          }}
+          onError={(e) => {
+            setIsImageLoading(false);
+            console.error("Image preload error:", imageUrls[index].url, e.error);
+            if (timeoutRef.current) {
+              clearTimeout(timeoutRef.current);
+            }
+          }}
+        />
+      )}
+    </View>
+  );
+};
+
 const ShopPostsScreen = () => {
   const params = useLocalSearchParams();
   const router = useRouter();
@@ -131,6 +230,9 @@ const ShopPostsScreen = () => {
           }
         };
         loadVideo();
+      } else {
+        setIsVideoLoading(false);
+        setVideoError(null);
       }
     }
 
@@ -158,30 +260,6 @@ const ShopPostsScreen = () => {
   const toggleFullscreen = useCallback(() => {
     setIsFullscreen((prev) => !prev);
   }, []);
-
-  const renderThumbnail = useCallback(
-    (media) => {
-      if (!media || !media.url) {
-        return (
-          <View style={styles.fallbackContainer}>
-            <Ionicons name="image-outline" size={40} color="#888" />
-            <Text style={styles.errorText}>No thumbnail available</Text>
-          </View>
-        );
-      }
-      const thumbnailUri = isVideoFile(media) && media.thumbnail_url ? getFullUrl(media.thumbnail_url) : getFullUrl(media.url);
-      return (
-        <Image
-          source={{ uri: thumbnailUri }}
-          style={styles.thumbnail}
-          contentFit="cover"
-          cachePolicy="memory-disk"
-          onError={(e) => console.error("Thumbnail load error:", thumbnailUri, e.error)}
-        />
-      );
-    },
-    [isVideoFile]
-  );
 
   const renderMediaItem = useCallback(() => {
     if (!selectedPost || !selectedPost.media || !selectedPost.media[currentIndex]) {
@@ -246,14 +324,11 @@ const ShopPostsScreen = () => {
         colors={["rgba(0, 0, 0, 0.7)", "rgba(0, 0, 0, 0.9)"]}
         style={[styles.imageViewerContainer, isFullscreen && styles.fullscreenImage]}
       >
-        <ImageViewer
+        <CustomImageViewer
           imageUrls={imageUrls}
           index={currentImageIndex >= 0 ? currentImageIndex : 0}
           onChange={(index) => setCurrentIndex(selectedPost.media.indexOf(imageItems[index]))}
-          saveToLocalByLongPress={true}
-          backgroundColor="transparent"
-          renderIndicator={() => null}
-          style={[styles.imageViewer, isFullscreen && styles.fullscreenImageViewer]}
+          isFullscreen={isFullscreen}
         />
       </LinearGradient>
     );
@@ -298,14 +373,18 @@ const ShopPostsScreen = () => {
 
       return (
         <Animated.View entering={FadeInDown.duration(300)} style={styles.postItem}>
-          <TouchableOpacity onPress={() => handleMediaClick(item)} activeOpacity={0.8}>
+          <TouchableOpacity 
+            onPress={() => handleMediaClick(item)} 
+            activeOpacity={0.8}
+            style={styles.thumbnailWrapper}
+          >
             <LinearGradient
               colors={["#ffffff", "#f8fafc"]}
               style={styles.thumbnailContainer}
             >
               {firstMedia ? (
                 <>
-                  {renderThumbnail(firstMedia)}
+                  <Thumbnail media={firstMedia} isVideo={isVideo} />
                   {isNew && (
                     <LinearGradient
                       colors={["#f39c12", "#e67e22"]}
@@ -331,27 +410,39 @@ const ShopPostsScreen = () => {
                 </View>
               )}
             </LinearGradient>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.shopInfoContainer}
+            onPress={() => {
+              router.push({
+                pathname: '/shop/shop-page',
+                params: { shopId: item.shop_id },
+              });
+            }}
+          >
             <View style={styles.shopInfo}>
-              <View>
-                <Text style={styles.shopName} numberOfLines={1}>
-                  {item.shop_name}
+              <Text style={styles.shopName} numberOfLines={1}>
+                {item.shop_name}
+              </Text>
+              <Text style={styles.createdAt}>{item.created_at}</Text>
+              {params.type === "nearby" && item.distance != null && (
+                <Text style={styles.distance}>
+                  {(item.distance / 1000).toFixed(1)} km away
                 </Text>
-                <Text style={styles.createdAt}>{item.created_at}</Text>
-                {params.type === "nearby" && item.distance != null && (
-                  <Text style={styles.distance}>
-                    {(item.distance / 1000).toFixed(1)} km away
-                  </Text>
-                )}
-              </View>
+              )}
             </View>
-            <Text style={styles.description} numberOfLines={2}>
+            <Text 
+              style={styles.description} 
+              numberOfLines={2}
+              ellipsizeMode="tail"
+            >
               {item.description}
             </Text>
           </TouchableOpacity>
         </Animated.View>
       );
     },
-    [params.type, isVideoFile, renderThumbnail, handleMediaClick]
+    [params.type, isVideoFile, handleMediaClick, router]
   );
 
   const fetchMorePosts = useCallback(async () => {
@@ -458,10 +549,10 @@ const ShopPostsScreen = () => {
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       >
-        <StatusBar barStyle="light-content" backgroundColor='#2563EB' translucent={true} />
+        <StatusBar barStyle="light-content" backgroundColor="#2563EB" translucent={true} />
         <View style={styles.header}>
           <TouchableOpacity
-            onPress={() => router.navigate('(tabs)/myshop')}
+            onPress={() => router.navigate("(tabs)/myshop")}
             style={styles.backButton}
           >
             <Ionicons name="arrow-back" size={24} color="#fff" />
@@ -563,7 +654,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 6,
-    marginTop: StatusBar.currentHeight || 0, // Ensure header respects status bar height
+    marginTop: StatusBar.currentHeight || 0,
   },
   backButton: {
     padding: 8,
@@ -577,7 +668,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     flex: 1,
     letterSpacing: 0.3,
-    fontFamily: "System", // Replace with custom font if available
+    fontFamily: "System",
   },
   headerSpacer: {
     width: 40,
@@ -596,11 +687,18 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 3,
+    backgroundColor: "#fff",
+  },
+  thumbnailWrapper: {
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    overflow: "hidden",
   },
   thumbnailContainer: {
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     overflow: "hidden",
+    position: "relative",
   },
   thumbnail: {
     width: "100%",
@@ -621,12 +719,15 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     textTransform: "uppercase",
   },
-  shopInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
+  shopInfoContainer: {
     paddingTop: 8,
+    paddingHorizontal: 12,
+    paddingBottom: 8,
     backgroundColor: "#fff",
+    minHeight: 100,
+  },
+  shopInfo: {
+    flexDirection: "column",
   },
   shopName: {
     fontSize: 14,
@@ -649,10 +750,9 @@ const styles = StyleSheet.create({
   description: {
     fontSize: 13,
     color: "#34495e",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
     lineHeight: 18,
-    backgroundColor: "#fff",
+    marginTop: 8,
+    maxHeight: 36,
     fontFamily: "System",
   },
   multiMediaIndicator: {
@@ -808,6 +908,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(0, 0, 0, 0.6)",
     borderRadius: 12,
+    position: "absolute",
+    zIndex: 10,
   },
   loadingText: {
     color: "#fff",

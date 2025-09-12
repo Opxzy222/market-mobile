@@ -9,14 +9,17 @@ import {
   RefreshControl,
   Image,
   StatusBar,
+  Dimensions,
 } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, usePathname, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons'; // Added MaterialIcons for fallback
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { storeData, getData } from '../../storage/storage';
 import { getFullUrl } from '../../utils/imageUtils';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const MessageList = () => {
   const [messages, setMessages] = useState([]);
@@ -233,6 +236,16 @@ const MessageList = () => {
     [router, pathname]
   );
 
+  const handleShopClick = useCallback(
+    (message) => {
+      router.push({
+        pathname: '/shop/shop-page',
+        params: { shopId: message.shop_id },
+      });
+    },
+    [router]
+  );
+
   const renderItem = useCallback(
     ({ item }) => {
       const isUnread = item.is_unread_by_receiver;
@@ -253,41 +266,43 @@ const MessageList = () => {
       }
 
       return (
-        <TouchableOpacity
-          style={[
-            styles.messageItem,
-            isUnread && styles.unreadMessage,
-            isDeleted && styles.deletedMessage,
-          ]}
-          onPress={() => handleMessageClick(item)}
-          activeOpacity={0.85}
-        >
-          {item.profile_image ? (
-            <Image
-              source={{ uri: getFullUrl(item.profile_image) }}
-              style={[
-                styles.profileImage,
-                isUnread && styles.unreadProfileImage,
-                isDeleted && styles.deletedProfileImage,
-              ]}
-              onError={(e) =>
-                console.error(`Image load error for message ${item.id}:`, e.nativeEvent.error)
-              }
-            />
-          ) : (
-            <LinearGradient
-              colors={['#E5E7EB', '#D1D5DB']}
-              style={[
-                styles.profileImage,
-                isUnread && styles.unreadProfileImage,
-                isDeleted && styles.deletedProfileImage,
-                { justifyContent: 'center', alignItems: 'center' },
-              ]}
-            >
-              <MaterialIcons name="store" size={30} color="#6B7280" />
-            </LinearGradient>
-          )}
-          <View style={styles.textContainer}>
+        <View style={styles.messageItem}>
+          <TouchableOpacity
+            style={styles.profileImageContainer}
+            onPress={() => handleShopClick(item)}
+            activeOpacity={0.85}
+          >
+            {item.profile_image ? (
+              <Image
+                source={{ uri: getFullUrl(item.profile_image) }}
+                style={[
+                  styles.profileImage,
+                  isUnread && styles.unreadProfileImage,
+                  isDeleted && styles.deletedProfileImage,
+                ]}
+                onError={(e) =>
+                  console.error(`Image load error for message ${item.id}:`, e.nativeEvent.error)
+                }
+              />
+            ) : (
+              <LinearGradient
+                colors={['#E5E7EB', '#D1D5DB']}
+                style={[
+                  styles.profileImage,
+                  isUnread && styles.unreadProfileImage,
+                  isDeleted && styles.deletedProfileImage,
+                  { justifyContent: 'center', alignItems: 'center' },
+                ]}
+              >
+                <MaterialIcons name="store" size={30} color="#6B7280" />
+              </LinearGradient>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.textContainer}
+            onPress={() => handleMessageClick(item)}
+            activeOpacity={0.85}
+          >
             <View style={styles.messageHeader}>
               <Text
                 style={[
@@ -321,23 +336,23 @@ const MessageList = () => {
                 />
               ) : (
                 <Text
-                    style={[
-                      styles.lastMessage,
-                      isUnread && styles.unreadText,
-                      isDeleted && styles.deletedText,
-                    ]}
-                  numberOfLines={1}
+                  style={[
+                    styles.lastMessage,
+                    isUnread && styles.unreadText,
+                    isDeleted && styles.deletedText,
+                  ]}
+                  numberOfLines={2}
                   ellipsizeMode="tail"
                 >
                   {item.last_message || 'No message'}
                 </Text>
               )}
             </View>
-          </View>
-        </TouchableOpacity>
+          </TouchableOpacity>
+        </View>
       );
     },
-    [handleMessageClick]
+    [handleMessageClick, handleShopClick]
   );
 
   const renderNavBar = useCallback(
@@ -434,7 +449,9 @@ const MessageList = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F7FAFC' },
+  container: {
+    flex: 1,
+  },
   headerContainer: {
     paddingVertical: 45,
     borderBottomLeftRadius: 35,
@@ -558,8 +575,10 @@ const styles = StyleSheet.create({
   },
   messageList: {
     paddingHorizontal: 16,
-    paddingBottom: 16,
+    paddingBottom: 100, // Increased for extra scrollable space after last message
     paddingTop: 12,
+    flexGrow: 1, // Ensure content can grow to enable scrolling
+    minHeight: SCREEN_HEIGHT, // Ensure content is at least screen height for scrollability
   },
   messageItem: {
     backgroundColor: '#FFFFFF',
@@ -573,6 +592,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 10,
     elevation: 5,
+    minHeight: 90,
   },
   unreadMessage: {
     borderWidth: 1,
@@ -597,11 +617,13 @@ const styles = StyleSheet.create({
     color: '#D32F2F',
     fontStyle: 'italic',
   },
+  profileImageContainer: {
+    marginRight: 14,
+  },
   profileImage: {
     width: 58,
     height: 58,
     borderRadius: 29,
-    marginRight: 14,
     borderWidth: 3,
     borderColor: '#3A7BD5',
     shadowColor: '#000',
@@ -610,7 +632,10 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 3,
   },
-  textContainer: { flex: 1 },
+  textContainer: {
+    flex: 1,
+    paddingVertical: 4,
+  },
   messageHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -634,6 +659,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#444',
     opacity: 0.9,
+    maxHeight: 40,
   },
   lastMessageContainer: {
     flexDirection: 'row',

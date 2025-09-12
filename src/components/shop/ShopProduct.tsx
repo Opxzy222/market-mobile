@@ -8,59 +8,46 @@ const ShopProduct = ({ products }) => {
   const { subscriptionStatus, loading } = useContext(SubscriptionContext);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Wait until the subscription status is determined
   if (loading) {
     return <ActivityIndicator size="large" color="#007BFF" style={styles.loader} />;
   }
 
-  // Show the SubscriptionRequired component if the user does not have a valid subscription
   if (!["regular", "standard", "premium"].includes(subscriptionStatus)) {
     return <SubscriptionRequired />;
   }
 
-  // Filter products based on search query
   const filteredProducts = products
     .map(categoryData => {
       const filteredSubcategories = categoryData.subcategories.map(subcategoryData => {
         const filteredProducts = subcategoryData.products.filter(product => {
           const productName = product.product_name.toLowerCase();
           const query = searchQuery.toLowerCase();
-
-          // If search query is empty, return all products
           if (!query) return true;
-
-          // Show product if it contains the search term anywhere
           if (productName.includes(query)) return true;
-
-          // Show product only if it starts with the search term
           if (query.length === 1 && productName.startsWith(query)) return true;
-
           return false;
         });
-
         return {
           ...subcategoryData,
           products: filteredProducts,
         };
-      }).filter(subcategory => subcategory.products.length > 0); // Remove empty subcategories
-
+      }).filter(subcategory => subcategory.products.length > 0);
       return {
         ...categoryData,
         subcategories: filteredSubcategories,
       };
     })
-    .filter(category => category.subcategories.length > 0); // Remove empty categories
+    .filter(category => category.subcategories.length > 0);
 
   return (
     <LinearGradient colors={["#F7F7F7", "#EAEAEA"]} style={styles.container}>
-      {/* Search Bar */}
       <TextInput
         style={styles.searchInput}
         placeholder="Search products..."
+        placeholderTextColor="#888"
         value={searchQuery}
         onChangeText={setSearchQuery}
       />
-
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         {filteredProducts.length === 0 ? (
           <Text style={styles.noProducts}>No products found.</Text>
@@ -73,17 +60,17 @@ const ShopProduct = ({ products }) => {
                   <Text style={styles.subcategoryTitle}>{subcategoryData.subcategory}</Text>
                   <View style={styles.table}>
                     <View style={styles.tableHeader}>
-  <Text style={[styles.tableCell, styles.cellWide, styles.headerCell]}>Product</Text>
-  <Text style={[styles.tableCell, styles.availableCell, styles.headerCell]}>Available</Text>
-  <Text style={[styles.tableCells, styles.priceCell, styles.headerCell]}>Price</Text>
-</View>
+                      <Text style={[styles.tableCell, styles.cellWide, styles.headerCell]}>Product</Text>
+                      <Text style={[styles.tableCell, styles.availableCell, styles.headerCell]}>Available</Text>
+                      <Text style={[styles.tableCell, styles.priceCell, styles.headerCell]}>Price</Text>
+                    </View>
                     {subcategoryData.products.map((product, index) => (
                       <View
-                        key={product.id}
+                        key={`${categoryData.category}-${subcategoryData.subcategory}-${product.id}-${index}`}
                         style={[styles.tableRow, index % 2 === 0 && styles.alternateRow]}
                       >
                         <Text style={[styles.tableCell, styles.cellWide]}>{product.product_name}</Text>
-                        <Text style={styles.AvailableCell}>
+                        <Text style={[styles.tableCell, styles.availableCell]}>
                           {product.is_available ? '✔️' : '❌'}
                         </Text>
                         <Text style={[styles.tableCell, styles.priceCell]}>
@@ -91,8 +78,6 @@ const ShopProduct = ({ products }) => {
                             ? `₦${Number(product.price).toLocaleString()}`
                             : 'N/A'}
                         </Text>
-
-
                       </View>
                     ))}
                   </View>
@@ -172,12 +157,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: '#e0f2fe',
     paddingVertical: 12,
-    paddingHorizontal: 1,
+    paddingHorizontal: 10, // Match second component for row-level padding
   },
   tableRow: {
     flexDirection: 'row',
     paddingVertical: 12,
-    paddingHorizontal: 1,
+    paddingHorizontal: 10, // Match second component for row-level padding
     borderBottomWidth: 1,
     borderColor: '#cbd5e1',
   },
@@ -185,32 +170,29 @@ const styles = StyleSheet.create({
     backgroundColor: '#f9fafb',
   },
   tableCell: {
-  flexShrink: 0,
-  paddingHorizontal: 0,
-  },
-  tableCells: {
-  flexShrink: 0,
-  marginRight: -12,
-  paddingHorizontal: 0,
-  },
-  AvailableCell: {
-  flexShrink: 0,
-  paddingHorizontal: 12,
-  },
-  
-  priceCell: {
-  width: 90, // or something reasonable like 80–100
-  textAlign: 'center',
-  fontSize: 14,
-  color: '#1e293b',
-  overflow: 'hidden',
-  paddingHorizontal: 8,
+    flex: 1, // Changed to flex: 1 to match second component's responsive layout
+    fontSize: 14,
+    color: '#1e293b',
+    textAlign: 'left',
+    paddingHorizontal: 8, // Added for consistent cell spacing
   },
   availableCell: {
-  width: 62,
-  textAlign: 'left',
-},
-
+    width: 120, // Increased width to prevent wrapping (from second component)
+    textAlign: 'center', // Center the checkmark and header
+    fontSize: 12,
+    color: '#1e293b',
+    paddingHorizontal: 8,
+    flexShrink: 0, // Prevent shrinking (from second component)
+    flexWrap: 'nowrap', // Prevent text wrapping (from second component)
+  },
+  priceCell: {
+    width: 90, // Fixed width for alignment (from second component)
+    textAlign: 'center',
+    fontSize: 14,
+    color: '#1e293b',
+    paddingHorizontal: 8,
+    flexShrink: 0, // Prevent shrinking (from second component)
+  },
   cellWide: {
     flex: 2,
     textAlign: 'left',

@@ -3,6 +3,7 @@ import { Platform, Alert, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { useRouter } from 'expo-router';
+import Constants from 'expo-constants';
 
 async function createNotificationChannel() {
   if (Platform.OS === 'android') {
@@ -66,7 +67,7 @@ export const setupNotificationHandlers = async () => {
 
     // Get Expo push token
     const token = await Notifications.getExpoPushTokenAsync({
-      projectId: 'f80ca8bf-7b1e-44db-999f-2b562f845d48',
+      projectId: Constants.expoConfig.extra.eas.projectId,
     });
     console.log('Expo Push Token:', token.data);
 

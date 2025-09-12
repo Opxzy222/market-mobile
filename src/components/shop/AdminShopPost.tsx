@@ -2,19 +2,20 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
-  Image,
+  ActivityIndicator,
   Modal,
   StyleSheet,
   TouchableOpacity,
   Dimensions,
   FlatList,
   Alert,
-  ActivityIndicator,
 } from "react-native";
+import { Image } from "expo-image"; // Use expo-image for consistency
 import { useVideoPlayer, VideoView } from "expo-video";
 import { Ionicons } from "@expo/vector-icons";
 import axios from "axios";
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { SafeAreaView } from "react-native-safe-area-context"; // Added for better layout control
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -23,14 +24,54 @@ const getFullUrl = (url) => {
   return url && url.startsWith("http") ? url : `${BASE_URL}${url || ""}`;
 };
 
+// Thumbnail Component
+const Thumbnail = ({ media, isVideo }) => {
+  const [isThumbnailLoading, setIsThumbnailLoading] = useState(true);
+  const thumbnailUri = media && media.thumbnail_url ? getFullUrl(media.thumbnail_url) : getFullUrl(media?.url);
+
+  if (!media || !media.url) {
+    return (
+      <View style={styles.fallbackContainer}>
+        <Ionicons name={isVideo ? "videocam-outline" : "image-outline"} size={40} color="#888" />
+        <Text style={styles.errorText}>No thumbnail available</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.thumbnailContainer}>
+      {isThumbnailLoading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#fff" />
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      )}
+      <Image
+        source={{ uri: thumbnailUri }}
+        style={[styles.thumbnail, isThumbnailLoading && { opacity: 0 }]}
+        contentFit="cover"
+        cachePolicy="memory-disk"
+        onLoadStart={() => setIsThumbnailLoading(true)}
+        onLoad={() => setIsThumbnailLoading(false)}
+        onError={(e) => {
+          console.error("Thumbnail load error:", thumbnailUri, e.error);
+          setIsThumbnailLoading(false);
+        }}
+      />
+    </View>
+  );
+};
+
 // Add onPostDeleted to the props type
 const AdminShopPosts = ({ posts, shopId, onPostDeleted }) => {
   const [selectedPost, setSelectedPost] = useState(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isVideoLoading, setIsVideoLoading] = useState(false);
+  const [isImageLoading, setIsImageLoading] = useState(false);
   const [videoError, setVideoError] = useState(null);
   const [sessionId, setSessionId] = useState(null);
   const playerRef = useRef(null);
+  const timeoutRef = useRef(null);
 
   const player = useVideoPlayer(null, (p) => {
     playerRef.current = p;
@@ -68,7 +109,7 @@ const AdminShopPosts = ({ posts, shopId, onPostDeleted }) => {
             await playerRef.current.replaceAsync({ uri: fullUrl });
             setIsVideoLoading(false);
             playerRef.current.play();
-            console.log('Video loaded:', fullUrl);
+            console.log("Video loaded:", fullUrl);
           } catch (error) {
             console.error("Video load error:", fullUrl, error.message, error.stack);
             setIsVideoLoading(false);
@@ -76,40 +117,39 @@ const AdminShopPosts = ({ posts, shopId, onPostDeleted }) => {
           }
         };
         loadVideo();
+      } else {
+        // Handle image loading
+        setIsImageLoading(true);
+        // Short timeout for cached images
+        timeoutRef.current = setTimeout(() => {
+          setIsImageLoading(false);
+        }, 100);
       }
     }
+
+    return () => {
+      if (playerRef.current && typeof playerRef.current.pause === "function") {
+        try {
+          playerRef.current.pause();
+        } catch (error) {
+          console.warn("Error pausing video during cleanup:", error.message);
+        }
+      }
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
   }, [selectedPost, currentIndex]);
 
   const pausePlayer = () => {
-    if (playerRef.current && typeof playerRef.current.pause === 'function') {
+    if (playerRef.current && typeof playerRef.current.pause === "function") {
       try {
         playerRef.current.pause();
-        console.log('Player paused');
+        console.log("Player paused");
       } catch (error) {
-        console.error('Pause error:', error.message);
+        console.error("Pause error:", error.message);
       }
     }
-  };
-
-  const renderThumbnail = (media) => {
-    const thumbnailUri = media && media.thumbnail_url ? getFullUrl(media.thumbnail_url) : null;
-
-    if (thumbnailUri) {
-      return (
-        <Image
-          source={{ uri: thumbnailUri }}
-          style={styles.thumbnail}
-          resizeMode="cover"
-          onError={(e) => console.error("Thumbnail load error:", thumbnailUri, e.nativeEvent.error)}
-        />
-      );
-    }
-    return (
-      <View style={styles.fallbackContainer}>
-        <Ionicons name={isVideoFile(media) ? "videocam-outline" : "image-outline"} size={40} color="#888" />
-        <Text style={styles.errorText}>No thumbnail available</Text>
-      </View>
-    );
   };
 
   const renderMediaItem = () => {
@@ -154,12 +194,34 @@ const AdminShopPosts = ({ posts, shopId, onPostDeleted }) => {
             )}
           </>
         ) : (
-          <Image
-            source={{ uri: fullUrl }}
-            style={styles.media}
-            resizeMode="contain"
-            onError={(e) => console.error("Image load error:", fullUrl, e.nativeEvent.error)}
-          />
+          <>
+            {isImageLoading && (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#fff" />
+                <Text style={styles.loadingText}>Loading image...</Text>
+              </View>
+            )}
+            <Image
+              source={{ uri: fullUrl }}
+              style={[styles.media, isImageLoading && { opacity: 0 }]}
+              contentFit="contain"
+              cachePolicy="memory-disk"
+              onLoadStart={() => setIsImageLoading(true)}
+              onLoad={() => {
+                setIsImageLoading(false);
+                if (timeoutRef.current) {
+                  clearTimeout(timeoutRef.current);
+                }
+              }}
+              onError={(e) => {
+                console.error("Image load error:", fullUrl, e.error);
+                setIsImageLoading(false);
+                if (timeoutRef.current) {
+                  clearTimeout(timeoutRef.current);
+                }
+              }}
+            />
+          </>
         )}
       </View>
     );
@@ -177,6 +239,7 @@ const AdminShopPosts = ({ posts, shopId, onPostDeleted }) => {
     setSelectedPost(null);
     setCurrentIndex(0);
     setIsVideoLoading(false);
+    setIsImageLoading(false);
     setVideoError(null);
   };
 
@@ -190,12 +253,12 @@ const AdminShopPosts = ({ posts, shopId, onPostDeleted }) => {
   useEffect(() => {
     const fetchSessionId = async () => {
       try {
-        const sessionIdString = await AsyncStorage.getItem('sessionToken');
+        const sessionIdString = await AsyncStorage.getItem("sessionToken");
         setSessionId(sessionIdString);
-        console.log('Fetched sessionId:', sessionIdString ? 'Set' : 'Not found');
+        console.log("Fetched sessionId:", sessionIdString ? "Set" : "Not found");
       } catch (error) {
-        console.error('Error fetching session ID:', error);
-        Alert.alert('Error', 'Failed to retrieve authentication token. Please log in again.');
+        console.error("Error fetching session ID:", error);
+        Alert.alert("Error", "Failed to retrieve authentication token. Please log in again.");
       }
     };
     fetchSessionId();
@@ -217,14 +280,13 @@ const AdminShopPosts = ({ posts, shopId, onPostDeleted }) => {
                 {
                   timeout: 3000,
                   headers: {
-                    'Content-Type': 'application/json',
+                    "Content-Type": "application/json",
                     Authorization: sessionId,
                   },
                 }
               );
               console.log("Delete response:", response.status, response.data);
               Alert.alert("Success", "Post deleted successfully");
-              // Notify parent to remove the post
               onPostDeleted(postId);
               handleCloseModal();
             } catch (error) {
@@ -241,7 +303,7 @@ const AdminShopPosts = ({ posts, shopId, onPostDeleted }) => {
     <View style={styles.container}>
       {sortedPosts && sortedPosts.length > 0 ? (
         <FlatList
-          data={sortedPosts} // Use sortedPosts instead of posts
+          data={sortedPosts}
           keyExtractor={(item) => item.id.toString()}
           numColumns={2}
           renderItem={({ item }) => {
@@ -249,26 +311,16 @@ const AdminShopPosts = ({ posts, shopId, onPostDeleted }) => {
             const isVideo = firstMedia ? isVideoFile(firstMedia) : false;
 
             return (
-              <TouchableOpacity
-                style={styles.postItem}
-                onPress={() => handleImageClick(item)}
-              >
+              <TouchableOpacity style={styles.postItem} onPress={() => handleImageClick(item)}>
                 {firstMedia ? (
-                  isVideo ? (
-                    <View>
-                      {renderThumbnail(firstMedia)}
+                  <View>
+                    <Thumbnail media={firstMedia} isVideo={isVideo} />
+                    {isVideo && (
                       <View style={styles.playIconOverlay}>
                         <Ionicons name="play-circle" size={40} color="white" />
                       </View>
-                    </View>
-                  ) : (
-                    <Image
-                      source={{ uri: getFullUrl(firstMedia.url) }}
-                      style={styles.thumbnail}
-                      resizeMode="cover"
-                      onError={(e) => console.error("Post image error:", firstMedia.url, e.nativeEvent.error)}
-                    />
-                  )
+                    )}
+                  </View>
                 ) : (
                   <View style={styles.fallbackContainer}>
                     <Text style={styles.errorText}>No media available</Text>
@@ -285,34 +337,39 @@ const AdminShopPosts = ({ posts, shopId, onPostDeleted }) => {
 
       {selectedPost && (
         <Modal visible={true} transparent={true} animationType="fade">
-          <View style={styles.modalContainer}>
+          <SafeAreaView style={styles.modalContainer}>
             <TouchableOpacity style={styles.modalClose} onPress={handleCloseModal}>
               <Text style={styles.closeText}>×</Text>
             </TouchableOpacity>
 
-            {renderMediaItem()}
-            <Text style={styles.descriptionText}>{selectedPost.description}</Text>
-
-            <View style={styles.slideControls}>
-              <Text style={styles.slideIndicator}>
-                {`${currentIndex + 1} / ${selectedPost.media.length}`}
-              </Text>
-              <TouchableOpacity style={styles.slideButton} onPress={handleNextMedia}>
-                <Text style={styles.slideText}>Next</Text>
-              </TouchableOpacity>
+            <View style={styles.mediaWrapper}>
+              {renderMediaItem()}
+              <Text style={styles.descriptionText}>{selectedPost.description}</Text>
             </View>
 
-            <TouchableOpacity style={styles.closeViewButton} onPress={handleCloseModal}>
-              <Text style={styles.closeViewText}>Close View</Text>
-            </TouchableOpacity>
+            <View style={styles.controlsContainer}>
+              <View style={styles.slideControls}>
+                <Text style={styles.slideIndicator}>
+                  {`${currentIndex + 1} / ${selectedPost.media.length}`}
+                </Text>
+                <TouchableOpacity style={styles.slideButton} onPress={handleNextMedia}>
+                  <Text style={styles.slideText}>Next</Text>
+                </TouchableOpacity>
+              </View>
 
-            <TouchableOpacity
-              style={styles.deleteButton}
-              onPress={() => handleDelete(selectedPost.id)}
-            >
-              <Text style={styles.deleteText}>Delete</Text>
-            </TouchableOpacity>
-          </View>
+              <View style={styles.buttonContainer}>
+                <TouchableOpacity style={styles.closeViewButton} onPress={handleCloseModal}>
+                  <Text style={styles.closeViewText}>Close View</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.deleteButton}
+                  onPress={() => handleDelete(selectedPost.id)}
+                >
+                  <Text style={styles.deleteText}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </SafeAreaView>
         </Modal>
       )}
     </View>
@@ -333,6 +390,11 @@ const styles = StyleSheet.create({
     margin: 5,
     aspectRatio: 1,
   },
+  thumbnailContainer: {
+    width: "100%",
+    height: "100%",
+    position: "relative",
+  },
   thumbnail: {
     width: "100%",
     height: "100%",
@@ -341,8 +403,6 @@ const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.9)",
-    justifyContent: "center",
-    alignItems: "center",
   },
   modalClose: {
     position: "absolute",
@@ -354,11 +414,17 @@ const styles = StyleSheet.create({
     fontSize: 30,
     color: "#fff",
   },
+  mediaWrapper: {
+    flex: 1, // Take up available space
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 20,
+  },
   mediaContainer: {
-    position: "relative",
-    width: 300,
-    height: 400,
+    width: "100%",
+    aspectRatio: 3 / 4, // Maintain aspect ratio for media
     borderRadius: 10,
+    overflow: "hidden", // Prevent content from spilling out
   },
   media: {
     width: "100%",
@@ -391,20 +457,24 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   deleteButton: {
-    marginTop: 10,
+    flex: 1,
+    marginLeft: 5,
     padding: 10,
     backgroundColor: "#dc3545",
     borderRadius: 5,
+    alignItems: "center",
   },
   deleteText: {
     color: "#fff",
     fontSize: 16,
   },
   closeViewButton: {
-    marginTop: 10,
+    flex: 1,
+    marginRight: 5,
     padding: 10,
     backgroundColor: "#6c757d",
     borderRadius: 5,
+    alignItems: "center",
   },
   closeViewText: {
     color: "#fff",
@@ -456,6 +526,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "rgba(0, 0, 0, 0.5)",
     borderRadius: 10,
+    position: "absolute",
+    zIndex: 10,
+  },
+  controlsContainer: {
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    alignItems: "center",
+  },
+  buttonContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: "100%",
+    marginTop: 10,
   },
 });
 

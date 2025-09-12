@@ -21,13 +21,15 @@ import { SubscriptionContext } from "../../components/SubscriptionProvider";
 
 const CACHE_KEY = "MyShop_Cache";
 const NAVIGATION_THRESHOLD = 3;
+const SESSION_CHECK_INTERVAL = 1000; // Check session every 1s
+const FETCH_DEBOUNCE_MS = 10000; // Debounce fetch by 10s
 
 const MyShop = () => {
   const { subscriptionStatus, loading: subscriptionLoading } = useContext(SubscriptionContext);
   const { showInterstitial, adLoaded } = useNavigationInterstitialAd();
   const [shops, setShops] = useState([]);
   const [sessionId, setSessionId] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [hasFetched, setHasFetched] = useState(false);
   const [error, setError] = useState(false);
   const [showAd, setShowAd] = useState(false);
@@ -40,8 +42,46 @@ const MyShop = () => {
   const lastFetchTimeRef = useRef(0);
   const appStateRef = useRef(AppState.currentState);
   const lastRouteRef = useRef(pathname);
+  const lastSessionIdRef = useRef(null);
 
-  // Load cached data and session ID
+  // Clear cache for new session
+  const clearCache = useCallback(async () => {
+    try {
+      await AsyncStorage.removeItem(CACHE_KEY);
+      console.log("Cache cleared");
+      setShops([]);
+      setHasFetched(false);
+    } catch (error) {
+      console.error("Error clearing cache:", error);
+    }
+  }, []);
+
+  // Check session changes
+  const checkSession = useCallback(async () => {
+    try {
+      const newSessionId = await AsyncStorage.getItem("sessionToken");
+      if (newSessionId !== lastSessionIdRef.current) {
+        console.log("Session changed: old=", lastSessionIdRef.current, "new=", newSessionId);
+        lastSessionIdRef.current = newSessionId;
+        setSessionId(newSessionId);
+        if (newSessionId) {
+          await clearCache();
+          setLoading(true);
+          await fetchShops(newSessionId);
+        } else {
+          setShops([]);
+          setLoading(false);
+          router.push("/login");
+        }
+      }
+    } catch (error) {
+      console.error("Error checking session:", error);
+      setError(true);
+      setLoading(false);
+    }
+  }, [clearCache, router]);
+
+  // Load cached data
   const loadCachedData = useCallback(async () => {
     try {
       const cachedData = await AsyncStorage.getItem(CACHE_KEY);
@@ -49,24 +89,17 @@ const MyShop = () => {
         const data = JSON.parse(cachedData);
         setShops(data || []);
         console.log("Loaded cached shops data");
+        setLoading(false);
+      } else {
+        console.log("No cached data found");
+        setLoading(true); // Trigger fetch if no cache
       }
     } catch (error) {
       console.error("Error loading cached data:", error);
+      setError(true);
+      setLoading(false);
     }
-
-    try {
-      const sessionIdString = await AsyncStorage.getItem("sessionToken");
-      console.log("Fetched sessionToken:", sessionIdString);
-      setSessionId(sessionIdString);
-      if (!sessionIdString) {
-        Alert.alert("Error", "No session token found. Please log in.");
-        router.push("/login");
-      }
-    } catch (error) {
-      console.error("Error fetching session token:", error);
-      Alert.alert("Error", "Failed to load session.");
-    }
-  }, [router]);
+  }, []);
 
   // Save response to cache
   const saveToCache = useCallback(async (data) => {
@@ -79,44 +112,48 @@ const MyShop = () => {
   }, []);
 
   // Fetch shop data from backend
-  const fetchShops = useCallback(async () => {
-    if (!sessionId) {
-      console.log("No sessionId, skipping fetchShops");
-      return;
-    }
+  const fetchShops = useCallback(
+    async (currentSessionId = sessionId) => {
+      if (!currentSessionId) {
+        console.log("No sessionId, skipping fetchShops");
+        setLoading(false);
+        return;
+      }
 
-    const now = Date.now();
-    if (now - lastFetchTimeRef.current < 10000) {
-      console.log("Fetch debounced: too soon since last fetch");
-      return;
-    }
-    lastFetchTimeRef.current = now;
+      const now = Date.now();
+      if (now - lastFetchTimeRef.current < FETCH_DEBOUNCE_MS) {
+        console.log("Fetch debounced: too soon since last fetch");
+        setLoading(false);
+        return;
+      }
+      lastFetchTimeRef.current = now;
 
-    setLoading(true);
-    setError(false);
-    try {
-      const response = await axios.post(
-        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops-product-count/",
-        {},
-        {
-          headers: {
-            Authorization: sessionId,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      console.log("Fetched shops:", response.data);
-      setShops(response.data);
-      setHasFetched(true);
-      saveToCache(response.data);
-    } catch (error) {
-      console.error("Error fetching shops:", error);
-      setError(true);
-      Alert.alert("Error", "Failed to load shops. Using cached data if available.");
-    } finally {
-      setLoading(false);
-    }
-  }, [sessionId, saveToCache]);
+      try {
+        const response = await axios.post(
+          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops-product-count/",
+          {},
+          {
+            headers: {
+              Authorization: currentSessionId,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+        console.log("Fetched shops:", response.data);
+        setShops(response.data);
+        setHasFetched(true);
+        saveToCache(response.data);
+        setError(false);
+      } catch (error) {
+        console.error("Error fetching shops:", error);
+        setError(true);
+        Alert.alert("Error", "Failed to load shops. Using cached data if available.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [sessionId, saveToCache]
+  );
 
   // Increment navigation count
   const incrementNavigationCount = useCallback(async () => {
@@ -157,13 +194,6 @@ const MyShop = () => {
       subscriptionStatus === "free" ||
       subscriptionStatus == null;
 
-    console.log(
-      "Checking ad for user, isFreeOrRegularUser:",
-      isFreeOrRegularUser,
-      "subscriptionStatus:",
-      subscriptionStatus
-    );
-
     if (isFreeOrRegularUser && adLoaded) {
       const count = parseInt(await AsyncStorage.getItem("navigationCount") || "0", 10);
       console.log("Current navigationCount:", count, "adLoaded:", adLoaded);
@@ -186,6 +216,28 @@ const MyShop = () => {
     }
   }, [subscriptionStatus, subscriptionLoading, adLoaded, showInterstitial]);
 
+  // Initial load and session check
+  useEffect(() => {
+    isMountedRef.current = true;
+    const initialize = async () => {
+      await checkSession();
+      await loadCachedData();
+      if (sessionId) {
+        await fetchShops(sessionId);
+      }
+    };
+    initialize();
+
+    // Periodic session check
+    const sessionCheckInterval = setInterval(checkSession, SESSION_CHECK_INTERVAL);
+
+    return () => {
+      isMountedRef.current = false;
+      clearInterval(sessionCheckInterval);
+      console.log("MyShop unmounted");
+    };
+  }, [checkSession, loadCachedData, fetchShops, sessionId]);
+
   // Handle focus with debouncing and route check
   useFocusEffect(
     useCallback(() => {
@@ -197,9 +249,9 @@ const MyShop = () => {
       lastFocusTimeRef.current = now;
 
       console.log("MyShop focused, subscriptionStatus:", subscriptionStatus, "appState:", appStateRef.current);
-      loadCachedData().then(() => {
+      checkSession().then(() => {
         if (sessionId) {
-          fetchShops();
+          fetchShops(); // Fetch fresh data in background
         }
       });
 
@@ -214,13 +266,13 @@ const MyShop = () => {
           }
         });
       } else {
-        console.log("MyShop focused without route change, appState:", appStateRef.current, "prevRoute:", lastRouteRef.current, "currentRoute:", pathname);
+        console.log("MyShop focused without route change, appState:", appStateRef.current);
       }
 
       return () => {
         console.log("MyShop unfocused");
       };
-    }, [loadCachedData, fetchShops, sessionId, incrementNavigationCount, checkAd, subscriptionStatus, pathname])
+    }, [checkSession, fetchShops, sessionId, incrementNavigationCount, checkAd, subscriptionStatus, pathname])
   );
 
   // Track AppState changes
@@ -228,27 +280,26 @@ const MyShop = () => {
     const subscription = AppState.addEventListener("change", (nextAppState) => {
       console.log("AppState changed:", nextAppState);
       appStateRef.current = nextAppState;
+      if (nextAppState === "active") {
+        checkSession();
+      }
     });
     return () => {
       subscription.remove();
       console.log("AppState listener removed");
     };
-  }, []);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    isMountedRef.current = true;
-    return () => {
-      isMountedRef.current = false;
-      console.log("MyShop unmounted");
-    };
-  }, []);
+  }, [checkSession]);
 
   // Handle reload button press
   const handleReload = useCallback(() => {
     console.log("Reload button pressed");
-    loadCachedData().then(fetchShops);
-  }, [loadCachedData, fetchShops]);
+    setLoading(true);
+    checkSession().then(() => {
+      if (sessionId) {
+        fetchShops();
+      }
+    });
+  }, [checkSession, fetchShops, sessionId]);
 
   const handleCloseShop = useCallback(
     async (shopId) => {
@@ -259,7 +310,10 @@ const MyShop = () => {
           onPress: async () => {
             try {
               await axios.delete(
-                `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/close-shop/${shopId}/`
+                `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/close-shop/${shopId}/`,
+                {
+                  headers: { Authorization: sessionId },
+                }
               );
               setShops((prev) => prev.filter((shop) => shop.id !== shopId));
               saveToCache(shops.filter((shop) => shop.id !== shopId));
@@ -272,7 +326,7 @@ const MyShop = () => {
         },
       ]);
     },
-    [saveToCache, shops]
+    [saveToCache, shops, sessionId]
   );
 
   const handleCreateShop = useCallback(async () => {
@@ -295,7 +349,7 @@ const MyShop = () => {
 
   const navigateToShopPage = useCallback(
     async (shopId) => {
-      console.log("Navigating to AdminShopPage, shopId:", shopId, "prevRoute:", pathname);
+      console.log("Navigating to AdminShopPage, shopId:", shopId);
       try {
         const count = await incrementNavigationCount();
         router.push({
@@ -315,7 +369,7 @@ const MyShop = () => {
 
   const navigateToShopProduct = useCallback(
     async (shopId, category) => {
-      console.log("Navigating to ShopProduct, shopId:", shopId, "category:", category, "prevRoute:", pathname);
+      console.log("Navigating to ShopProduct, shopId:", shopId, "category:", category);
       try {
         const count = await incrementNavigationCount();
         router.push({
@@ -335,7 +389,7 @@ const MyShop = () => {
 
   const navigateToShopStatus = useCallback(
     async (shopId) => {
-      console.log("Navigating to ShopStatus, shopId:", shopId, "prevRoute:", pathname);
+      console.log("Navigating to ShopStatus, shopId:", shopId);
       try {
         const count = await incrementNavigationCount();
         router.push({
@@ -355,7 +409,7 @@ const MyShop = () => {
 
   const navigateToReceiptActions = useCallback(
     async (shopId) => {
-      console.log("Navigating to ReceiptActions, shopId:", shopId, "prevRoute:", pathname);
+      console.log("Navigating to ReceiptActions, shopId:", shopId);
       try {
         const count = await incrementNavigationCount();
         router.push({
@@ -375,7 +429,7 @@ const MyShop = () => {
 
   const navigateToDetails = useCallback(
     async (shopId) => {
-      console.log("Navigating to Details, shopId:", shopId, "prevRoute:", pathname);
+      console.log("Navigating to Details, shopId:", shopId);
       try {
         const count = await incrementNavigationCount();
         router.push({
@@ -393,13 +447,15 @@ const MyShop = () => {
     [pathname, router, incrementNavigationCount, checkAd]
   );
 
-  if (loading || showAd) {
+  if (showAd || (loading && shops.length === 0 && !hasFetched)) {
     return (
       <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
         <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#007bff" />
-          <Text style={styles.loadingText}>{showAd ? "Loading Ad..." : "Loading..."}</Text>
+          <Text style={styles.loadingText}>
+            {showAd ? "Loading Ad..." : "Loading your space..."}
+          </Text>
         </View>
       </SafeAreaView>
     );
@@ -409,7 +465,7 @@ const MyShop = () => {
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
       <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
       <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
-        {!loading && error && shops.length === 0 && (
+        {error && shops.length === 0 && (
           <View style={styles.errorContainer}>
             <Text style={styles.errorText}>Failed to load shops due to a network issue.</Text>
             <TouchableOpacity style={styles.reloadButton} onPress={handleReload}>
@@ -419,20 +475,20 @@ const MyShop = () => {
           </View>
         )}
 
-        {!loading && !error && hasFetched && shops.length === 0 && (
+        {!error && hasFetched && shops.length === 0 && (
           <TouchableOpacity style={styles.createShopButton} onPress={handleCreateShop}>
             <MaterialIcons name="add-circle" size={24} color="#fff" />
             <Text style={styles.createShopText}>Create Business Space</Text>
           </TouchableOpacity>
         )}
 
-        {!loading && shops.length === 0 && hasFetched && (
+        {hasFetched && shops.length === 0 && (
           <View style={styles.noShopContainer}>
             <Text style={styles.noShopText}>No space found. Create a new business space to get started.</Text>
           </View>
         )}
 
-        {(shops.length > 0 || (!loading && !hasFetched)) && (
+        {shops.length > 0 && (
           <FlatList
             data={shops}
             keyExtractor={(item) => item.id.toString()}
@@ -451,7 +507,7 @@ const MyShop = () => {
                         onPress={() => navigateToShopPage(item.id)}
                         activeOpacity={0.7}
                       >
-                        <MaterialIcons name="store" size={28} color="#007bff" />
+                        <MaterialIcons name="store" size= {28} color="#007bff" />
                         <Text style={styles.actionText}>Admin</Text>
                       </TouchableOpacity>
                       <TouchableOpacity

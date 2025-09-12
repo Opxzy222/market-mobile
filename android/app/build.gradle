@@ -35,9 +35,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.timeflies.marketmobile'
+    namespace 'com.timeflies.gogomarket'
     defaultConfig {
-        applicationId 'com.timeflies.marketmobile'
+        applicationId 'com.timeflies.gogomarket'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

@@ -29,7 +29,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AdMobManager from '../../components/AdMobManager';
 import { SubscriptionContext } from '../../components/SubscriptionProvider';
-import { getFullUrl } from '../../utils/imageUtils'; // Import the utility
+import { getFullUrl } from '../../utils/imageUtils';
+import { format, parseISO } from 'date-fns'; // Import date-fns for date formatting
 
 const ShopPage = () => {
   const { subscriptionStatus, loading } = useContext(SubscriptionContext);
@@ -52,6 +53,53 @@ const ShopPage = () => {
   const [descriptionAnim] = useState(new Animated.Value(0));
   const [statusAnim] = useState(new Animated.Value(0));
 
+  const fetchShopData = async () => {
+    if (!sessionId || !shopId) return;
+
+    try {
+      const response = await axios.get(
+        `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/${shopId}/combined/`,
+        { headers: { Authorization: sessionId } }
+      );
+      const data = response.data;
+
+      setShop({
+        name: data.shop.name,
+        description: data.shop.description,
+        image: data.shop.image,
+        categories: data.shop.categories,
+        category: data.shop.category,
+        products: data.shop.products,
+        address: data.shop.address,
+        shop_id: data.shop.shop_id,
+        latitude: data.shop.geo_location?.latitude,
+        longitude: data.shop.geo_location?.longitude,
+        is_open: data.shop.is_open,
+        average_rating: typeof data.shop.average_rating === 'number' ? data.shop.average_rating : null,
+        owner_is_verified: data.shop.owner_is_verified || false,
+        created_at: data.shop.created_at, // Add created_at to shop state
+      });
+      setReviews(data.reviews);
+      setFollowerCount(data.follower_count);
+      setFollowers(data.followers || []);
+      setPosts(data.posts);
+      setPlan(data.plan);
+      setError('');
+      if (data.shop.image) {
+        const imageUrl = getFullUrl(data.shop.image);
+        console.log('Prefetching shop image:', imageUrl);
+        Image.prefetch(imageUrl);
+      }
+    } catch (error) {
+      console.error('Error fetching shop data:', error);
+      if (error.response && error.response.status === 404) {
+        setError('This space no longer exists or has been removed.');
+      } else {
+        setError('Failed to fetch space data. Please try again later.');
+      }
+    }
+  };
+
   useEffect(() => {
     const fetchSessionId = async () => {
       try {
@@ -65,46 +113,6 @@ const ShopPage = () => {
   }, []);
 
   useEffect(() => {
-    const fetchShopData = async () => {
-      if (!sessionId || !shopId) return;
-
-      try {
-        const response = await axios.get(
-          `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/${shopId}/combined/`,
-          { headers: { Authorization: sessionId } }
-        );
-        const data = response.data;
-
-        setShop({
-          name: data.shop.name,
-          description: data.shop.description,
-          image: data.shop.image,
-          categories: data.shop.categories,
-          category: data.shop.category,
-          products: data.shop.products,
-          address: data.shop.address,
-          shop_id: data.shop.shop_id,
-          latitude: data.shop.geo_location?.latitude,
-          longitude: data.shop.geo_location?.longitude,
-          is_open: data.shop.is_open,
-        });
-        setReviews(data.reviews);
-        setFollowerCount(data.follower_count);
-        setFollowers(data.followers || []);
-        setPosts(data.posts);
-        setPlan(data.plan);
-        setError('');
-        // Prefetch image
-        if (data.shop.image) {
-          const imageUrl = getFullUrl(data.shop.image);
-          console.log('Prefetching shop image:', imageUrl);
-          Image.prefetch(imageUrl);
-        }
-      } catch (error) {
-        console.error('Error fetching shop data:', error);
-        setError('Failed to fetch shop data. Please try again later.');
-      }
-    };
     fetchShopData();
   }, [sessionId, shopId]);
 
@@ -170,6 +178,17 @@ const ShopPage = () => {
     setSelectedCategory(category);
   };
 
+  // Format the created_at date
+  const formatCreatedAt = (dateString) => {
+    try {
+      const date = parseISO(dateString);
+      return format(date, 'MMMM d, yyyy'); // e.g., "September 11, 2025"
+    } catch (e) {
+      console.error('Error formatting created_at date:', e);
+      return 'Unknown date';
+    }
+  };
+
   const categoryGradients = [
     ['#6B7280', '#4B5563'],
     ['#1D4ED8', '#3B82F6'],
@@ -183,7 +202,7 @@ const ShopPage = () => {
         <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#f39c12" />
-          <Text style={styles.loadingText}>Loading space details...</Text>
+          <Text style={styles.loadingText}>Loading space data...</Text>
         </View>
       </SafeAreaView>
     );
@@ -193,13 +212,31 @@ const ShopPage = () => {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: '#F7FAFC' }}>
         <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
-        <View style={styles.errorContainer}>
+        <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.errorContainer}>
+          <MaterialIcons name="error-outline" size={48} color="#EF4444" />
           <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.reloadButton} onPress={() => fetchShopData()}>
-            <MaterialIcons name="refresh" size={24} color="#FFF" />
-            <Text style={styles.reloadButtonText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
+          {error !== 'This space no longer exists or has been removed.' ? (
+            <TouchableOpacity style={styles.reloadButton} onPress={fetchShopData}>
+              <LinearGradient
+                colors={['#3B82F6', '#1D4ED8']}
+                style={styles.reloadButtonGradient}
+              >
+                <MaterialIcons name="refresh" size={24} color="#FFF" />
+                <Text style={styles.reloadButtonText}>Retry</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={styles.backButtonError} onPress={() => router.back()}>
+              <LinearGradient
+                colors={['#3B82F6', '#1D4ED8']}
+                style={styles.backButtonGradient}
+              >
+                <MaterialIcons name="arrow-back" size={24} color="#FFF" />
+                <Text style={styles.backButtonText}>Go Back</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
+        </LinearGradient>
       </SafeAreaView>
     );
   }
@@ -208,7 +245,6 @@ const ShopPage = () => {
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
       <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
       <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.container}>
-        {/* Unchanged Header */}
         <View style={styles.header}>
           <View style={styles.backContainer}>
             <TouchableOpacity
@@ -239,30 +275,45 @@ const ShopPage = () => {
           keyboardShouldPersistTaps="always"
           keyboardDismissMode="interactive"
         >
-          {/* Updated Shop Header with getFullUrl */}
           <View style={styles.shopHeader}>
             <View style={styles.shopImageContainer}>
               <Image
-                source={{ uri: getFullUrl(shop.image) }} // Use getFullUrl
+                source={{ uri: getFullUrl(shop.image) }}
                 style={styles.backgroundImage}
-                resizeMode="cover" // Update resizeMode
-                onError={(e) => console.error(`Background image load error for shop ${shopId}:`, e.nativeEvent.error)} // Add error handling
+                resizeMode="cover"
+                onError={(e) => console.error(`Background image load error for shop ${shopId}:`, e.nativeEvent.error)}
               />
               <LinearGradient
                 colors={['rgba(0, 0, 0, 0.7)', 'rgba(0, 0, 0, 0.5)']}
                 style={styles.backgroundOverlay}
               />
               <Image
-                source={{ uri: getFullUrl(shop.image) }} // Use getFullUrl
+                source={{ uri: getFullUrl(shop.image) }}
                 style={styles.shopImage}
-                resizeMode="contain" // Keep existing resizeMode
-                onError={(e) => console.error(`Shop image load error for shop ${shopId}:`, e.nativeEvent.error)} // Add error handling
+                resizeMode="contain"
+                onError={(e) => console.error(`Shop image load error for shop ${shopId}:`, e.nativeEvent.error)}
               />
               <View style={styles.imageGlow} />
               <LinearGradient
                 colors={['rgba(0, 0, 0, 0.5)', 'transparent']}
                 style={styles.imageOverlay}
               />
+              <View style={styles.ratingBadgeContainer}>
+                {typeof shop.average_rating === 'number' && !isNaN(shop.average_rating) && (
+                  <View style={styles.ratingBadge}>
+                    <MaterialIcons name="star" size={12} color="#FFD700" />
+                    <Text style={styles.ratingText}>{shop.average_rating.toFixed(1)}</Text>
+                  </View>
+                )}
+              </View>
+              <View style={styles.verifiedContainer}>
+                {shop.owner_is_verified && (
+                  <View style={styles.verifiedBadge}>
+                    <MaterialIcons name="verified" size={12} color="#0FA958" />
+                    <Text style={styles.verifiedText}>Verified</Text>
+                  </View>
+                )}
+              </View>
               <Animated.View style={[styles.shopStatusOverlay, statusAnimStyle]}>
                 <Ionicons
                   name={shop.is_open ? 'checkmark-circle' : 'alert-circle'}
@@ -290,7 +341,7 @@ const ShopPage = () => {
               <View style={styles.mapContainer}>
                 <ShopLocation shopLat={shop.latitude} shopLng={shop.longitude} />
               </View>
-              <Text style={styles.followerCount}>{followerCount} Customers</Text>
+              <Text style={styles.followerCount}>{followers.length} Customers</Text>
               <View style={styles.buttonsContainer}>
                 <FollowButton
                   shopId={shopId}
@@ -326,7 +377,6 @@ const ShopPage = () => {
             </View>
           </View>
 
-          {/* Unchanged About Section */}
           <View style={styles.details}>
             <LinearGradient
               colors={['#FFFFFF', '#F8FAFC']}
@@ -351,6 +401,20 @@ const ShopPage = () => {
               >
                 {shop.description || 'No description available'}
               </Animated.Text>
+              {/* Add Created At display */}
+              {shop.created_at && (
+                <View style={styles.createdAtContainer}>
+                  <LinearGradient
+                    colors={['#E5E7EB', '#D1D5DB']}
+                    style={styles.createdAtBadge}
+                  >
+                    <MaterialIcons name="calendar-today" size={14} color="#4B5563" />
+                    <Text style={styles.createdAtText}>
+                      Created on {formatCreatedAt(shop.created_at)}
+                    </Text>
+                  </LinearGradient>
+                </View>
+              )}
               {shop.description && shop.description.length > 100 && (
                 <TouchableOpacity
                   style={styles.readMoreButton}
@@ -414,7 +478,6 @@ const ShopPage = () => {
             </View>
           </View>
 
-          {/* Unchanged Navigation Bar */}
           <View style={styles.nav}>
             {(shop.category?.name === 'Services'
               ? ['posts', 'services', 'customers', 'reviews']
@@ -436,7 +499,6 @@ const ShopPage = () => {
             ))}
           </View>
 
-          {/* Tab Content with Banner Ad at Bottom */}
           <View style={styles.tabContent}>
             {activeTab === 'posts' &&
               (plan === null || plan === '' ? (
@@ -460,7 +522,6 @@ const ShopPage = () => {
               </View>
             )}
           </View>
-          {/* Banner Ad for Non-Subscribed Users */}
           {!['regular', 'standard', 'premium'].includes(subscriptionStatus) && (
             <View style={styles.adContainer}>
               <AdMobManager />
@@ -477,7 +538,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f4f4f4',
   },
-  // Unchanged Header Styles
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -519,7 +579,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
-  // Unchanged Shop Header Styles
   content: {
     paddingHorizontal: 8,
     paddingVertical: 10,
@@ -593,6 +652,65 @@ const styles = StyleSheet.create({
     height: '40%',
     borderTopLeftRadius: 12,
     borderTopRightRadius: 12,
+  },
+  ratingBadgeContainer: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  verifiedContainer: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    zIndex: 10,
+  },
+  ratingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#222',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+    marginRight: 4,
+  },
+  ratingText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#FFD700',
+    marginLeft: 4,
+  },
+  verifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E3FCEF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#0FA958',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 3,
+    marginRight: 4,
+  },
+  verifiedText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#0FA958',
+    marginLeft: 4,
   },
   shopStatusOverlay: {
     position: 'absolute',
@@ -692,7 +810,6 @@ const styles = StyleSheet.create({
   buttonIcon: {
     marginRight: 6,
   },
-  // Unchanged About Section Styles
   details: {
     marginVertical: 15,
   },
@@ -729,6 +846,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#4B5563',
     lineHeight: 24,
+    fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'Roboto',
+  },
+  createdAtContainer: {
+    marginTop: 12,
+    alignItems: 'flex-start',
+  },
+  createdAtBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: '#E5E7EB',
+  },
+  createdAtText: {
+    fontSize: 14,
+    color: '#4B5563',
+    fontWeight: '600',
+    marginLeft: 6,
     fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'Roboto',
   },
   readMoreButton: {
@@ -834,7 +970,6 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'Roboto',
   },
-  // Unchanged Navigation Bar Styles
   nav: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -875,7 +1010,6 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     marginTop: 4,
   },
-  // Unchanged Tab Content and Other Styles
   tabContent: {
     padding: 15,
     backgroundColor: '#ffffff',
@@ -893,26 +1027,24 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   errorText: {
-    fontSize: 16,
-    color: 'red',
+    fontSize: 18,
+    color: '#EF4444',
     textAlign: 'center',
-    marginTop: 20,
+    marginTop: 10,
+    marginBottom: 20,
+    fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'Roboto',
   },
-  postsContainer: {
-    
-  },
+  postsContainer: {},
   reviewsContainer: {
     minHeight: 300,
     maxHeight: 600,
   },
-  // New Ad Container Style
   adContainer: {
     width: '100%',
     alignItems: 'center',
     marginTop: 10,
     marginBottom: 20,
   },
-  // New Loading and Error Styles
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -936,13 +1068,37 @@ const styles = StyleSheet.create({
   reloadButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#2563EB',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  reloadButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 20,
-    borderRadius: 8,
-    marginTop: 20,
+    borderRadius: 12,
   },
   reloadButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  backButtonError: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginTop: 20,
+  },
+  backButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+  },
+  backButtonText: {
     color: '#FFF',
     fontSize: 16,
     fontWeight: '600',

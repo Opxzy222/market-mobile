@@ -74,6 +74,7 @@ const EnterOTPScreen = () => {
         value={otp}
         onChangeText={setOtp}
         placeholder="Enter OTP"
+        placeholderTextColor="#5A5A5A"
         keyboardType="numeric"
         maxLength={6}
       />

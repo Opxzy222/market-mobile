@@ -61,6 +61,7 @@ const ShopIdSearch = () => {
         <TextInput
           style={styles.input}
           placeholder="Enter Space ID"
+          placeholderTextColor="#888"
           value={shopId}
           onChangeText={setShopId}
         />

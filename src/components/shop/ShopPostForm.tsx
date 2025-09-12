@@ -404,6 +404,7 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
             ref={textInputRef}
             style={[styles.input, isFocused && styles.inputFocused]}
             placeholder="Enter post description"
+            placeholderTextColor="#888"
             value={description}
             onChangeText={setDescription}
             multiline

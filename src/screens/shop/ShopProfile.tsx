@@ -306,7 +306,7 @@ const CustomMultiSelect = React.memo<MultiSelectProps>(
                       tempSelected.some((selected) => selected.id === item.id) &&
                         styles.selectedModalItemText,
                     ]}
-                    >
+                  >
                     {item.name}
                   </Text>
                   {tempSelected.some((selected) => selected.id === item.id) && (
@@ -403,9 +403,12 @@ const ShopProfileScreen: React.FC = () => {
         const response = await axios.post<{ categories: { id: number; name: string }[] }>(
           "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/category/dropdown-options/"
         );
-        setParentCategories(
-          response.data.categories.map((cat) => ({ key: cat.id, value: cat.name }))
-        );
+        // Sort parent categories alphabetically by name
+        const sortedParentCategories = response.data.categories
+          .map((cat) => ({ key: cat.id, value: cat.name }))
+          .sort((a, b) => a.value.localeCompare(b.value));
+        setParentCategories(sortedParentCategories);
+        console.log("Sorted parent categories fetched:", sortedParentCategories);
       } catch (error) {
         console.error("Error fetching parent categories:", error);
       }
@@ -431,21 +434,22 @@ const ShopProfileScreen: React.FC = () => {
           formData,
           { headers: { "Content-Type": "multipart/form-data" } }
         );
-        const formattedSubcategories: Subcategory[] = response.data.subcategories.map(
-          (subcat) => ({ key: subcat.id, value: subcat.name })
-        );
+        // Sort subcategories alphabetically by name
+        const sortedSubcategories = response.data.subcategories
+          .map((subcat) => ({ key: subcat.id, value: subcat.name }))
+          .sort((a, b) => a.value.localeCompare(b.value));
         console.log(
-          "Fetched subcategories for parent",
+          "Sorted subcategories fetched for parent",
           selectedParentCategory,
           ":",
-          formattedSubcategories
+          sortedSubcategories
         );
-        setSubcategories(formattedSubcategories);
+        setSubcategories(sortedSubcategories);
 
         // Preselect subcategories that match initialSubcategoryIds and belong to the current parent
         const preselected = initialSubcategoryIds
           .map((id) => {
-            const subcategory = formattedSubcategories.find((sub) => sub.key === id);
+            const subcategory = sortedSubcategories.find((sub) => sub.key === id);
             return subcategory ? { label: subcategory.value, value: subcategory.key } : null;
           })
           .filter((item): item is MultiSelectItem => item !== null);
@@ -607,7 +611,7 @@ const ShopProfileScreen: React.FC = () => {
       setOriginalParentCategory(selectedParentCategory);
       setInitialSubcategoryIds(sortedCurrentSubIds);
 
-      alert("Success", "Shop profile updated successfully!");
+      alert("Success", "Space profile updated successfully!");
       router.back();
     } catch (error) {
       console.error("Error updating shop:", error);
@@ -653,7 +657,7 @@ const ShopProfileScreen: React.FC = () => {
               <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
                 <MaterialIcons name="arrow-back" size={26} color="white" />
               </TouchableOpacity>
-              <Text style={styles.headerTitle}>Shop Profile</Text>
+              <Text style={styles.headerTitle}>Space Profile</Text>
               <View style={styles.headerSpacer} />
             </View>
 
@@ -674,12 +678,13 @@ const ShopProfileScreen: React.FC = () => {
               keyboardShouldPersistTaps="handled"
             >
               <View style={styles.card}>
-                <Text style={styles.label}>Shop Name</Text>
+                <Text style={styles.label}>Business Name</Text>
                 <TextInput
                   style={styles.input}
                   value={name}
                   onChangeText={handleNameChange}
-                  placeholder="Enter Shop Name"
+                  placeholder="Enter Business Name"
+                  placeholderTextColor="#5A5A5A"
                   blurOnSubmit
                   returnKeyType="done"
                   onFocus={() => console.log("Shop Name TextInput focused")}
@@ -690,7 +695,8 @@ const ShopProfileScreen: React.FC = () => {
                   style={[styles.input, styles.textArea]}
                   value={description}
                   onChangeText={handleDescriptionChange}
-                  placeholder="Enter Shop Description"
+                  placeholder="Enter Business Description"
+                  placeholderTextColor="#5A5A5A"
                   multiline
                   blurOnSubmit
                   returnKeyType="done"
@@ -702,7 +708,8 @@ const ShopProfileScreen: React.FC = () => {
                   style={styles.input}
                   value={address}
                   onChangeText={handleAddressChange}
-                  placeholder="Enter Shop Address"
+                  placeholder="Enter Business Address"
+                  placeholderTextColor="#5A5A5A"
                   blurOnSubmit
                   returnKeyType="done"
                   onFocus={() => console.log("Address TextInput focused")}
@@ -748,7 +755,7 @@ const ShopProfileScreen: React.FC = () => {
                     style={styles.gradientButton}
                   >
                     <Text style={styles.updateButtonText}>
-                      {isSubmitting ? "Updating..." : "Update Shop"}
+                      {isSubmitting ? "Updating..." : "Update Profile"}
                     </Text>
                   </LinearGradient>
                 </TouchableOpacity>

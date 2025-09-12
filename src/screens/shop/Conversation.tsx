@@ -55,12 +55,18 @@ const Conversation = () => {
   const lastCacheAttempt = useRef(0);
   const lastMessagesLength = useRef(0);
   const isDatabaseInitialized = useRef(false);
+  const hasFetchedMessages = useRef(false);
 
   const params = useLocalSearchParams();
   const router = useRouter();
   const pathname = usePathname();
   const { conversation_id, shop_id, prevRoute, name, shop_is_active, shopId } = params;
   const isShopActive = shop_is_active === "true";
+
+  const isValidConversationId = (id) => !!id && id !== 'undefined' && !isNaN(parseInt(id, 10));
+
+  const pendingCacheOperations = useRef([]);
+  const isCaching = useRef(false);
 
   // Initialize database and clean up corrupted data
   useEffect(() => {
@@ -79,7 +85,7 @@ const Conversation = () => {
         // One-time cleanup of corrupted SQLite data
         const db = await getSingletonSQLiteDatabase();
         const rows = await db.getAllAsync<{ key: string; value: string }>(
-          "SELECT key, value FROM secure_data WHERE key LIKE 'messages_%';"
+          "SELECT key, value FROM secure_data WHERE key LIKE 'messages_%' OR key LIKE 'conversation_id_%';"
         );
         for (const row of rows) {
           const isValid = /^[A-Za-z0-9+/=]+$/.test(row.value) && row.value.length % 4 === 0;
@@ -106,7 +112,15 @@ const Conversation = () => {
         ]);
         setSessionId(sessionIdString);
         if (userIdString) {
-          setUserId(parseInt(userIdString, 10));
+          const parsedUserId = parseInt(userIdString, 10);
+          if (!isNaN(parsedUserId)) {
+            setUserId(parsedUserId);
+            console.log("User ID loaded:", parsedUserId);
+          } else {
+            console.warn("Invalid userId in AsyncStorage:", userIdString);
+          }
+        } else {
+          console.warn("No userId found in AsyncStorage");
         }
       } catch (error) {
         console.error("Error loading session data:", error);
@@ -115,12 +129,28 @@ const Conversation = () => {
     loadSessionData();
   }, []);
 
+  // Load cached conversation ID if current is invalid
+  useEffect(() => {
+    const loadCachedConversation = async () => {
+      if (shopId && !isValidConversationId(conversation_id)) {
+        const cachedId = await loadCachedConversationId(shopId);
+        if (cachedId && isValidConversationId(cachedId) && cachedId !== lastConversationId.current) {
+          console.log("Setting conversation_id from cache:", cachedId);
+          lastConversationId.current = cachedId;
+          router.setParams({ conversation_id: cachedId });
+        }
+      }
+    };
+    loadCachedConversation();
+  }, [shopId, conversation_id, router]);
+
   // Clear messages when conversation_id changes
   useEffect(() => {
     console.log("Conversation ID changed:", conversation_id);
     setMessages([]);
     setMessagesLoaded(false);
     receivedMessagesRef.current.clear();
+    hasFetchedMessages.current = false; // Reset fetch guard on conversation_id change
   }, [conversation_id]);
 
   // Clean up old caches in SQLite
@@ -128,14 +158,13 @@ const Conversation = () => {
     try {
       const now = Date.now();
       const db = await getSingletonSQLiteDatabase();
-      
-      // Query all message keys in secure_data table
-      const rows = await db.getAllAsync<{ key: string }>(
-        "SELECT key FROM secure_data WHERE key LIKE 'messages_%';"
-      );
-      const messageKeys = rows.map((row) => row.key);
 
-      for (const key of messageKeys) {
+      const rows = await db.getAllAsync<{ key: string }>(
+        "SELECT key FROM secure_data WHERE key LIKE 'messages_%' OR key LIKE 'conversation_id_%';"
+      );
+      const cacheKeys = rows.map((row) => row.key);
+
+      for (const key of cacheKeys) {
         const cachedData = await getData(key);
         if (cachedData) {
           try {
@@ -162,6 +191,61 @@ const Conversation = () => {
     }
   };
 
+  // Cache conversation ID with timestamp
+  const cacheConversationId = async (shopId, conversationId) => {
+    const cacheKey = `conversation_id_${shopId}`;
+    try {
+      const cacheData = {
+        timestamp: Date.now(),
+        conversationId,
+      };
+      await storeData(cacheKey, JSON.stringify(cacheData));
+      console.log(`Cached conversationId in SQLite: ${conversationId} for shopId: ${shopId}, timestamp: ${new Date(cacheData.timestamp).toISOString()}`);
+    } catch (error) {
+      console.error(`Error caching conversationId for ${cacheKey}:`, error);
+    }
+  };
+
+  // Load cached conversation ID
+  const loadCachedConversationId = async (shopId) => {
+    const cacheKey = `conversation_id_${shopId}`;
+    try {
+      const cached = await getData(cacheKey);
+      if (cached) {
+        try {
+          if (!cached.match(/^{.*}$/)) {
+            console.error(`Invalid JSON for key ${cacheKey}:`, cached);
+            const db = await getSingletonSQLiteDatabase();
+            await db.runAsync("DELETE FROM secure_data WHERE key = ?;", [cacheKey]);
+            console.log(`Removed invalid cache from SQLite: ${cacheKey}`);
+            return null;
+          }
+          const { timestamp, conversationId } = JSON.parse(cached);
+          const now = Date.now();
+          if (timestamp && now - timestamp <= CACHE_EXPIRATION_MS) {
+            console.log(`Loaded cached conversationId from SQLite: ${conversationId} for ${cacheKey}, timestamp: ${new Date(timestamp).toISOString()}`);
+            return conversationId;
+          } else {
+            const db = await getSingletonSQLiteDatabase();
+            await db.runAsync("DELETE FROM secure_data WHERE key = ?;", [cacheKey]);
+            console.log(`Removed expired conversationId cache from SQLite: ${cacheKey}`);
+            return null;
+          }
+        } catch (parseError) {
+          console.error(`Error parsing conversationId for ${cacheKey}:`, parseError, "Data:", cached);
+          const db = await getSingletonSQLiteDatabase();
+          await db.runAsync("DELETE FROM secure_data WHERE key = ?;", [cacheKey]);
+          console.log(`Removed corrupted cache from SQLite: ${cacheKey}`);
+          return null;
+        }
+      }
+      return null;
+    } catch (error) {
+      console.error(`Error loading cached conversationId for ${cacheKey}:`, error);
+      return null;
+    }
+  };
+
   // Load cached messages
   const loadCachedMessages = async () => {
     const cacheKey = `messages_${conversation_id}`;
@@ -170,7 +254,7 @@ const Conversation = () => {
       const cached = await getData(cacheKey);
       if (cached) {
         try {
-          if (!cached.match(/^{.*}$|^\[.*\]$/)) {
+          if (!cached.match(/^{.*}$/)) {
             console.error(`Invalid JSON for key ${cacheKey}:`, cached);
             const db = await getSingletonSQLiteDatabase();
             await db.runAsync("DELETE FROM secure_data WHERE key = ?;", [cacheKey]);
@@ -214,14 +298,64 @@ const Conversation = () => {
     }
   };
 
+  // Debounced cacheMessages to prevent transaction conflicts
+  const cacheMessages = async (messagesToCache, localConversationId = conversation_id) => {
+    const cacheKey = `messages_${localConversationId}`;
+    const operation = async () => {
+      try {
+        const now = Date.now();
+        const recentMessages = messagesToCache.filter(
+          (msg) =>
+            now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+            msg.conversation_id === localConversationId
+        );
+        const cacheData = {
+          timestamp: now,
+          messages: recentMessages,
+        };
+        console.log(`Preparing to cache messages for ${cacheKey}, messageCount: ${recentMessages.length}`);
+        await storeData(cacheKey, JSON.stringify(cacheData));
+        console.log(
+          `Cached messages in SQLite for ${cacheKey}, timestamp: ${new Date(
+            now
+          ).toISOString()}, messageCount: ${recentMessages.length}`
+        );
+      } catch (error) {
+        console.error(`Error caching messages for ${cacheKey}:`, error);
+      }
+    };
+
+    pendingCacheOperations.current.push(operation);
+    if (isCaching.current) {
+      console.log(`Queueing cache operation for ${cacheKey}, pending operations: ${pendingCacheOperations.current.length}`);
+      return;
+    }
+
+    isCaching.current = true;
+    while (pendingCacheOperations.current.length > 0) {
+      const nextOperation = pendingCacheOperations.current.shift();
+      try {
+        await nextOperation();
+      } catch (error) {
+        console.error(`Error executing queued cache operation for ${cacheKey}:`, error);
+      }
+    }
+    isCaching.current = false;
+  };
+
+  // Load cached data and fetch messages
   useEffect(() => {
     const loadCachedData = async () => {
-      if (!conversation_id) return;
+      if (!isValidConversationId(conversation_id)) return;
       try {
         await cleanOldCaches();
         const cachedMessages = await loadCachedMessages();
         setMessages(cachedMessages);
         setMessagesLoaded(!!cachedMessages.length);
+        if (!hasFetchedMessages.current) {
+          hasFetchedMessages.current = true;
+          await fetchMessages();
+        }
       } catch (error) {
         console.error("Error loading cached data:", error);
       }
@@ -229,30 +363,9 @@ const Conversation = () => {
     loadCachedData();
   }, [conversation_id]);
 
-  // Cache messages with timestamp
-  const cacheMessages = async (messagesToCache, localConversationId = conversation_id) => {
-    const cacheKey = `messages_${localConversationId}`;
-    const now = Date.now();
-    try {
-      const recentMessages = messagesToCache.filter(
-        (msg) =>
-          now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
-          msg.conversation_id === localConversationId
-      );
-      const cacheData = {
-        timestamp: now,
-        messages: recentMessages,
-      };
-      await storeData(cacheKey, JSON.stringify(cacheData));
-      console.log(`Cached messages for ${cacheKey}, timestamp: ${new Date(now).toISOString()}`);
-    } catch (error) {
-      console.error("Error caching messages:", error);
-    }
-  };
-
   // Fetch messages
   const fetchMessages = async () => {
-    if (!conversation_id || !sessionId) return;
+    if (!isValidConversationId(conversation_id) || !sessionId) return;
 
     setLoading(true);
     setFetchError(false);
@@ -342,6 +455,19 @@ const Conversation = () => {
           ),
           ...normalizedMessages,
         ].sort((a, b) => a.id - b.id);
+
+        // Mark all user messages as read if receiver has replied
+        const hasReceiverReply = merged.some((msg) => msg.sender_id !== userId && !msg.pending);
+        if (hasReceiverReply) {
+          console.log("Marking all user messages as read due to existing receiver replies");
+          merged.forEach((msg) => {
+            if (msg.sender_id === userId && !msg.pending && !msg.read) {
+              console.log(`Marking message ${msg.id} as read`);
+              msg.read = true;
+            }
+          });
+        }
+
         cacheMessages(merged, conversation_id);
         setMessagesLoaded(true);
         return merged;
@@ -359,14 +485,14 @@ const Conversation = () => {
   };
 
   useEffect(() => {
-    if (conversation_id && sessionId) {
+    if (isValidConversationId(conversation_id) && sessionId) {
       fetchMessages();
     }
   }, [conversation_id, sessionId]);
 
   // Mark messages as read
   const markMessagesAsRead = async () => {
-    if (!conversation_id || !sessionId || messages.length === 0) return;
+    if (!isValidConversationId(conversation_id) || !sessionId || messages.length === 0) return;
 
     try {
       await axios.post(
@@ -386,29 +512,77 @@ const Conversation = () => {
 
   // WebSocket connection
   useEffect(() => {
-    if (!conversation_id) return;
+    if (!isValidConversationId(conversation_id) || !userId) {
+      console.warn("Cannot connect WebSocket: invalid conversation_id or userId", { conversation_id, userId });
+      return;
+    }
 
+    console.log("Connecting WebSocket for conversation_id:", conversation_id, "with userId:", userId);
     const connectWebSocket = () => {
       const websocketUrl = `wss://retail-alvinia-goza-f6a0e4f7.koyeb.app/ws/chat/${conversation_id}/?user_id=${userId}`;
       websocketRef.current = new WebSocket(websocketUrl);
 
+      websocketRef.current.onopen = () => {
+        console.log("WebSocket connected");
+        // Mark all user messages as read if receiver has replied
+        setMessages((prevMessages) => {
+          const hasReceiverReply = prevMessages.some((msg) => msg.sender_id !== userId && !msg.pending);
+          if (hasReceiverReply) {
+            console.log("WebSocket connected: Marking all user messages as read due to existing receiver replies");
+            const updatedMessages = prevMessages.map((msg) => {
+              if (msg.sender_id === userId && !msg.pending && !msg.read) {
+                console.log(`Marking message ${msg.id} as read`);
+                return { ...msg, read: true };
+              }
+              return msg;
+            });
+            cacheMessages(updatedMessages, conversation_id);
+            return updatedMessages;
+          }
+          return prevMessages;
+        });
+      };
+
       websocketRef.current.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          console.log("WebSocket message received:", JSON.stringify(data));
+          console.log("WebSocket message received:", {
+            message_id: data.message_id,
+            temp_id: data.temp_id,
+            conversation_id: data.conversation_id,
+            type: data.type,
+            msg_type: data.msg_type,
+            attachment: data.attachment,
+            thumbnail_url: data.thumbnail_url,
+            sender_id: data.sender_id,
+            message_ids: data.message_ids,
+            read: data.read,
+          });
 
           // Validate conversation_id
           if (data.conversation_id && data.conversation_id !== conversation_id) {
-            console.log(`Ignoring message for different conversation: ${data.conversation_id}`);
+            console.log(`Ignoring message for different conversation: ${data.conversation_id}, expected: ${conversation_id}`);
+            return;
+          }
+
+          const now = Date.now();
+          const messageTime = new Date(data.timestamp || new Date().toISOString()).getTime();
+          if (now - messageTime > CACHE_EXPIRATION_MS) {
+            console.log(`Skipping old WebSocket message: ${data.message_id}`);
             return;
           }
 
           if (data.type === "read_update") {
+            console.log("Processing read_update:", { message_ids: data.message_ids, conversation_id: data.conversation_id });
+            if (!data.message_ids || !Array.isArray(data.message_ids)) {
+              console.warn("Invalid or missing message_ids in read_update:", data.message_ids);
+              return;
+            }
             setMessages((prevMessages) => {
               const updatedMessages = prevMessages
                 .filter(
                   (msg) =>
-                    Date.now() - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+                    now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
                     msg.conversation_id === conversation_id
                 )
                 .map((msg) =>
@@ -416,26 +590,21 @@ const Conversation = () => {
                     ? { ...msg, read: true }
                     : msg
                 );
+              console.log("Updated read status for messages:", data.message_ids);
               cacheMessages(updatedMessages, conversation_id);
               return updatedMessages;
             });
-          } else if (data.type === "chat_message") {
+          } else if (data.type !== "unread_message_notification") {
             const messageId = Number(data.message_id);
             const tempId = data.temp_id;
 
             if (!messageId || isNaN(messageId)) {
-              console.log("Invalid message_id:", data.message_id);
+              console.warn("Invalid message ID, ignoring:", messageId);
               return;
             }
 
             if (receivedMessagesRef.current.has(messageId)) {
-              console.log("Duplicate message ignored by message_id:", messageId);
-              return;
-            }
-
-            const messageTime = new Date(data.timestamp || new Date().toISOString()).getTime();
-            if (Date.now() - messageTime > CACHE_EXPIRATION_MS) {
-              console.log(`Skipping old WebSocket message: ${messageId}`);
+              console.log(`Message ${messageId} already processed, skipping...`);
               return;
             }
 
@@ -474,7 +643,7 @@ const Conversation = () => {
                 updatedMessages[existingIndex] = {
                   ...updatedMessages[existingIndex],
                   id: messageId,
-                  conversation_id, // Ensure conversation_id
+                  conversation_id,
                   attachment: attachmentPath || updatedMessages[existingIndex].attachment,
                   content: data.message || null,
                   msg_type: normalizedType,
@@ -484,18 +653,19 @@ const Conversation = () => {
                   name: data.attachment?.split("/").pop() || updatedMessages[existingIndex].name,
                   sender_id: data.sender_id,
                   timestamp: data.timestamp || updatedMessages[existingIndex].timestamp,
+                  temp_id: tempId,
                 };
               } else {
                 console.log("Adding new message:", { messageId, tempId, conversation_id });
                 updatedMessages = [
                   ...prevMessages.filter(
                     (msg) =>
-                      Date.now() - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+                      now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
                       msg.conversation_id === conversation_id
                   ),
                   {
                     id: messageId,
-                    conversation_id, // Ensure conversation_id
+                    conversation_id,
                     content: data.message || null,
                     sender_id: data.sender_id,
                     timestamp: data.timestamp || new Date().toISOString(),
@@ -509,6 +679,19 @@ const Conversation = () => {
                   },
                 ];
               }
+
+              // Mark all user messages as read if this is a reply from the receiver
+              if (data.sender_id !== userId && messages.length > 0) {
+                console.log("Receiver replied: Marking all user messages as read");
+                updatedMessages = updatedMessages.map((msg) => {
+                  if (msg.sender_id === userId && !msg.pending && !msg.read) {
+                    console.log(`Marking message ${msg.id} as read`);
+                    return { ...msg, read: true };
+                  }
+                  return msg;
+                });
+              }
+
               cacheMessages(updatedMessages, conversation_id);
               return updatedMessages.sort((a, b) => a.id - b.id);
             });
@@ -516,17 +699,19 @@ const Conversation = () => {
             if (isAtBottom) {
               InteractionManager.runAfterInteractions(() => {
                 if (flatListRef.current) {
+                  console.log("Scrolling to bottom after WebSocket message");
                   flatListRef.current.scrollToEnd({ animated: true });
                 }
               });
             }
 
             if (isScreenFocused.current) {
+              console.log("Marking messages as read after WebSocket message");
               markMessagesAsRead();
             }
           }
         } catch (error) {
-          console.error("WebSocket message error:", error);
+          console.error("WebSocket message parse error:", error, "Raw data:", event.data);
         }
       };
 
@@ -534,26 +719,74 @@ const Conversation = () => {
         console.error("WebSocket error:", error);
       };
 
-      websocketRef.current.onclose = () => {
-        console.log("WebSocket closed");
+      websocketRef.current.onclose = (event) => {
+        console.log("WebSocket closed:", { code: event.code, reason: event.reason });
+        setTimeout(connectWebSocket, 3000); // Reconnect after 3 seconds
       };
     };
 
     connectWebSocket();
 
     return () => {
+      console.log("Closing WebSocket...");
       websocketRef.current?.close();
     };
   }, [conversation_id, userId]);
 
+  // Create conversation
+  const createConversation = async () => {
+    if (!shopId || !userId || !sessionId) return null;
+    try {
+      const response = await axios.post(
+        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/conversation/",
+        { shop_id: String(shopId), sender_id: String(userId) },
+        {
+          headers: {
+            Authorization: sessionId,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      const newId = String(response.data.conversation_id);
+      if (isValidConversationId(newId)) {
+        await cacheConversationId(shopId, newId);
+        router.setParams({ conversation_id: newId });
+        return newId;
+      }
+    } catch (error) {
+      console.error("Error creating conversation:", error);
+      Alert.alert("Error", "Unable to start the conversation. Please try again.");
+    }
+    return null;
+  };
+
   // Send message via WebSocket
-  const handleSendMessage = useCallback(() => {
+  const handleSendMessage = useCallback(async () => {
     if (!isShopActive) {
       Alert.alert("Cannot Send", "This shop is no longer active.");
       return;
     }
 
-    if (!inputMessage.trim() || !websocketRef.current || !conversation_id) return;
+    if (!inputMessage.trim() || !websocketRef.current || !isValidConversationId(conversation_id)) {
+      if (!isValidConversationId(conversation_id)) {
+        const newId = await createConversation();
+        if (!newId) return;
+      } else {
+        console.warn("Cannot send WebSocket message: Invalid input or WebSocket not ready", {
+          inputMessage: !!inputMessage.trim(),
+          websocket: !!websocketRef.current,
+          conversation_id,
+          readyState: websocketRef.current?.readyState,
+        });
+        return;
+      }
+    }
+
+    if (websocketRef.current.readyState !== WebSocket.OPEN) {
+      console.warn("WebSocket not open, message not sent", { readyState: websocketRef.current.readyState });
+      Alert.alert("Connection Issue", "Unable to send message. Please try again.");
+      return;
+    }
 
     const tempId = Date.now();
     const now = Date.now();
@@ -572,17 +805,20 @@ const Conversation = () => {
           timestamp: new Date().toISOString(),
           attachment: null,
           thumbnail_url: null,
-          type: "text",
+          msg_type: "text",
           read: false,
           pending: true,
-          conversation_id, // Add conversation_id
+          conversation_id,
+          temp_id: tempId,
         },
       ];
+      console.log("Adding temp WebSocket message:", tempId);
       cacheMessages(newMessages, conversation_id);
       return newMessages;
     });
 
     try {
+      console.log("Sending WebSocket message:", inputMessage);
       websocketRef.current.send(
         JSON.stringify({
           content: inputMessage,
@@ -596,6 +832,7 @@ const Conversation = () => {
       setIsAtBottom(true);
       InteractionManager.runAfterInteractions(() => {
         if (messages.length > 0) {
+          console.log("Scrolling to bottom after sending WebSocket message");
           flatListRef.current?.scrollToEnd({ animated: true });
         }
       });
@@ -604,9 +841,14 @@ const Conversation = () => {
       Alert.alert("Message Failed", "Unable to send message. Please try again.");
 
       setMessages((prevMessages) => {
+        const now = Date.now();
         const updatedMessages = prevMessages.filter(
-          (msg) => (msg.id !== tempId && msg.temp_id !== tempId) && msg.conversation_id === conversation_id
+          (msg) =>
+            (msg.id !== tempId && msg.temp_id !== tempId) &&
+            now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+            msg.conversation_id === conversation_id
         );
+        console.log("Removing failed WebSocket temp message:", tempId);
         cacheMessages(updatedMessages, conversation_id);
         return updatedMessages;
       });
@@ -621,9 +863,21 @@ const Conversation = () => {
         return;
       }
 
-      if (!file?.uri || !conversation_id || !userId || !shopId) {
-        Alert.alert("Error", "Invalid file or conversation details.");
+      if (!file?.uri || !userId || !shopId) {
+        console.error("Invalid file, userId, or shopId:", {
+          fileUri: file?.uri,
+          userId,
+          shopId,
+        });
+        Alert.alert("Error", "Invalid file or user details.");
         return;
+      }
+
+      let currentConversationId = conversation_id;
+      if (!isValidConversationId(currentConversationId)) {
+        const newId = await createConversation();
+        if (!newId) return;
+        currentConversationId = newId;
       }
 
       const tempId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -636,7 +890,6 @@ const Conversation = () => {
           : type === "pdf" || fileExtension === "pdf"
           ? "pdf"
           : "image";
-
       const now = Date.now();
       const fileName =
         file.fileName ||
@@ -644,12 +897,12 @@ const Conversation = () => {
         `file_${Date.now()}.${normalizedType === "video" ? "mp4" : normalizedType === "pdf" ? "pdf" : "jpg"}`;
 
       setMessages((prevMessages) => {
-        console.log("Adding temporary message:", { tempId, attachment: file.uri, conversation_id });
+        console.log("Adding temporary message:", { tempId, attachment: file.uri, conversation_id: currentConversationId });
         const newMessages = [
           ...prevMessages.filter(
             (msg) =>
               now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
-              msg.conversation_id === conversation_id
+              msg.conversation_id === (currentConversationId || `temp_${shopId}`)
           ),
           {
             id: tempId,
@@ -663,10 +916,10 @@ const Conversation = () => {
             pending: true,
             name: fileName,
             temp_id: tempId,
-            conversation_id, // Add conversation_id
+            conversation_id: currentConversationId || `temp_${shopId}`,
           },
         ];
-        cacheMessages(newMessages, conversation_id);
+        cacheMessages(newMessages, currentConversationId || `temp_${shopId}`);
         return newMessages;
       });
 
@@ -674,7 +927,6 @@ const Conversation = () => {
         const formData = new FormData();
         formData.append("sender_id", String(userId));
         formData.append("shop_id", String(shopId));
-        formData.append("conversation_id", conversation_id);
         formData.append("msg_type", normalizedType);
 
         let fileUri = file.uri;
@@ -704,87 +956,111 @@ const Conversation = () => {
 
         formData.append("file", newFile);
 
+        console.log("Uploading attachment:", { type: normalizedType, fileName });
         const response = await axios.post(
-          `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/upload/${conversation_id}/`,
+          `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/upload/${currentConversationId}/`,
           formData,
           {
-            headers: { "Content-Type": "multipart/form-data", Authorization: sessionId },
+            headers: {
+              Authorization: sessionId,
+              "Content-Type": "multipart/form-data",
+            },
             timeout: 30000,
           }
         );
 
-        const data = response.data;
-        if (!data.file_url) throw new Error("File upload failed");
+        console.log("Raw server response:", JSON.stringify(response.data));
+
+        // Validate response data
+        if (!response.data || !response.data.message_id) {
+          throw new Error("Invalid server response: missing message ID");
+        }
+
+        const messageId = Number(response.data.message_id);
+        if (isNaN(messageId)) {
+          throw new Error(`Invalid message ID in response: ${response.data.message_id}`);
+        }
+
+        const newConversationId = String(response.data.conversation_id || currentConversationId);
+        if (newConversationId !== currentConversationId && isValidConversationId(newConversationId)) {
+          await cacheConversationId(shopId, newConversationId);
+          console.log("Cached conversationId in SQLite:", newConversationId, "for shopId:", shopId);
+          router.setParams({ conversation_id: newConversationId });
+        }
+
+        const serverMessage = {
+          id: messageId,
+          conversation_id: newConversationId || currentConversationId,
+          content: response.data.content || null,
+          sender_id: userId,
+          timestamp: response.data.timestamp || new Date().toISOString(),
+          attachment: response.data.file_url
+            ? response.data.file_url.replace(/conversation_attachments/g, "chat_attachments")
+            : null,
+          msg_type: response.data.msg_type || normalizedType,
+          thumbnail_url: response.data.thumbnail_url
+            ? response.data.thumbnail_url.replace(/conversation_thumbnails/g, "chat_thumbnails")
+            : null,
+          read: response.data.read || false,
+          pending: false,
+          name: response.data.file_url?.split("/").pop() || fileName,
+          temp_id: tempId,
+        };
 
         setMessages((prevMessages) => {
-          console.log("Updating with server response:", {
-            message_id: data.message_id,
-            file_url: data.file_url,
-            tempId,
-            conversation_id,
-          });
+          const now = Date.now();
           const filteredMessages = prevMessages.filter(
             (msg) =>
               (msg.id !== tempId &&
                msg.temp_id !== tempId &&
-               msg.id !== Number(data.message_id)) &&
-              msg.conversation_id === conversation_id
+               !(msg.attachment && msg.attachment === serverMessage.attachment)) &&
+              now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+              msg.conversation_id === (newConversationId || currentConversationId)
           );
-          const updatedMessages = [
-            ...filteredMessages,
-            {
-              id: Number(data.message_id),
-              content: null,
-              sender_id: userId,
-              timestamp: new Date().toISOString(),
-              attachment: data.file_url,
-              msg_type: data.msg_type || normalizedType,
-              thumbnail_url: data.thumbnail_url || null,
-              read: false,
-              pending: false,
-              name: fileName,
-              temp_id: tempId,
-              conversation_id, // Add conversation_id
-            },
-          ];
-          cacheMessages(updatedMessages, conversation_id);
-          return updatedMessages.sort((a, b) => a.id - b.id);
+          const updatedMessages = [...filteredMessages, serverMessage].sort((a, b) => a.id - b.id);
+          console.log("Replacing temp attachment message with server message:", serverMessage.id);
+          cacheMessages(updatedMessages, newConversationId || currentConversationId);
+          return updatedMessages;
         });
-
-        if (websocketRef.current) {
-          websocketRef.current.send(
-            JSON.stringify({
-              sender_id: userId,
-              conversation_id: conversation_id,
-              type: normalizedType,
-              timestamp: new Date().toISOString(),
-              content: null,
-              attachment: data.file_url,
-              thumbnail_url: data.thumbnail_url || null,
-              temp_id: tempId,
-              receiver_id: shopId,
-              message_id: data.message_id,
-            })
-          );
-        }
 
         setIsAtBottom(true);
         InteractionManager.runAfterInteractions(() => {
           if (messages.length > 0 && flatListRef.current) {
-            flatListRef.current.scrollToEnd({ animated: false });
+            console.log("Scrolling to bottom after sending attachment");
+            flatListRef.current.scrollToEnd({ animated: true });
           }
         });
+
+        if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
+          websocketRef.current.send(
+            JSON.stringify({
+              sender_id: userId,
+              conversation_id: newConversationId || currentConversationId,
+              type: normalizedType,
+              timestamp: new Date().toISOString(),
+              content: null,
+              attachment: serverMessage.attachment,
+              thumbnail_url: serverMessage.thumbnail_url || null,
+              temp_id: tempId,
+              receiver_id: shopId,
+              message_id: serverMessage.id,
+            })
+          );
+        }
       } catch (error) {
-        console.error("Upload error:", error);
-        Alert.alert("Upload Failed", "Failed to upload file. Please try again.");
+        console.error("Error sending attachment:", error);
+        Alert.alert("Attachment Failed", "Unable to send attachment. Please try again.");
 
         setMessages((prevMessages) => {
+          const now = Date.now();
           const updatedMessages = prevMessages.filter(
             (msg) =>
               (msg.id !== tempId && msg.temp_id !== tempId) &&
-              msg.conversation_id === conversation_id
+              now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+              msg.conversation_id === (conversation_id || `temp_${shopId}`)
           );
-          cacheMessages(updatedMessages, conversation_id);
+          console.log("Removing failed temp attachment message:", tempId);
+          cacheMessages(updatedMessages, conversation_id || `temp_${shopId}`);
           return updatedMessages;
         });
       }
@@ -796,7 +1072,7 @@ const Conversation = () => {
   useFocusEffect(
     useCallback(() => {
       isScreenFocused.current = true;
-      if (conversation_id && messages.length > 0) {
+      if (isValidConversationId(conversation_id) && messages.length > 0) {
         markMessagesAsRead();
         InteractionManager.runAfterInteractions(() => {
           if (!loading && messages.length > 0) {

@@ -707,6 +707,7 @@ const RootLayout = () => {
         'signup',
         'ChangePassword',
         'RequestToken',
+        'DeleteUser',
         'ResetPassword',
         'VerifyEmail',
         'ForgotPassword',

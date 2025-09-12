@@ -9,7 +9,6 @@ import {
   Image,
   StyleSheet,
   Dimensions,
-  Platform,
   Modal,
   StatusBar,
 } from "react-native";
@@ -21,7 +20,7 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import DatePicker from "react-native-date-picker";
 import { Picker } from "@react-native-picker/picker";
 import ViewReceiptPDF from "../../components/shop/ViewReceipt";
 import { useRouter } from "expo-router";
@@ -246,29 +245,30 @@ const CustomerReceipts = () => {
     [sessionId]
   );
 
-  // Handle DateTimePicker change
+  // Handle DatePicker change
   const handleDateChange = useCallback(
-    (event, selectedDate) => {
-      setPickerVisible(Platform.OS === "ios");
-      if (event.type === "dismissed" || !selectedDate) {
+    (selectedDate) => {
+      console.log("Date selected:", selectedDate);
+      if (!selectedDate || isNaN(selectedDate.getTime())) {
+        console.log("Invalid date selected");
         setPickerVisible(false);
         setPickerType(null);
         return;
       }
-
-      const date = new Date(selectedDate);
       if (pickerType === "start") {
-        if (endDate && date > endDate) {
+        if (endDate && selectedDate > endDate) {
           Alert.alert("Invalid Date", "Start date cannot be after end date.");
           return;
         }
-        setStartDate(date);
-      } else {
-        if (startDate && date < startDate) {
+        setStartDate(selectedDate);
+        console.log("Start date set:", selectedDate);
+      } else if (pickerType === "end") {
+        if (startDate && selectedDate < startDate) {
           Alert.alert("Invalid Date", "End date cannot be before start date.");
           return;
         }
-        setEndDate(date);
+        setEndDate(selectedDate);
+        console.log("End date set:", selectedDate);
       }
       setPickerVisible(false);
       setPickerType(null);
@@ -276,9 +276,10 @@ const CustomerReceipts = () => {
     [pickerType, startDate, endDate]
   );
 
-  // Show DateTimePicker
+  // Show DatePicker
   const showDatePicker = useCallback(
     (type) => {
+      console.log("Opening DatePicker for type:", type);
       setPickerType(type);
       setTempDate(type === "start" && startDate ? startDate : type === "end" && endDate ? endDate : new Date());
       setPickerVisible(true);
@@ -357,7 +358,10 @@ const CustomerReceipts = () => {
           </Text>
           <TouchableOpacity
             style={styles.monthButton}
-            onPress={() => setMonthPickerVisible(true)}
+            onPress={() => {
+              console.log("Month button pressed, setting monthPickerVisible to true");
+              setMonthPickerVisible(true);
+            }}
           >
             <Ionicons name="calendar-outline" size={18} color="#FFF" />
           </TouchableOpacity>
@@ -368,62 +372,79 @@ const CustomerReceipts = () => {
   }, [calculateMonthlySpending, spendingMonth, spendingYear]);
 
   // Render month picker modal
-  const renderMonthPickerModal = useCallback(() => (
-    <Modal
-      visible={monthPickerVisible}
-      transparent
-      animationType="fade"
-      onRequestClose={() => setMonthPickerVisible(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>Select Month</Text>
-          <Picker
-            selectedValue={spendingMonth}
-            onValueChange={(value) => setSpendingMonth(value)}
-            style={styles.picker}
-          >
-            {Array.from({ length: 12 }, (_, i) => (
-              <Picker.Item
-                key={i}
-                label={new Date(2025, i).toLocaleString("en-US", { month: "long" })}
-                value={i}
-              />
-            ))}
-          </Picker>
-          <Picker
-            selectedValue={spendingYear}
-            onValueChange={(value) => setSpendingYear(value)}
-            style={styles.picker}
-          >
-            {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map((year) => (
-              <Picker.Item key={year} label={`${year}`} value={year} />
-            ))}
-          </Picker>
-          <View style={styles.modalButtons}>
-            <TouchableOpacity
-              style={styles.applyButton}
-              onPress={() => setMonthPickerVisible(false)}
-            >
-              <LinearGradient colors={["#2563EB", "#10B981"]} style={styles.buttonGradient}>
-                <Text style={styles.buttonText}>Apply</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.clearButton}
-              onPress={() => {
-                setSpendingMonth(new Date().getMonth());
-                setSpendingYear(new Date().getFullYear());
-                setMonthPickerVisible(false);
+  const renderMonthPickerModal = useCallback(() => {
+    console.log("Rendering month picker modal, visible:", monthPickerVisible);
+    return (
+      <Modal
+        visible={monthPickerVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          console.log("Closing month picker modal");
+          setMonthPickerVisible(false);
+        }}
+      >
+        <StatusBar barStyle="dark-content" backgroundColor="rgba(0, 0, 0, 0.4)" />
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Select Month and Year</Text>
+            <Picker
+              selectedValue={spendingMonth}
+              onValueChange={(value) => {
+                console.log("Month selected:", value);
+                setSpendingMonth(value);
               }}
+              style={styles.picker}
             >
-              <Text style={styles.clearButtonText}>Reset</Text>
-            </TouchableOpacity>
+              {Array.from({ length: 12 }, (_, i) => (
+                <Picker.Item
+                  key={i}
+                  label={new Date(2025, i).toLocaleString("en-US", { month: "long" })}
+                  value={i}
+                />
+              ))}
+            </Picker>
+            <Picker
+              selectedValue={spendingYear}
+              onValueChange={(value) => {
+                console.log("Year selected:", value);
+                setSpendingYear(value);
+              }}
+              style={styles.picker}
+            >
+              {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map((year) => (
+                <Picker.Item key={year} label={`${year}`} value={year} />
+              ))}
+            </Picker>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.applyButton}
+                onPress={() => {
+                  console.log("Applying month/year selection:", spendingMonth, spendingYear);
+                  setMonthPickerVisible(false);
+                }}
+              >
+                <LinearGradient colors={["#2563EB", "#10B981"]} style={styles.buttonGradient}>
+                  <Text style={styles.buttonText}>Apply</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.clearButton}
+                onPress={() => {
+                  console.log("Resetting month/year");
+                  setSpendingMonth(new Date().getMonth());
+                  setSpendingYear(new Date().getFullYear());
+                  setMonthPickerVisible(false);
+                }}
+              >
+                <Text style={styles.clearButtonText}>Reset</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </View>
-    </Modal>
-  ), [spendingMonth, spendingYear]);
+      </Modal>
+    );
+  }, [monthPickerVisible, spendingMonth, spendingYear]);
 
   // Render navigation bar
   const renderNavBar = useCallback(() => (
@@ -456,9 +477,14 @@ const CustomerReceipts = () => {
     <Modal
       visible={filterModalVisible}
       transparent
-      animationType="fade"
-      onRequestClose={() => setFilterModalVisible(false)}
+      animationType="slide"
+      onRequestClose={() => {
+        console.log("Closing filter modal");
+        setFilterModalVisible(false);
+        setPickerVisible(false);
+      }}
     >
+      <StatusBar barStyle="dark-content" backgroundColor="rgba(0, 0, 0, 0.4)" />
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <Text style={styles.modalTitle}>Filter by Date</Text>
@@ -481,7 +507,10 @@ const CustomerReceipts = () => {
           <View style={styles.modalButtons}>
             <TouchableOpacity
               style={styles.applyButton}
-              onPress={() => setFilterModalVisible(false)}
+              onPress={() => {
+                console.log("Applying date filter:", { startDate, endDate });
+                setFilterModalVisible(false);
+              }}
             >
               <LinearGradient colors={["#2563EB", "#10B981"]} style={styles.buttonGradient}>
                 <Text style={styles.buttonText}>Apply</Text>
@@ -490,6 +519,7 @@ const CustomerReceipts = () => {
             <TouchableOpacity
               style={styles.clearButton}
               onPress={() => {
+                console.log("Clearing date filters");
                 setStartDate(null);
                 setEndDate(null);
                 setFilterModalVisible(false);
@@ -501,12 +531,21 @@ const CustomerReceipts = () => {
           </View>
         </View>
         {pickerVisible && (
-          <DateTimePicker
-            value={tempDate}
+          <DatePicker
+            date={tempDate}
             mode="date"
-            display={Platform.OS === "ios" ? "inline" : "default"}
-            onChange={handleDateChange}
+            open={pickerVisible}
+            onConfirm={handleDateChange}
+            onCancel={() => {
+              console.log("DatePicker cancelled");
+              setPickerVisible(false);
+              setPickerType(null);
+            }}
             maximumDate={new Date()}
+            textColor="#1F2A44"
+            theme="auto"
+            confirmText="Apply"
+            cancelText="Cancel"
             style={styles.dateTimePicker}
           />
         )}
@@ -536,7 +575,7 @@ const CustomerReceipts = () => {
   // FlatList item layout for performance
   const getItemLayout = useCallback((data, index) => {
     const isSeparator = data && data[index]?.type === "separator";
-    const length = isSeparator ? 36 : 180; // Adjusted for image_urls
+    const length = isSeparator ? 36 : 180;
     return { length, offset: length * index, index };
   }, []);
 
@@ -585,7 +624,10 @@ const CustomerReceipts = () => {
         <View style={styles.filterContainer}>
           <TouchableOpacity
             style={styles.filterButton}
-            onPress={() => setFilterModalVisible(true)}
+            onPress={() => {
+              console.log("Filter button pressed, setting filterModalVisible to true");
+              setFilterModalVisible(true);
+            }}
           >
             <Ionicons name="filter-outline" size={18} color="#FFF" />
           </TouchableOpacity>
@@ -664,9 +706,6 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: "center",
     fontFamily: "System",
-  },
-  headerSpacer: {
-    width: 32,
   },
   content: {
     flex: 1,
@@ -814,15 +853,6 @@ const styles = StyleSheet.create({
     borderColor: "#2563EB",
     marginRight: 8,
   },
-  receiptImage: {
-    width: 100,
-    height: 150,
-    borderRadius: 8,
-    marginRight: 8,
-  },
-  imageList: {
-    marginTop: 8,
-  },
   cardDetails: {
     flex: 1,
   },
@@ -880,39 +910,41 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     fontFamily: "System",
     alignSelf: "center",
-    flexShrink: 0, // Prevent text from wrapping
   },
   buttonGradient: {
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 6,
-    paddingHorizontal: 8, // Reduced padding for tighter layout
+    paddingHorizontal: 8,
     borderRadius: 8,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "center",
-    paddingHorizontal: 16,
+    alignItems: "center",
+    padding: 16,
   },
   modalContent: {
     backgroundColor: "#FFF",
     borderRadius: 12,
-    padding: 16,
+    padding: 20,
+    width: SCREEN_WIDTH * 0.9,
+    maxWidth: 400,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: "600",
     color: "#1F2A44",
     textAlign: "center",
-    marginBottom: 12,
+    marginBottom: 16,
     fontFamily: "System",
   },
   dateInput: {
     padding: 12,
     borderRadius: 8,
     backgroundColor: "#F9FAFB",
-    marginBottom: 8,
+    marginBottom: 12,
   },
   dateInputText: {
     fontSize: 15,
@@ -923,6 +955,7 @@ const styles = StyleSheet.create({
   modalButtons: {
     flexDirection: "row",
     gap: 8,
+    marginTop: 12,
   },
   applyButton: {
     flex: 1,
@@ -956,11 +989,19 @@ const styles = StyleSheet.create({
   dateTimePicker: {
     backgroundColor: "#FFF",
     borderRadius: 8,
+    alignSelf: "center",
+    marginVertical: 10,
+    padding: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   picker: {
     backgroundColor: "#F9FAFB",
     borderRadius: 8,
-    marginBottom: 8,
+    marginBottom: 12,
   },
   emptyContainer: {
     flex: 1,

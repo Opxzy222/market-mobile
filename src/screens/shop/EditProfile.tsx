@@ -405,7 +405,8 @@ const EditProfileScreen = () => {
 
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>Phone Number</Text>
-                  <TextInput
+                  <Text style={styles.input}></Text>
+                  {/*<TextInput
                     style={[
                       styles.inputField,
                       focused === "phoneNo" && styles.inputFieldFocused,
@@ -418,7 +419,7 @@ const EditProfileScreen = () => {
                     onBlur={() => handleBlur("phoneNo")}
                     blurOnSubmit={true}
                     onSubmitEditing={() => Keyboard.dismiss()}
-                  />
+                  /> */}
                 </View>
 
                 <Animated.View style={[styles.buttonContainer, animatedButtonStyle]}>

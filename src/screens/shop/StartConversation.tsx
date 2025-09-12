@@ -39,6 +39,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const isWeb = Constants.platform?.web;
+
 const CACHE_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 
 const StartConversation = () => {
@@ -65,6 +66,26 @@ const StartConversation = () => {
   const params = useLocalSearchParams();
   const { shopId, name } = params;
   const router = useRouter();
+
+  // Validate userId
+  const isValidUserId = (id) => id !== null && !isNaN(parseInt(id, 10));
+
+  // Set isScreenFocused based on screen focus
+  useFocusEffect(
+    useCallback(() => {
+      console.log("Screen focused, setting isScreenFocused to true");
+      isScreenFocused.current = true;
+      if (conversationId && messages.length > 0 && isValidUserId(userId)) {
+        console.log("Screen focused, marking messages as read for conversationId:", conversationId);
+        markMessagesAsRead();
+      }
+
+      return () => {
+        console.log("Screen blurred, setting isScreenFocused to false");
+        isScreenFocused.current = false;
+      };
+    }, [conversationId, userId, messages.length])
+  );
 
   // Initialize database and clean up corrupted data
   useEffect(() => {
@@ -111,7 +132,6 @@ const StartConversation = () => {
         "SELECT key, value FROM secure_data;"
       );
       for (const row of rows) {
-        console.log(`SQLite key: ${row.key}, Value: ${row.value}`);
         if (row.value && /^[A-Za-z0-9+/=]+$/.test(row.value) && row.value.length % 4 === 0) {
           try {
             console.log(`Decoded SQLite value: ${decodeURIComponent(atob(row.value))}`);
@@ -143,7 +163,6 @@ const StartConversation = () => {
       const now = Date.now();
       const db = await getSingletonSQLiteDatabase();
 
-      // Query all keys in secure_data table
       const rows = await db.getAllAsync<{ key: string }>(
         "SELECT key FROM secure_data WHERE key LIKE 'messages_%' OR key LIKE 'conversation_id_%';"
       );
@@ -328,7 +347,17 @@ const StartConversation = () => {
         console.log("Fetched session ID from AsyncStorage:", sessionIdString, "user ID:", userIdString);
         setSessionId(sessionIdString);
         if (userIdString) {
-          setUserId(parseInt(userIdString, 10));
+          const parsedUserId = parseInt(userIdString, 10);
+          if (isValidUserId(parsedUserId)) {
+            setUserId(parsedUserId);
+            console.log("User ID loaded:", parsedUserId);
+          } else {
+            console.warn("Invalid userId in AsyncStorage:", userIdString);
+            Alert.alert("Error", "Invalid user ID. Please log in again.");
+          }
+        } else {
+          console.warn("No userId found in AsyncStorage");
+          Alert.alert("Error", "User not logged in. Please log in to start a conversation.");
         }
 
         // Load cached conversationId
@@ -352,9 +381,9 @@ const StartConversation = () => {
         }
 
         // Fetch messages if no cached conversationId and not already fetched
-        if (!cachedId && sessionIdString && userIdString && !hasFetchedMessages.current) {
+        if (!cachedId && sessionIdString && isValidUserId(parsedUserId)) {
           hasFetchedMessages.current = true;
-          await fetchMessages(sessionIdString, parseInt(userIdString, 10));
+          await fetchMessages(sessionIdString, parsedUserId);
         }
       } catch (error) {
         console.error("Error loading data:", error);
@@ -363,31 +392,10 @@ const StartConversation = () => {
     loadData();
   }, [shopId]);
 
-  // Handle screen focus for marking messages as read and scrolling
-  useFocusEffect(
-    useCallback(() => {
-      console.log("Screen focused, conversationId:", conversationId);
-      isScreenFocused.current = true;
-      if (conversationId && messages.length > 0) {
-        markMessagesAsRead();
-        InteractionManager.runAfterInteractions(() => {
-          if (messages.length > 0 && !loading) {
-            console.log("Scrolling to last message on screen focus");
-            flatListRef.current?.scrollToEnd({ animated: false });
-          }
-        });
-      }
-      return () => {
-        console.log("Screen unfocused");
-        isScreenFocused.current = false;
-      };
-    }, [conversationId, messages, loading])
-  );
-
   // Fetch messages
   const fetchMessages = async (sessionId, userId) => {
-    if (!userId || !shopId || !sessionId) {
-      console.warn("Cannot fetch messages: missing required params", { userId, shopId, sessionId });
+    if (!isValidUserId(userId) || !shopId || !sessionId) {
+      console.warn("Cannot fetch messages: missing or invalid required params", { userId, shopId, sessionId });
       return;
     }
 
@@ -494,6 +502,7 @@ const StartConversation = () => {
               !normalizedMessages.some(
                 (newMsg) =>
                   newMsg.id === msg.id ||
+                  (newMsg.temp_id && newMsg.temp_id === msg.temp_id) ||
                   (newMsg.attachment && newMsg.attachment === msg.attachment)
               ) &&
               now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
@@ -501,6 +510,7 @@ const StartConversation = () => {
           ),
           ...normalizedMessages,
         ].sort((a, b) => a.id - b.id);
+
         console.log("Setting merged messages:", {
           messageCount: merged.length,
           messages: merged.map((msg) => ({
@@ -511,6 +521,7 @@ const StartConversation = () => {
             attachment: msg.attachment,
             thumbnail_url: msg.thumbnail_url,
             pending: msg.pending,
+            read: msg.read,
           })),
         });
         if (newConversationId) {
@@ -519,11 +530,6 @@ const StartConversation = () => {
         setMessagesLoaded(true);
         return merged;
       });
-
-      if (isScreenFocused.current && uniqueMessages.length > 0) {
-        console.log("Marking messages as read after fetch");
-        markMessagesAsRead(newConversationId);
-      }
     } catch (error) {
       console.error("Error fetching messages:", error);
       setFetchError(true);
@@ -535,11 +541,12 @@ const StartConversation = () => {
 
   // Mark messages as read
   const markMessagesAsRead = async (localConversationId = conversationId) => {
-    if (!localConversationId || !sessionId || messages.length === 0) {
+    if (!localConversationId || !sessionId || messages.length === 0 || !isValidUserId(userId)) {
       console.warn("Cannot mark messages as read:", {
         conversationId: localConversationId,
         sessionId,
         messageCount: messages.length,
+        userId,
       });
       return;
     }
@@ -551,7 +558,7 @@ const StartConversation = () => {
         { conversation_id: localConversationId },
         { headers: { "Content-Type": "application/json", Authorization: sessionId } }
       );
-      console.log("Messages marked as read");
+      console.log("Messages marked as read successfully for conversationId:", localConversationId);
     } catch (error) {
       console.error("Error marking messages as read:", error);
     }
@@ -564,7 +571,17 @@ const StartConversation = () => {
       return;
     }
 
-    const tempId = Date.now();
+    if (!isValidUserId(userId) || !shopId || !sessionId) {
+      console.warn("Cannot send HTTP message: missing or invalid required params", {
+        userId,
+        shopId,
+        sessionId,
+      });
+      Alert.alert("Error", "User not logged in. Please log in to send a message.");
+      return;
+    }
+
+    const tempId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     const now = Date.now();
     const tempMessage = {
       id: tempId,
@@ -577,19 +594,22 @@ const StartConversation = () => {
       pending: true,
       attachment: null,
       thumbnail_url: null,
-      conversation_id: conversationId || `temp_${shopId}`, // Temporary conversation_id
+      conversation_id: conversationId || `temp_${shopId}`,
+      temp_id: tempId,
     };
 
     setMessages((prevMessages) => {
       const newMessages = [
         ...prevMessages.filter(
           (msg) =>
+            msg.id !== tempId &&
+            msg.temp_id !== tempId &&
             now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
             msg.conversation_id === (conversationId || `temp_${shopId}`)
         ),
         tempMessage,
       ];
-      console.log("Adding temp message:", tempId);
+      console.log("Adding temp message:", { tempId, content: inputMessage });
       if (conversationId) {
         cacheMessages(newMessages, conversationId);
       }
@@ -610,20 +630,30 @@ const StartConversation = () => {
       await cacheConversationId(shopId, newConversationId);
       console.log("Cached conversationId in SQLite:", newConversationId, "for shopId:", shopId);
 
+      const messageId = Number(response.data.id);
+      if (isNaN(messageId)) {
+        throw new Error(`Invalid message ID in response: ${response.data.id}`);
+      }
+
+      // Add messageId and tempId to receivedMessagesRef to prevent WebSocket echo
+      receivedMessagesRef.current.add(messageId);
+      receivedMessagesRef.current.add(tempId);
+
       const serverMessage = {
         ...response.data,
-        id: Number(response.data.id),
-        conversation_id: newConversationId, // Add conversation_id
+        id: messageId,
+        conversation_id: newConversationId,
         type: "text",
         read: false,
         pending: false,
-        name: response.data.attachment?.split("/").pop(),
-        attachment: response.data.attachment
-          ? response.data.attachment.replace(/conversation_attachments/g, "chat_attachments")
+        name: response.data.file_url?.split("/").pop(),
+        attachment: response.data.file_url
+          ? response.data.file_url.replace(/conversation_attachments/g, "chat_attachments")
           : null,
         thumbnail_url: response.data.thumbnail_url
           ? response.data.thumbnail_url.replace(/conversation_thumbnails/g, "chat_thumbnails")
           : null,
+        temp_id: tempId,
       };
 
       setMessages((prevMessages) => {
@@ -631,14 +661,21 @@ const StartConversation = () => {
         const updatedMessages = [
           ...prevMessages.filter(
             (msg) =>
-              (msg.id !== tempId &&
-               !(msg.attachment && msg.attachment === serverMessage.attachment)) &&
+              msg.id !== tempId &&
+              msg.temp_id !== tempId &&
+              msg.id !== messageId &&
+              !(msg.content === serverMessage.content && msg.sender_id === userId) &&
               now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
               msg.conversation_id === newConversationId
           ),
           serverMessage,
         ].sort((a, b) => a.id - b.id);
-        console.log("Replacing temp message with server message:", serverMessage.id);
+
+        console.log("Replacing temp message with server message:", {
+          tempId,
+          serverId: messageId,
+          content: serverMessage.content,
+        });
         cacheMessages(updatedMessages, newConversationId);
         return updatedMessages;
       });
@@ -662,6 +699,7 @@ const StartConversation = () => {
         const updatedMessages = prevMessages.filter(
           (msg) =>
             msg.id !== tempId &&
+            msg.temp_id !== tempId &&
             now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
             msg.conversation_id === (conversationId || `temp_${shopId}`)
         );
@@ -677,12 +715,12 @@ const StartConversation = () => {
 
   // WebSocket connection
   useEffect(() => {
-    if (!conversationId) {
-      console.warn("Cannot connect WebSocket: conversationId is null", { conversationId });
+    if (!conversationId || !isValidUserId(userId)) {
+      console.warn("Cannot connect WebSocket: missing or invalid conversationId or userId", { conversationId, userId });
       return;
     }
 
-    console.log("Connecting WebSocket for conversationId:", conversationId);
+    console.log("Connecting WebSocket for conversationId:", conversationId, "with userId:", userId);
     const connectWebSocket = () => {
       const websocketUrl = `wss://retail-alvinia-goza-f6a0e4f7.koyeb.app/ws/chat/${conversationId}/?user_id=${userId}`;
       websocketRef.current = new WebSocket(websocketUrl);
@@ -706,13 +744,12 @@ const StartConversation = () => {
           attachment: data.attachment,
           thumbnail_url: data.thumbnail_url,
           type: data.type,
+          msg_type: data.msg_type,
+          sender_id: data.sender_id,
+          content: data.message,
+          message_ids: data.message_ids,
+          read: data.read,
         });
-
-        // Validate conversation_id
-        if (data.conversation_id && data.conversation_id !== conversationId) {
-          console.log(`Ignoring message for different conversation: ${data.conversation_id}`);
-          return;
-        }
 
         const now = Date.now();
         const messageTime = new Date(data.timestamp || new Date().toISOString()).getTime();
@@ -722,35 +759,106 @@ const StartConversation = () => {
         }
 
         if (data.type === "read_update") {
-          setMessages((prevMessages) => {
-            const updatedMessages = prevMessages
-              .filter(
-                (msg) =>
-                  now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
-                  msg.conversation_id === conversationId
-              )
-              .map((msg) =>
-                data.message_ids.includes(Number(msg.id)) ? { ...msg, read: true } : msg
-              );
-            console.log("Updating read status for messages:", data.message_ids);
-            cacheMessages(updatedMessages, conversationId);
-            return updatedMessages;
+          console.log("Processing read_update:", {
+            message_ids: data.message_ids,
+            conversation_id: data.conversation_id,
+            received_at: new Date().toISOString(),
           });
-        } else {
-          let messageId = Number(data.message_id);
-          let tempId = data.temp_id;
+          if (!data.message_ids || !Array.isArray(data.message_ids)) {
+            console.warn("Invalid or missing message_ids in read_update:", data.message_ids);
+            return;
+          }
+          const messageIds = data.message_ids.map(Number).filter(id => !isNaN(id));
+          if (messageIds.length === 0) {
+            console.warn("No valid message_ids in read_update:", data.message_ids);
+            return;
+          }
+          setMessages((prevMessages) => {
+            console.log("Messages state before read_update:", prevMessages.map(msg => ({
+              id: msg.id,
+              temp_id: msg.temp_id,
+              read: msg.read,
+              sender_id: msg.sender_id,
+              conversation_id: msg.conversation_id,
+            })));
+            const updatedMessages = prevMessages.map((msg) => {
+              if (
+                messageIds.includes(Number(msg.id)) &&
+                !msg.read &&
+                msg.conversation_id === conversationId &&
+                !msg.pending
+              ) {
+                console.log(`Updating read status for message ${msg.id} in conversation ${conversationId}`);
+                return { ...msg, read: true };
+              }
+              return msg;
+            }).filter(
+              (msg) =>
+                now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+                msg.conversation_id === conversationId
+            );
+            console.log("Messages state after read_update:", updatedMessages.map(msg => ({
+              id: msg.id,
+              temp_id: msg.temp_id,
+              read: msg.read,
+              sender_id: msg.sender_id,
+              conversation_id: msg.conversation_id,
+            })));
+            console.log("Updated read status for messages:", {
+              messageIds,
+              updatedCount: updatedMessages.filter(msg => messageIds.includes(Number(msg.id)) && msg.read).length,
+            });
+            cacheMessages(updatedMessages, conversationId);
+            return [...updatedMessages]; // Force new array to ensure UI update
+          });
+        } else if (data.type !== "unread_message_notification") {
+          const messageId = Number(data.message_id);
+          const tempId = data.temp_id;
 
           if (!messageId || isNaN(messageId)) {
             console.warn("Invalid message ID, ignoring:", messageId);
             return;
           }
 
-          if (receivedMessagesRef.current.has(messageId)) {
-            console.log(`Message ${messageId} already processed, skipping...`);
+          // Prevent processing duplicates
+          if (receivedMessagesRef.current.has(messageId) || (tempId && receivedMessagesRef.current.has(tempId))) {
+            console.log(`Message ${messageId || tempId} already processed, skipping...`);
+            return;
+          }
+
+          // Handle echo messages (sent by the current user)
+          if (data.sender_id === userId) {
+            console.log(`Processing echo message from user ${userId} with message_id ${messageId} and temp_id ${tempId || 'no temp_id'}`);
+            receivedMessagesRef.current.add(messageId);
+            if (tempId) receivedMessagesRef.current.add(tempId);
+
+            // Update message with temp_id to server-assigned message_id
+            setMessages((prevMessages) => {
+              const existingIndex = prevMessages.findIndex(
+                (msg) => msg.temp_id === tempId || msg.id === tempId
+              );
+              if (existingIndex !== -1) {
+                const updatedMessages = [...prevMessages];
+                updatedMessages[existingIndex] = {
+                  ...updatedMessages[existingIndex],
+                  id: messageId,
+                  pending: false,
+                  conversation_id: conversationId,
+                  content: data.message || updatedMessages[existingIndex].content,
+                  timestamp: data.timestamp || updatedMessages[existingIndex].timestamp,
+                  read: data.read || false,
+                };
+                console.log(`Updated message from temp_id ${tempId} to server id ${messageId}`);
+                cacheMessages(updatedMessages, conversationId);
+                return [...updatedMessages].sort((a, b) => Number(a.id) - Number(b.id));
+              }
+              return prevMessages;
+            });
             return;
           }
 
           receivedMessagesRef.current.add(messageId);
+          if (tempId) receivedMessagesRef.current.add(tempId);
 
           let normalizedType = data.msg_type || data.type || "text";
           if (data.attachment) {
@@ -774,9 +882,9 @@ const StartConversation = () => {
           setMessages((prevMessages) => {
             const existingIndex = prevMessages.findIndex(
               (msg) =>
-                msg.id === tempId ||
                 msg.id === messageId ||
-                (tempId && msg.temp_id === tempId)
+                (tempId && msg.temp_id === tempId) ||
+                (attachmentPath && msg.attachment === attachmentPath)
             );
 
             let updatedMessages;
@@ -785,7 +893,7 @@ const StartConversation = () => {
               updatedMessages[existingIndex] = {
                 ...updatedMessages[existingIndex],
                 id: messageId,
-                conversation_id: conversationId, // Ensure conversation_id
+                conversation_id: conversationId,
                 attachment: attachmentPath || updatedMessages[existingIndex].attachment,
                 content: data.message || null,
                 type: normalizedType,
@@ -806,12 +914,16 @@ const StartConversation = () => {
               updatedMessages = [
                 ...prevMessages.filter(
                   (msg) =>
+                    msg.id !== messageId &&
+                    (!tempId || msg.temp_id !== tempId) &&
+                    !(attachmentPath && msg.attachment === attachmentPath) &&
+                    !(msg.content === data.message && msg.sender_id === data.sender_id) &&
                     now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
                     msg.conversation_id === conversationId
                 ),
                 {
                   id: messageId,
-                  conversation_id: conversationId, // Ensure conversation_id
+                  conversation_id: conversationId,
                   content: data.message || null,
                   sender_id: data.sender_id,
                   timestamp: data.timestamp || new Date().toISOString(),
@@ -824,10 +936,27 @@ const StartConversation = () => {
                   temp_id: tempId,
                 },
               ];
-              console.log("Adding new WebSocket message:", messageId);
+              console.log("Adding new WebSocket message:", { messageId, content: data.message });
             }
+
+            // Mark all user messages as read if this is a reply from the shop
+            if (data.sender_id !== userId && messages.length > 0 && isValidUserId(userId)) {
+              console.log("Shop replied: Marking all user messages as read");
+              updatedMessages = updatedMessages.map((msg) => {
+                if (msg.sender_id === userId && !msg.pending && !msg.read) {
+                  console.log(`Marking message ${msg.id} as read`);
+                  return { ...msg, read: true };
+                }
+                return msg;
+              });
+              if (isScreenFocused.current) {
+                console.log("Triggering markMessagesAsRead due to shop reply");
+                markMessagesAsRead(conversationId);
+              }
+            }
+
             cacheMessages(updatedMessages, conversationId);
-            return updatedMessages.sort((a, b) => a.id - b.id);
+            return [...updatedMessages].sort((a, b) => a.id - b.id); // Force new array
           });
 
           if (isAtBottom) {
@@ -841,7 +970,7 @@ const StartConversation = () => {
 
           if (isScreenFocused.current) {
             console.log("Marking messages as read after WebSocket message");
-            markMessagesAsRead();
+            markMessagesAsRead(conversationId);
           }
         }
       };
@@ -871,6 +1000,16 @@ const StartConversation = () => {
       return;
     }
 
+    if (!isValidUserId(userId) || !shopId || !sessionId) {
+      console.warn("Cannot send message: missing or invalid required params", {
+        userId,
+        shopId,
+        sessionId,
+      });
+      Alert.alert("Error", "User not logged in. Please log in to send a message.");
+      return;
+    }
+
     if (!websocketRef.current || !conversationId || websocketRef.current.readyState !== WebSocket.OPEN) {
       console.warn("Cannot send WebSocket message: WebSocket not ready", {
         inputMessage: !!inputMessage.trim(),
@@ -881,13 +1020,15 @@ const StartConversation = () => {
       return sendMessage(); // Fallback to HTTP if WebSocket not ready
     }
 
-    const tempId = Date.now();
+    const tempId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
     const now = Date.now();
 
     setMessages((prevMessages) => {
       const newMessages = [
         ...prevMessages.filter(
           (msg) =>
+            msg.id !== tempId &&
+            msg.temp_id !== tempId &&
             now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
             msg.conversation_id === conversationId
         ),
@@ -901,7 +1042,7 @@ const StartConversation = () => {
           type: "text",
           read: false,
           pending: true,
-          conversation_id: conversationId, // Add conversation_id
+          conversation_id: conversationId,
           temp_id: tempId,
         },
       ];
@@ -937,7 +1078,8 @@ const StartConversation = () => {
         const now = Date.now();
         const updatedMessages = prevMessages.filter(
           (msg) =>
-            (msg.id !== tempId && msg.temp_id !== tempId) &&
+            msg.id !== tempId &&
+            msg.temp_id !== tempId &&
             now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
             msg.conversation_id === conversationId
         );
@@ -946,18 +1088,19 @@ const StartConversation = () => {
         return updatedMessages;
       });
     }
-  }, [inputMessage, userId, conversationId, messages, sendMessage]);
+  }, [inputMessage, userId, shopId, sessionId, conversationId, messages, sendMessage]);
 
   // Send attachment
   const handleSendAttachment = useCallback(
     async (file, type) => {
-      if (!file?.uri || !userId || !shopId) {
-        console.error("Invalid file, userId, or shopId:", {
+      if (!file?.uri || !isValidUserId(userId) || !shopId || !sessionId) {
+        console.error("Invalid file, userId, shopId, or sessionId:", {
           fileUri: file?.uri,
           userId,
           shopId,
+          sessionId,
         });
-        Alert.alert("Error", "Invalid file or user details.");
+        Alert.alert("Error", "Invalid file or user details. Please log in to send an attachment.");
         return;
       }
 
@@ -980,6 +1123,9 @@ const StartConversation = () => {
         const newMessages = [
           ...prevMessages.filter(
             (msg) =>
+              msg.id !== tempId &&
+              msg.temp_id !== tempId &&
+              !(msg.attachment && msg.attachment === file.uri) &&
               now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
               msg.conversation_id === (conversationId || `temp_${shopId}`)
           ),
@@ -994,11 +1140,11 @@ const StartConversation = () => {
             read: false,
             pending: true,
             name: fileName,
-            conversation_id: conversationId || `temp_${shopId}`, // Temporary conversation_id
+            conversation_id: conversationId || `temp_${shopId}`,
             temp_id: tempId,
           },
         ];
-        console.log("Adding temp attachment message:", tempId);
+        console.log("Adding temp attachment message:", { tempId, conversation_id: conversationId || `temp_${shopId}` });
         cacheMessages(newMessages, conversationId || `temp_${shopId}`);
         return newMessages;
       });
@@ -1038,7 +1184,7 @@ const StartConversation = () => {
 
         console.log("Uploading attachment:", { type: normalizedType, fileName });
         const response = await axios.post(
-          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/messages/",
+          `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/upload-conversation/`,
           formData,
           {
             headers: {
@@ -1049,26 +1195,42 @@ const StartConversation = () => {
           }
         );
 
+        console.log("Raw server response:", JSON.stringify(response.data));
+
+        // Validate response data
+        if (!response.data || !response.data.message_id || !response.data.conversation_id) {
+          throw new Error("Invalid server response: missing message_id or conversation_id");
+        }
+
+        const messageId = Number(response.data.message_id);
+        if (isNaN(messageId)) {
+          throw new Error(`Invalid message ID in response: ${response.data.message_id}`);
+        }
+
         const newConversationId = String(response.data.conversation_id);
-        setConversationId(newConversationId);
-        setConversationStarted(true);
-        await cacheConversationId(shopId, newConversationId);
-        console.log("Cached conversationId in SQLite:", newConversationId, "for shopId:", shopId);
+        if (newConversationId !== conversationId) {
+          setConversationId(newConversationId);
+          setConversationStarted(true);
+          await cacheConversationId(shopId, newConversationId);
+          console.log("Cached conversationId in SQLite:", newConversationId, "for shopId:", shopId);
+        }
 
         const serverMessage = {
-          ...response.data,
-          id: Number(response.data.id),
-          conversation_id: newConversationId, // Add conversation_id
-          type: normalizedType,
-          read: false,
-          pending: false,
-          name: response.data.attachment?.split("/").pop(),
-          attachment: response.data.attachment
-            ? response.data.attachment.replace(/conversation_attachments/g, "chat_attachments")
+          id: messageId,
+          conversation_id: newConversationId,
+          content: null,
+          sender_id: userId,
+          timestamp: response.data.timestamp || new Date().toISOString(),
+          attachment: response.data.file_url
+            ? response.data.file_url.replace(/conversation_attachments/g, "chat_attachments")
             : null,
+          type: normalizedType,
           thumbnail_url: response.data.thumbnail_url
             ? response.data.thumbnail_url.replace(/conversation_thumbnails/g, "chat_thumbnails")
             : null,
+          read: false,
+          pending: false,
+          name: response.data.file_url?.split("/").pop() || fileName,
           temp_id: tempId,
         };
 
@@ -1077,67 +1239,48 @@ const StartConversation = () => {
           const updatedMessages = [
             ...prevMessages.filter(
               (msg) =>
-                (msg.id !== tempId &&
-                 msg.temp_id !== tempId &&
-                 !(msg.attachment && msg.attachment === serverMessage.attachment)) &&
+                msg.id !== tempId &&
+                msg.temp_id !== tempId &&
+                !(msg.attachment && msg.attachment === serverMessage.attachment) &&
                 now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
                 msg.conversation_id === newConversationId
             ),
             serverMessage,
           ].sort((a, b) => a.id - b.id);
+
           console.log("Replacing temp attachment message with server message:", serverMessage.id);
           cacheMessages(updatedMessages, newConversationId);
           return updatedMessages;
         });
 
-        setSenderId(response.data.sender_user_id);
-        setShopOwner(response.data.receiver_id);
-
         setIsAtBottom(true);
         InteractionManager.runAfterInteractions(() => {
-          if (messages.length > 0) {
+          if (flatListRef.current) {
             console.log("Scrolling to bottom after sending attachment");
-            flatListRef.current?.scrollToEnd({ animated: true });
+            flatListRef.current.scrollToEnd({ animated: true });
           }
         });
-        setMessagesLoaded(true);
-
-        if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
-          websocketRef.current.send(
-            JSON.stringify({
-              sender_id: userId,
-              conversation_id: newConversationId,
-              type: normalizedType,
-              timestamp: new Date().toISOString(),
-              content: null,
-              attachment: serverMessage.attachment,
-              thumbnail_url: serverMessage.thumbnail_url || null,
-              temp_id: tempId,
-              receiver_id: shopId,
-              message_id: serverMessage.id,
-            })
-          );
-        }
       } catch (error) {
         console.error("Error sending attachment:", error);
+        Alert.alert("Attachment Failed", "Unable to send attachment. Please try again.");
+
         setMessages((prevMessages) => {
           const now = Date.now();
           const updatedMessages = prevMessages.filter(
             (msg) =>
-              (msg.id !== tempId && msg.temp_id !== tempId) &&
+              msg.id !== tempId &&
+              msg.temp_id !== tempId &&
+              !(msg.attachment && msg.attachment === file.uri) &&
               now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
               msg.conversation_id === (conversationId || `temp_${shopId}`)
           );
           console.log("Removing failed temp attachment message:", tempId);
-          if (conversationId) {
-            cacheMessages(updatedMessages, conversationId);
-          }
+          cacheMessages(updatedMessages, conversationId || `temp_${shopId}`);
           return updatedMessages;
         });
-        Alert.alert("Attachment Failed", "Unable to send attachment. Please try again.");
       }
     },
-    [userId, shopId, sessionId, conversationId, messages]
+    [userId, shopId, sessionId, conversationId]
   );
 
   // Handle keyboard
@@ -1153,23 +1296,23 @@ const StartConversation = () => {
     return () => keyboardDidShow.remove();
   }, [messages]);
 
-  // Render message item (copied from Conversation component with React.memo)
+  // Render message item
   const MessageItem = memo(
     ({ item, userId, sessionId }) => {
       console.log("renderItem item:", JSON.stringify(item));
       const isImage =
-        item.msg_type === "image" ||
+        item.type === "image" ||
         (item.attachment &&
-          !item.msg_type?.includes("video") &&
-          !item.msg_type?.includes("pdf") &&
+          !item.type?.includes("video") &&
+          !item.type?.includes("pdf") &&
           item.attachment.match(/\.(jpg|jpeg|png|gif)(\?|$)/i));
       const isVideo =
-        item.msg_type === "video" ||
+        item.type === "video" ||
         (item.attachment &&
-          !item.msg_type?.includes("image") &&
-          !item.msg_type?.includes("pdf") &&
+          !item.type?.includes("image") &&
+          !item.type?.includes("pdf") &&
           item.attachment.match(/\.mp4(\?|$)/i));
-      const isPdf = item.msg_type === "pdf";
+      const isPdf = item.type === "pdf";
       const mediaUri = item.pending ? item.attachment : item.attachment || null;
       const thumbnailUri = item.thumbnail_url || null;
 
@@ -1232,10 +1375,10 @@ const StartConversation = () => {
             </View>
           ) : (
             <View
-              style={[
-                styles.message,
-                item.sender_id === userId ? styles.userMessage : styles.shopMessage,
-              ]}
+                style={[
+                  styles.message,
+                  item.sender_id === userId ? styles.userMessage : styles.shopMessage,
+                ]}
             >
               <View style={styles.messageContent}>
                 <Text style={styles.messageText}>{item.content}</Text>

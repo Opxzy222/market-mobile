@@ -1,774 +1,193 @@
-import { useState, useEffect, useMemo, useCallback, useRef, useContext } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  Image,
-  Dimensions,
-  StatusBar,
-  Modal,
-  KeyboardAvoidingView,
-  ActivityIndicator,
-  Switch,
-} from 'react-native';
-import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
-import { MaterialIcons, Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import Slider from '@react-native-community/slider';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useInterstitialAd } from '../../components/AdMobManager';
-import { SubscriptionContext } from '../../components/SubscriptionProvider';
-import SubscriptionRequired from '@/components/RequiredSubscription';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import Animated, { FadeInUp, ZoomIn } from 'react-native-reanimated';
-
-const screenWidth = Dimensions.get('window').width;
-
-const SearchResults = () => {
-  const params = useLocalSearchParams();
-  const { subscriptionStatus, loading } = useContext(SubscriptionContext);
-  const { showInterstitial, adLoaded } = useInterstitialAd();
-  const router = useRouter();
-  const [modalVisible, setModalVisible] = useState(false);
-  const [subscriptionModalVisible, setSubscriptionModalVisible] = useState(false);
-  const [showAd, setShowAd] = useState(false);
-
-  const searchResults = useMemo(() => {
-    try {
-      return params.searchResults ? JSON.parse(params.searchResults) : [];
-    } catch (error) {
-      console.error('Error parsing searchResults:', error);
-      return [];
-    }
-  }, [params.searchResults]);
-
-  const [tempMinRating, setTempMinRating] = useState(0);
-  const [tempMaxRating, setTempMaxRating] = useState(5);
-  const [tempMinDistance, setTempMinDistance] = useState(0);
-  const [tempMaxDistance, setTempMaxDistance] = useState(50);
-  const [minRating, setMinRating] = useState(0);
-  const [maxRating, setMaxRating] = useState(5);
-  const [minDistance, setMinDistance] = useState(0);
-  const [maxDistance, setMaxDistance] = useState(50);
-  const [tempIsVerified, setTempIsVerified] = useState(false);
-  const [tempIsPremium, setTempIsPremium] = useState(false);
-  const [isVerified, setIsVerified] = useState(false);
-  const [isPremium, setIsPremium] = useState(false);
-  const [filteredResults, setFilteredResults] = useState(searchResults);
-
-  const allDistancesNull = useMemo(
-    () => Array.isArray(searchResults) && searchResults.length > 0 && searchResults.every((shop) => shop?.distance == null),
-    [searchResults]
-  );
-
-  const isMountedRef = useRef(true);
-
-  useEffect(() => {
-    setMinRating(0);
-    setMaxRating(5);
-    setMinDistance(0);
-    setMaxDistance(50);
-    setTempMinRating(0);
-    setTempMaxRating(5);
-    setTempMinDistance(0);
-    setTempMaxDistance(50);
-    setTempIsVerified(false);
-    setTempIsPremium(false);
-    setIsVerified(false);
-    setIsPremium(false);
-    setFilteredResults(Array.isArray(searchResults) ? searchResults : []);
-
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, [searchResults]);
-
-  useEffect(() => {
-    if (!Array.isArray(searchResults)) {
-      console.warn('searchResults is not an array:', searchResults);
-      setFilteredResults([]);
-      return;
-    }
-
-    const results = searchResults.filter((shop) => {
-      if (!shop || typeof shop !== 'object') return false;
-
-      const rating = shop.average_rating ?? 0;
-      const distance = shop.distance ?? null;
-      const verified = shop.verified ?? false;
-      const plan = shop.plan?.toLowerCase() ?? 'free';
-
-      const ratingCheck = rating >= minRating && rating <= maxRating;
-      let distanceCheck = true;
-      const verifiedCheck = !isVerified || verified;
-      const premiumCheck = !isPremium || (plan === 'standard' || plan === 'premium');
-
-      if (!allDistancesNull && distance !== null) {
-        distanceCheck = distance >= minDistance && distance <= maxDistance;
+{
+  "expo": {
+    "name": "Gogo Market",
+    "slug": "gogo-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon2.png",
+    "scheme": "gogo-mobile",
+    "userInterfaceStyle": "automatic",
+    "sdkVersion": "53.0.0",
+    "splash": {
+      "image": "./assets/images/icon2.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.timeflies.gogomarket",
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "remote-notification",
+          "remote-notification"
+        ],
+        "NSUserNotificationsUsageDescription": "Allow this app to send you notifications about new followers, reviews, posts, and receipts.",
+        "NSLocationWhenInUseUsageDescription": "Allow this app to use your location to find nearby shops.",
+        "NSMotionUsageDescription": "Allow this app to access motion data to estimate small movements.",
+        "ITSAppUsesNonExemptEncryption": false
       }
-
-      return ratingCheck && distanceCheck && verifiedCheck && premiumCheck;
-    });
-
-    if (isMountedRef.current) {
-      setFilteredResults(results);
-    }
-  }, [minRating, maxRating, minDistance, maxDistance, isVerified, isPremium, searchResults, allDistancesNull]);
-
-  useEffect(() => {
-    if (loading || !isMountedRef.current) return;
-
-    const checkAd = async () => {
-      if (!['regular', 'standard', 'premium'].includes(subscriptionStatus)) {
-        const count = parseInt(await AsyncStorage.getItem('searchCount') || '0', 10);
-        if (count >= 3 && adLoaded) {
-          setShowAd(true);
-          await showInterstitial();
-          setShowAd(false);
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon2.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.timeflies.gogomarket",
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.INTERNET",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_PHONE_STATE",
+        "android.permission.CAMERA",
+        "android.permission.ACTIVITY_RECOGNITION"
+      ],
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-dev-client",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow this app to access your photos and videos to share them in chats.",
+          "cameraPermission": "Allow this app to access your camera for capturing videos.",
+          "microphonePermission": "Allow this app to access your microphone for video recording."
         }
+      ],
+      [
+        "expo-sqlite",
+        {
+          "enableFTS": true,
+          "android": {
+            "enableFTS": true
+          },
+          "ios": {
+            "customBuildFlags": [
+              "-DSQLITE_ENABLE_FTS5=1 -DSQLITE_ENABLE_DBSTAT_VTAB=1 -DSQLITE_ENABLE_SNAPSHOT=1"
+            ]
+          }
+        }
+      ],
+      "expo-font",
+      "expo-secure-store",
+      "expo-video",
+      "expo-web-browser",
+      [
+        "@react-native-firebase/app"
+      ],
+      [
+        "@react-native-firebase/messaging"
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#ffffff",
+          "androidMode": "default",
+          "androidCollapsedTitle": "#{unread_notifications} new messages",
+          "defaultChannel": "chat_channel",
+          "sounds": [
+            "./assets/sounds/chat_notification.mp3",
+            "./assets/sounds/receipt_notification.mp3"
+          ],
+          "channels": [
+            {
+              "id": "chat_channel",
+              "name": "Chat Notifications",
+              "importance": "high",
+              "sound": "chat_notification",
+              "vibrationPattern": [
+                100,
+                200,
+                300,
+                400
+              ],
+              "enableVibrate": true
+            },
+            {
+              "id": "receipt_channel",
+              "name": "Receipt Notifications",
+              "importance": "high",
+              "sound": "receipt_notification",
+              "vibrationPattern": [
+                100,
+                200,
+                300,
+                400
+              ],
+              "enableVibrate": true
+            }
+          ]
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "buildToolsVersion": "35.0.0",
+            "minSdkVersion": 24,
+            "ndkVersion": "25.2.9519653",
+            "enableHermes": false,
+            "edgeToEdgeEnabled": true
+          },
+          "ios": {
+            "deploymentTarget": "15.1",
+            "useFrameworks": "static"
+          }
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location."
+        }
+      ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Allow $(PRODUCT_NAME) to access your device motion"
+        }
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-2360241039001516~8918197768",
+          "iosAppId": "ca-app-pub-2360241039001516~4122191720"
+        }
+      ],
+      "./plugins/firebase-manifest-fix.js",
+      "./plugins/withCustomNotificationChannel",
+      "./plugins/withDependencyFix"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "assetBundlePatterns": [
+      "**/*",
+      "assets/sounds/**/*"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "11a350ba-590c-4271-9e5a-a2ba71d36ffc"
       }
-    };
-
-    checkAd();
-
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, [subscriptionStatus, loading, adLoaded, showInterstitial]);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (__DEV__) console.log('SearchResults focused');
-      return () => {
-        if (__DEV__) console.log('SearchResults unfocused');
-      };
-    }, [])
-  );
-
-  const handleFilterPress = useCallback(() => {
-    if (['regular', 'standard', 'premium'].includes(subscriptionStatus)) {
-      setModalVisible(true);
-    } else {
-      setSubscriptionModalVisible(true);
-    }
-  }, [subscriptionStatus]);
-
-  const applyFilters = useCallback(() => {
-    setMinRating(tempMinRating);
-    setMaxRating(tempMaxRating);
-    if (!allDistancesNull) {
-      setMinDistance(tempMinDistance);
-      setMaxDistance(tempMaxDistance);
-    }
-    setIsVerified(tempIsVerified);
-    setIsPremium(tempIsPremium);
-    setModalVisible(false);
-  }, [tempMinRating, tempMaxRating, tempMinDistance, tempMaxDistance, tempIsVerified, tempIsPremium, allDistancesNull]);
-
-  const resetFilters = useCallback(() => {
-    setTempMinRating(0);
-    setTempMaxRating(5);
-    setMinRating(0);
-    setMaxRating(5);
-    if (!allDistancesNull) {
-      setTempMinDistance(0);
-      setTempMaxDistance(50);
-      setMinDistance(0);
-      setMaxDistance(50);
-    }
-    setTempIsVerified(false);
-    setTempIsPremium(false);
-    setIsVerified(false);
-    setIsPremium(false);
-    setFilteredResults(Array.isArray(searchResults) ? searchResults : []);
-  }, [allDistancesNull, searchResults]);
-
-  const renderShopCard = useCallback(
-    ({ item, index }) => (
-      <Animated.View entering={FadeInUp.delay(index * 100).duration(300)}>
-        <TouchableOpacity
-          style={styles.shopCard}
-          activeOpacity={0.9}
-          onPress={() => {
-            router.push({
-              pathname: '/shop/shop-page',
-              params: { shopId: item.id },
-            });
-          }}
-        >
-          <View style={styles.imageContainer}>
-            {item.image ? (
-              <Image
-                source={{ uri: `https://retail-alvinia-goza-f6a0e4f7.koyeb.app${item.image}` }}
-                style={styles.shopImage}
-                resizeMode="cover"
-              />
-            ) : (
-              <LinearGradient
-                colors={['#E5E7EB', '#D1D5DB']}
-                style={[styles.shopImage, styles.placeholderImage]}
-              >
-                <MaterialIcons name="store" size={40} color="#6B7280" />
-              </LinearGradient>
-            )}
-            <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.5)']}
-              style={styles.imageGradient}
-            />
-            <View style={styles.shopNameContainer}>
-              <Text style={styles.shopNameOverlay} numberOfLines={1} ellipsizeMode="tail">
-                {item.name || 'Unnamed Shop'}
-              </Text>
-            </View>
-            {(item.average_rating !== null || item.verified || item.plan === 'standard' || item.plan === 'premium') && (
-              <View style={styles.ratingContainer}>
-                {item.verified && (
-                  <View style={styles.verifiedBadge}>
-                    <MaterialIcons name="verified-user" size={16} color="#FFFFFF" />
-                  </View>
-                )}
-                {item.average_rating !== null && (
-                  <View style={styles.ratingBadge}>
-                    <MaterialIcons name="star-rate" size={16} color="#1F2937" />
-                    <Text style={styles.ratingText}>{item.average_rating.toFixed(1)}</Text>
-                  </View>
-                )}
-                {(item.plan === 'standard' || item.plan === 'premium') && (
-                  <View style={styles.planBadge}>
-                    <MaterialIcons name="diamond" size={16} color="#FFFFFF" />
-                  </View>
-                )}
-              </View>
-            )}
-          </View>
-          <View style={styles.shopContent}>
-            <View style={styles.shopInfo}>
-              <View style={styles.row}>
-                <MaterialIcons name="place" size={16} color="#6B7280" />
-                <Text style={styles.shopAddress} numberOfLines={2}>
-                  {item.address || 'No Address'}
-                </Text>
-              </View>
-              <View style={styles.row}>
-                <MaterialIcons name="directions" size={16} color="#6B7280" />
-                <Text style={styles.shopDistance}>
-                  {item.distance !== null && item.distance !== undefined ? `${item.distance.toFixed(1)} km` : 'N/A'}
-                </Text>
-              </View>
-            </View>
-            <Animated.View entering={ZoomIn.delay(index * 100 + 200).duration(200)} style={styles.goToShopButton}>
-              <TouchableOpacity activeOpacity={0.7}>
-                <LinearGradient
-                  colors={['#22C55E', '#15803D']}
-                  style={styles.buttonGradient}
-                >
-                  <MaterialIcons name="storefront" size={18} color="#fff" />
-                  <Text style={styles.buttonText}>Visit</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </Animated.View>
-          </View>
-        </TouchableOpacity>
-      </Animated.View>
-    ),
-    [router]
-  );
-
-  const keyExtractor = useCallback((item) => item.id.toString(), []);
-
-  if (loading || showAd) {
-    return (
-      <SafeAreaView style={styles.loader}>
-        <ActivityIndicator size="large" color="#007BFF" />
-      </SafeAreaView>
-    );
+    },
+    "owner": "opxzy"
   }
-
-  return (
-    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
-      <LinearGradient colors={['#F5F5F5', '#E0E0E0']} style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.navigate("(tabs)/shop")} style={styles.backButton}>
-            <MaterialIcons name="arrow-back" size={26} color="white" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Search Results</Text>
-          <View style={styles.headerSpacer} />
-        </View>
-        <Animated.View entering={FadeInUp.duration(300)}>
-          <TouchableOpacity onPress={handleFilterPress} style={styles.filterContainer}>
-            <Ionicons name="filter-outline" size={20} color="#2563EB" />
-            <Text style={styles.filterText}>Filter Results</Text>
-          </TouchableOpacity>
-        </Animated.View>
-        <FlatList
-          data={filteredResults}
-          keyExtractor={keyExtractor}
-          renderItem={renderShopCard}
-          ListEmptyComponent={<Text style={styles.noResults}>No shops found.</Text>}
-          contentContainerStyle={styles.listContainer}
-          initialNumToRender={10}
-          maxToRenderPerBatch={10}
-          windowSize={5}
-          showsVerticalScrollIndicator={false}
-        />
-      </LinearGradient>
-      <Modal visible={subscriptionModalVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <SubscriptionRequired onClose={() => setSubscriptionModalVisible(false)} />
-            <TouchableOpacity onPress={() => setSubscriptionModalVisible(false)} style={styles.closeButton}>
-              <Text style={styles.closeButtonText}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-      <Modal visible={modalVisible} animationType="fade" transparent>
-        <View style={styles.modalOverlay}>
-          <KeyboardAvoidingView behavior="padding" style={styles.modalContainer}>
-            <Animated.View entering={ZoomIn.duration(300)} style={styles.modalContent}>
-              <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.modalCloseButton}>
-                <Ionicons name="close" size={28} color="#333" />
-              </TouchableOpacity>
-              <Text style={styles.filterTitle}>Filter Options</Text>
-              <View style={styles.sliderContainer}>
-                <Text style={styles.sliderLabel}>Rating: {tempMinRating.toFixed(1)} - {tempMaxRating.toFixed(1)}</Text>
-                <Slider
-                  minimumValue={0}
-                  maximumValue={5}
-                  step={0.1}
-                  value={tempMinRating}
-                  onValueChange={setTempMinRating}
-                  minimumTrackTintColor="#2563EB"
-                  thumbTintColor="#2563EB"
-                  style={styles.slider}
-                />
-                <Slider
-                  minimumValue={0}
-                  maximumValue={5}
-                  step={0.1}
-                  value={tempMaxRating}
-                  onValueChange={setTempMaxRating}
-                  minimumTrackTintColor="#2563EB"
-                  thumbTintColor="#2563EB"
-                  style={styles.slider}
-                />
-              </View>
-              {!allDistancesNull && (
-                <View style={styles.sliderContainer}>
-                  <Text style={styles.sliderLabel}>Distance: {tempMinDistance.toFixed(1)} - {tempMaxDistance.toFixed(1)} km</Text>
-                  <Slider
-                    minimumValue={0}
-                    maximumValue={50}
-                    step={0.1}
-                    value={tempMinDistance}
-                    onValueChange={setTempMinDistance}
-                    minimumTrackTintColor="#2563EB"
-                    thumbTintColor="#2563EB"
-                    style={styles.slider}
-                  />
-                  <Slider
-                    minimumValue={0}
-                    maximumValue={50}
-                    step={0.1}
-                    value={tempMaxDistance}
-                    onValueChange={setTempMaxDistance}
-                    minimumTrackTintColor="#2563EB"
-                    thumbTintColor="#2563EB"
-                    style={styles.slider}
-                  />
-                </View>
-              )}
-              {allDistancesNull && (
-                <Text style={styles.noDistanceText}>Distance filtering unavailable for this search.</Text>
-              )}
-              <View style={styles.switchContainer}>
-                <View style={styles.switchRow}>
-                  <Text style={styles.switchLabel}>Verified Shops Only</Text>
-                  <Switch
-                    value={tempIsVerified}
-                    onValueChange={setTempIsVerified}
-                    trackColor={{ false: '#D1D5DB', true: '#2563EB' }}
-                    thumbColor={tempIsVerified ? '#FFFFFF' : '#F4F4F5'}
-                  />
-                </View>
-                <Text style={styles.switchDescription}>Show only shops with verified owners.</Text>
-              </View>
-              <View style={styles.switchContainer}>
-                <View style={styles.switchRow}>
-                  <Text style={styles.switchLabel}>Premium Shops Only</Text>
-                  <Switch
-                    value={tempIsPremium}
-                    onValueChange={setTempIsPremium}
-                    trackColor={{ false: '#D1D5DB', true: '#2563EB' }}
-                    thumbColor={tempIsPremium ? '#FFFFFF' : '#F4F4F5'}
-                  />
-                </View>
-                <Text style={styles.switchDescription}>Show only shops with Standard or Premium plans that can generate receipts.</Text>
-              </View>
-              <View style={styles.buttonRow}>
-                <TouchableOpacity onPress={resetFilters} style={styles.resetButton}>
-                  <Text style={styles.resetButtonText}>Reset</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={applyFilters} style={styles.applyButton}>
-                  <Text style={styles.applyButtonText}>Apply</Text>
-                </TouchableOpacity>
-              </View>
-            </Animated.View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
-    </SafeAreaView>
-  );
-};
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    backgroundColor: '#3A7BD5',
-    borderBottomLeftRadius: 35,
-    borderBottomRightRadius: 35,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 6,
-  },
-  backButton: {
-    padding: 5,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    flex: 1,
-    textAlign: 'center',
-  },
-  headerSpacer: {
-    width: 42,
-  },
-  listContainer: {
-    paddingBottom: 100,
-    paddingHorizontal: 16,
-  },
-  shopCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    marginVertical: 8,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 5,
-  },
-  imageContainer: {
-    position: 'relative',
-    height: 120,
-    padding: 4,
-  },
-  shopImage: {
-    width: '100%',
-    height: '100',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-  },
-  placeholderImage: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  imageGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  shopNameContainer: {
-    position: 'absolute',
-    bottom: 8,
-    left: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    maxWidth: '80%',
-  },
-  shopNameOverlay: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    textShadowColor: 'rgba(0, 0, 0, 0.6)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 3,
-  },
-  ratingContainer: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    maxWidth: screenWidth * 0.4,
-  },
-  ratingBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F59E0B',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#B45309',
-    marginRight: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-  },
-  ratingText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1F2937',
-    marginLeft: 4,
-  },
-  verifiedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#15803D',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#22C55E',
-    marginRight: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-  },
-  planBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#6D28D9',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#8B5CF6',
-    marginRight: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-  },
-  shopContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 12,
-  },
-  shopInfo: {
-    flex: 1,
-    paddingRight: 8,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  shopAddress: {
-    fontSize: 14,
-    color: '#374151',
-    lineHeight: 20,
-    marginLeft: 6,
-  },
-  shopDistance: {
-    fontSize: 14,
-    color: '#374151',
-    marginLeft: 6,
-  },
-  goToShopButton: {
-    width: 120, // Increased width for prominence
-  },
-  buttonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    backgroundColor: '#2563EB', // Blue from UI 2
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 6,
-    textTransform: 'uppercase', // Bold text style from UI 2
-  },
-  filterContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginHorizontal: 16,
-    marginVertical: 8,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  filterText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2563EB',
-    marginLeft: 8,
-  },
-  noResults: {
-    textAlign: 'center',
-    fontSize: 16,
-    color: '#6B7280',
-    marginTop: 20,
-    fontWeight: '500',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContainer: {
-    width: '90%',
-    minHeight: 400,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 28,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  modalContent: {
-    flex: 1,
-    justifyContent: 'flex-start',
-    paddingBottom: 20,
-  },
-  modalCloseButton: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    padding: 10,
-  },
-  filterTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: 20,
-    color: '#1F2937',
-  },
-  sliderContainer: {
-    marginBottom: 28,
-  },
-  sliderLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1F2937',
-    marginBottom: 10,
-  },
-  slider: {
-    width: '100%',
-    height: 40,
-    marginBottom: 8,
-  },
-  noDistanceText: {
-    fontSize: 14,
-    color: '#6B7280',
-    textAlign: 'center',
-    marginBottom: 28,
-  },
-  switchContainer: {
-    marginBottom: 28,
-  },
-  switchRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  switchLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1F2937',
-  },
-  switchDescription: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
-  },
-  resetButton: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#DC2626',
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginRight: 8,
-  },
-  resetButtonText: {
-    color: '#DC2626',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  applyButton: {
-    flex: 1,
-    backgroundColor: '#2563EB',
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginLeft: 8,
-  },
-  applyButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  closeButton: {
-    marginTop: 16,
-    paddingVertical: 12,
-    backgroundColor: '#2563EB',
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  closeButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  loader: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-  },
-});
-
-export default SearchResults;
+}
