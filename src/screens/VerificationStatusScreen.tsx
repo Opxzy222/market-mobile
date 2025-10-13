@@ -97,7 +97,7 @@ const VerificationStatusScreen = () => {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity onPress={() => router.navigate("(tabs)/profile")} style={styles.backButton}>
             <MaterialIcons name="arrow-back" size={26} color="white" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Verification Status</Text>
