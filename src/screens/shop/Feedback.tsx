@@ -67,7 +67,7 @@ const FeedbackScreen = () => {
     <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={() => router.navigate("(tabs)/profile")}
           style={styles.backButton}
         >
           <MaterialIcons name="arrow-back" size={26} color="white" />
