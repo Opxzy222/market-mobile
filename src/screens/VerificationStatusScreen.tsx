@@ -6,7 +6,6 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Animated, { FadeInUp, FadeInDown, ZoomIn } from 'react-native-reanimated';
-import api from '../api';
 
 const VerificationStatusScreen = () => {
   const [phoneVerified, setPhoneVerified] = useState(false);
@@ -23,40 +22,33 @@ const VerificationStatusScreen = () => {
           router.push('/login');
           return;
         }
-        const response = await api.get('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/user-profile/', {
-          headers: {
-            Authorization: sessionToken,
-            'Content-Type': 'application/json',
-          },
-        });
 
-        const data = response.data;
-        console.log('API Response:', data); // Debug API response
-        if (response.status === 200) {
-          const isPhoneVerified = !!data.is_phone_verified; // Ensure boolean
-          const isUserVerified = !!data.is_verified; // Ensure boolean
-          setPhoneVerified(isPhoneVerified);
-          setUserVerified(isUserVerified);
-          console.log('Phone Verified:', isPhoneVerified, 'User Verified:', isUserVerified); // Debug state
-          Toast.show({
-            type: 'info',
-            text1: 'Verification Status Loaded',
-            text2: `Phone: ${isPhoneVerified ? 'Verified' : 'Not Verified'}, ID: ${isUserVerified ? 'Verified' : 'Not Verified'}`,
-          });
-        } else {
-          Toast.show({
-            type: 'error',
-            text1: 'Error',
-            text2: data.error || 'Failed to load verification status.',
-          });
-        }
+        // Retrieve verification statuses from AsyncStorage
+        const phoneVerifiedStr = await AsyncStorage.getItem('phone_verified');
+        const userVerifiedStr = await AsyncStorage.getItem('user_verified');
+        
+        console.log('Phone Verified (raw):', phoneVerifiedStr, 'User Verified (raw):', userVerifiedStr); // Debug raw values
+        
+        // Parse JSON strings to booleans, default to false if not found
+        const isPhoneVerified = phoneVerifiedStr ? JSON.parse(phoneVerifiedStr) : false;
+        const isUserVerified = userVerifiedStr ? JSON.parse(userVerifiedStr) : false;
+        
+        setPhoneVerified(!!isPhoneVerified); // Ensure boolean
+        setUserVerified(!!isUserVerified); // Ensure boolean
+        console.log('Phone Verified:', isPhoneVerified, 'User Verified:', isUserVerified); // Debug state
+        
+        Toast.show({
+          type: 'info',
+          text1: 'Verification Status Loaded',
+          text2: `Phone: ${isPhoneVerified ? 'Verified' : 'Not Verified'}, ID: ${isUserVerified ? 'Verified' : 'Not Verified'}`,
+        });
       } catch (error) {
         Toast.show({
           type: 'error',
           text1: 'Error',
-          text2: error.response?.data?.error || 'Failed to connect to server.',
+          text2: 'Failed to load verification status from storage.',
         });
-        console.error('Error fetching verification status:', error);
+        console.error('Error fetching verification status from AsyncStorage:', error);
       }
     };
     loadVerificationStatus();
