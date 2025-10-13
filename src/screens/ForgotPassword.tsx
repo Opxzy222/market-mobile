@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, usePathname } from 'expo-router';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { SafeAreaView } from "react-native-safe-area-context";
+import api from '../api'; // Import axios
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
@@ -35,17 +36,18 @@ export default function ForgotPasswordScreen() {
     setMessage(null);
 
     try {
-      const res = await fetch('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/auth/request-reset-token/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
+      const response = await api.post(
+        '/auth/request-reset-token/',
+        { email },
+        {
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
 
-      const data = await res.json();
+      const data = response.data;
 
-      if (res.ok) {
+      if (response.status === 200) {
         setMessage('A reset link has been sent to your email.');
-
         router.push({ pathname: '/EnterOtp', params: { email: email, prevRoute: pathname } });
       } else {
         setError(data.error || 'Something went wrong.');
@@ -59,51 +61,51 @@ export default function ForgotPasswordScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
-    <LinearGradient colors={['#f6f9ff', '#e0e7ff']} style={styles.gradient}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={styles.backButton}
-        >
-          <MaterialIcons name="arrow-back" size={26} color="white" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Forgot Password</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.wrapper}>
-        <View style={styles.card}>
-          <Text style={styles.title}>Forgot Password</Text>
-
-          <TextInput
-            style={styles.input}
-            placeholder="Enter your email"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            placeholderTextColor="#9ca3af"
-          />
-
-          {message && <Text style={styles.successText}>{message}</Text>}
-          {error && <Text style={styles.errorText}>{error}</Text>}
-
+      <LinearGradient colors={['#f6f9ff', '#e0e7ff']} style={styles.gradient}>
+        <View style={styles.header}>
           <TouchableOpacity
-            onPress={handleSubmit}
-            disabled={loading}
-            style={[styles.button, loading && styles.disabledButton]}
+            onPress={() => router.back()}
+            style={styles.backButton}
           >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="send" size={18} color="white" style={styles.icon} />
-                <Text style={styles.buttonText}>Send Reset Link</Text>
-              </>
-            )}
+            <MaterialIcons name="arrow-back" size={26} color="white" />
           </TouchableOpacity>
+          <Text style={styles.headerTitle}>Forgot Password</Text>
+          <View style={styles.headerSpacer} />
         </View>
-      </KeyboardAvoidingView>
-    </LinearGradient>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.wrapper}>
+          <View style={styles.card}>
+            <Text style={styles.title}>Forgot Password</Text>
+
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your email"
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              placeholderTextColor="#9ca3af"
+            />
+
+            {message && <Text style={styles.successText}>{message}</Text>}
+            {error && <Text style={styles.errorText}>{error}</Text>}
+
+            <TouchableOpacity
+              onPress={handleSubmit}
+              disabled={loading}
+              style={[styles.button, loading && styles.disabledButton]}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="send" size={18} color="white" style={styles.icon} />
+                  <Text style={styles.buttonText}>Send Reset Link</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </LinearGradient>
     </SafeAreaView>
   );
 }

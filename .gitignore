@@ -28,3 +28,6 @@ expo-env.d.ts
 *.keystore
 
 # android/keystore.properties
+.env
+.env.development
+.env.production

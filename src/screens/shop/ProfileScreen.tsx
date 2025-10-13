@@ -88,6 +88,12 @@ const ProfileScreen = () => {
             title="Account Verification"
             onPress={() => router.push({ pathname: 'VerificationStatus' })}
           />
+          {/* New Feedback Menu Item */}
+          <MenuItem
+            icon="chatbubble-ellipses"
+            title="Give Feedback"
+            onPress={() => router.push({ pathname: '/shop/Feedback', prevRoute: pathname })}
+          />
           <MenuItem
             icon="trash"
             title="Delete Account"

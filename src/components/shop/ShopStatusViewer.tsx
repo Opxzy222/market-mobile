@@ -18,7 +18,7 @@ import axios from 'axios';
 const STATUS_DURATION = 5000;
 const VIDEO_MAX_DURATION = 30000;
 const LOAD_TIMEOUT = 10000;
-const BACKEND_URL = "https://retail-alvinia-goza-f6a0e4f7.koyeb.app";
+const BACKEND_URL = "";
 
 const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete, canDelete }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
@@ -90,7 +90,7 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
 
   const regenerateUrl = useCallback(async (statusId) => {
     try {
-      const response = await axios.get(`${BACKEND_URL}/status/regenerate-url/?status_id=${statusId}`, {
+      const response = await api.get(`${BACKEND_URL}/status/regenerate-url/?status_id=${statusId}`, {
         headers: { Authorization: `Bearer ${authToken}` },
       });
       const { media_url, thumbnail_url } = response.data;
@@ -161,7 +161,7 @@ const StatusViewer = ({ statuses, initialIndex = 0, onClose, authToken, onDelete
 
   const deleteStatus = async (statusId) => {
     try {
-      await axios.delete(`${BACKEND_URL}/status/${statusId}/delete/`, {
+      await api.delete(`${BACKEND_URL}/status/${statusId}/delete/`, {
         headers: { Authorization: `Bearer ${authToken}` },
       });
       Alert.alert('Success', 'Status deleted successfully');

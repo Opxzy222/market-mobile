@@ -20,7 +20,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
-const BASE_URL = "https://retail-alvinia-goza-f6a0e4f7.koyeb.app";
+const BASE_URL = process.env.API_BASE_URL;
 const FALLBACK_IMAGE = "https://via.placeholder.com/150";
 
 const getFullUrl = (url) => {

@@ -9,13 +9,14 @@ import {
   StatusBar,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import Toast from "react-native-toast-message"; // Replaced Alert with Toast for consistency
+import Toast from "react-native-toast-message";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import { Ionicons } from "@expo/vector-icons";
 import Animated, { FadeInUp, FadeInDown } from "react-native-reanimated";
+import api from '../api';
 
 const ChangePassword = () => {
   const [oldPassword, setOldPassword] = useState("");
@@ -49,22 +50,24 @@ const ChangePassword = () => {
         return;
       }
 
-      const response = await fetch("https://retail-alvinia-goza-f6a0e4f7.koyeb.app/change-password/", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: sessionToken,
-        },
-        body: JSON.stringify({
+      const response = await api.patch(
+        "/change-password/",
+        {
           old_password: oldPassword,
           new_password: newPassword,
           confirm_password: confirmPassword,
-        }),
-      });
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: sessionToken,
+          },
+        }
+      );
 
-      const data = await response.json();
+      const data = response.data;
 
-      if (response.ok) {
+      if (response.status === 200) { // Axios uses status for response code
         await AsyncStorage.setItem("sessionToken", data.session_id);
         Toast.show({ type: "success", text1: "Success", text2: "Password updated successfully!" });
         setOldPassword("");

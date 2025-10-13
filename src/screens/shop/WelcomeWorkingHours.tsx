@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform, StatusBar, Modal } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import axios from "axios";
+import api from '../../api';
 import { Provider, Button, Switch } from "react-native-paper";
 import DatePicker from "react-native-date-picker";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
@@ -36,8 +36,8 @@ export default function WelcomeWorkingHours() {
 
   const fetchWorkingHours = async () => {
     try {
-      const response = await axios.get(
-        `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop/${shopId}/working-hours/`
+      const response = await api.get(
+        `/shop/${shopId}/working-hours/`
       );
       const data = response.data;
 
@@ -100,8 +100,8 @@ export default function WelcomeWorkingHours() {
         },
       };
 
-      await axios.post(
-        `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop/${shopId}/working-hours/`,
+      await api.post(
+        `/shop/${shopId}/working-hours/`,
         formattedHours
       );
 

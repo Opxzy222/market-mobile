@@ -365,8 +365,8 @@ const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusVi
         formData.append("user_id", userId.toString());
         formData.append("status_ids[]", status.id);
 
-        const response = await axios.post(
-          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/mark_status_viewed/",
+        const response = await api.post(
+          "/mark_status_viewed/",
           formData,
           {
             headers: {

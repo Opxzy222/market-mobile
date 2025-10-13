@@ -9,7 +9,7 @@ import {
   Alert,
   StatusBar,
 } from 'react-native';
-import axios from 'axios';
+import api from '../../api';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import * as Location from 'expo-location';
@@ -18,7 +18,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_BASE_URL = 'https://retail-alvinia-goza-f6a0e4f7.koyeb.app';
+const API_BASE_URL = '';
 
 // In-memory cache for subcategories
 const subcategoryCache = new Map();
@@ -79,7 +79,7 @@ const SubcategoryList = () => {
 
         // Fetch from API
         const sessionToken = await AsyncStorage.getItem('sessionToken');
-        const response = await axios.get(`${API_BASE_URL}/shop-subcategories/${categoryId}/`, {
+        const response = await api.get(`${API_BASE_URL}/shop-subcategories/${categoryId}/`, {
           headers: sessionToken ? { Authorization: sessionToken } : {},
         });
         const data = response.data;
@@ -138,7 +138,7 @@ const SubcategoryList = () => {
       }
 
       const sessionToken = await AsyncStorage.getItem('sessionToken');
-      const response = await axios.get(`${API_BASE_URL}/shop-subcategory-search/`, {
+      const response = await api.get(`${API_BASE_URL}/shop-subcategory-search/`, {
         params: { subcategory_id: subcategoryId, lat: coords.latitude, lon: coords.longitude },
         headers: sessionToken ? { Authorization: sessionToken } : {},
       });
@@ -187,7 +187,7 @@ const SubcategoryList = () => {
       setLoading(true);
       setError(null);
       const sessionToken = await AsyncStorage.getItem('sessionToken');
-      const response = await axios.get(`${API_BASE_URL}/shop-subcategories/${categoryId}/`, {
+      const response = await api.get(`${API_BASE_URL}/shop-subcategories/${categoryId}/`, {
         headers: sessionToken ? { Authorization: sessionToken } : {},
       });
       const data = response.data;

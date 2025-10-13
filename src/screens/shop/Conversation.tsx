@@ -19,7 +19,7 @@ import {
   Image,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import axios from "axios";
+import api from '../../api';
 import { useLocalSearchParams, useRouter, usePathname } from "expo-router";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import { Ionicons } from "@expo/vector-icons";
@@ -371,8 +371,8 @@ const Conversation = () => {
     setFetchError(false);
 
     try {
-      const response = await axios.get(
-        `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/conversation/?conversation_id=${conversation_id}`,
+      const response = await api.get(
+        `/conversation/?conversation_id=${conversation_id}`,
         {
           headers: { Authorization: sessionId },
           params: { limit: 50 },
@@ -495,8 +495,8 @@ const Conversation = () => {
     if (!isValidConversationId(conversation_id) || !sessionId || messages.length === 0) return;
 
     try {
-      await axios.post(
-        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/mark-messages-read/",
+      await api.post(
+        "/mark-messages-read/",
         { conversation_id },
         {
           headers: {
@@ -737,8 +737,8 @@ const Conversation = () => {
   const createConversation = async () => {
     if (!shopId || !userId || !sessionId) return null;
     try {
-      const response = await axios.post(
-        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/conversation/",
+      const response = await api.post(
+        "/conversation/",
         { shop_id: String(shopId), sender_id: String(userId) },
         {
           headers: {
@@ -857,216 +857,208 @@ const Conversation = () => {
 
   // Send attachment
   const handleSendAttachment = useCallback(
-    async (file, type) => {
-      if (!isShopActive) {
-        Alert.alert("Cannot Send", "This shop is no longer active.");
-        return;
+  async (file, type) => {
+    if (!isShopActive) {
+      Alert.alert("Cannot Send", "This shop is no longer active.");
+      return;
+    }
+
+    if (!file?.uri || !userId || !shopId) {
+      console.error("Invalid file, userId, or shopId:", {
+        fileUri: file?.uri,
+        userId,
+        shopId,
+      });
+      Alert.alert("Error", "Invalid file or user details.");
+      return;
+    }
+
+    let currentConversationId = conversation_id;
+    if (!isValidConversationId(currentConversationId)) {
+      const newId = await createConversation();
+      if (!newId) return;
+      currentConversationId = newId;
+    }
+
+    const tempId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    const fileExtension = file.fileName?.split(".").pop()?.toLowerCase() || file.uri.split(".").pop()?.toLowerCase();
+    const normalizedType =
+      type === "image" || (fileExtension && ["jpg", "jpeg", "png", "gif"].includes(fileExtension))
+        ? "image"
+        : type === "video" || (fileExtension && ["mp4", "mov"].includes(fileExtension))
+        ? "video"
+        : type === "pdf" || fileExtension === "pdf"
+        ? "pdf"
+        : "image";
+    const now = Date.now();
+    const fileName =
+      file.fileName ||
+      file.name ||
+      `file_${Date.now()}.${normalizedType === "video" ? "mp4" : normalizedType === "pdf" ? "pdf" : "jpg"}`;
+
+    setMessages((prevMessages) => {
+      console.log("Adding temporary message:", { tempId, attachment: file.uri, conversation_id: currentConversationId });
+      const newMessages = [
+        ...prevMessages.filter(
+          (msg) =>
+            now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+            msg.conversation_id === (currentConversationId || `temp_${shopId}`)
+        ),
+        {
+          id: tempId,
+          content: null,
+          sender_id: userId,
+          timestamp: new Date().toISOString(),
+          attachment: file.uri,
+          msg_type: normalizedType,
+          thumbnail_url: null,
+          read: false,
+          pending: true,
+          name: fileName,
+          temp_id: tempId,
+          conversation_id: currentConversationId || `temp_${shopId}`,
+        },
+      ];
+      cacheMessages(newMessages, currentConversationId || `temp_${shopId}`);
+      return newMessages;
+    });
+
+    try {
+      const formData = new FormData();
+      formData.append("sender_id", String(userId));
+      formData.append("shop_id", String(shopId));
+      formData.append("msg_type", normalizedType);
+
+      let fileUri = file.uri;
+      let mimeType =
+        file.mimeType ||
+        (normalizedType === "video" ? "video/mp4" : normalizedType === "pdf" ? "application/pdf" : "image/jpeg");
+
+      if (Platform.OS === "ios" && !fileUri.startsWith("file://")) {
+        fileUri = `file://${fileUri}`;
       }
 
-      if (!file?.uri || !userId || !shopId) {
-        console.error("Invalid file, userId, or shopId:", {
-          fileUri: file?.uri,
-          userId,
-          shopId,
+      let newFile;
+      if (fileUri.startsWith("blob:")) {
+        const response = await fetch(fileUri);
+        if (!response.ok) throw new Error("Failed to fetch blob data");
+        const blob = await response.blob();
+        newFile = new File([blob], fileName, {
+          type: mimeType || blob.type || "application/octet-stream",
         });
-        Alert.alert("Error", "Invalid file or user details.");
-        return;
+      } else {
+        newFile = {
+          uri: fileUri,
+          type: mimeType,
+          name: fileName,
+        };
       }
 
-      let currentConversationId = conversation_id;
-      if (!isValidConversationId(currentConversationId)) {
-        const newId = await createConversation();
-        if (!newId) return;
-        currentConversationId = newId;
+      formData.append("file", newFile);
+
+      console.log("Uploading attachment:", { type: normalizedType, fileName });
+      const response = await api.post(
+        `/upload/${currentConversationId}/`,
+        formData,
+        {
+          headers: {
+            Authorization: sessionId,
+            "Content-Type": "multipart/form-data",
+          },
+          timeout: 30000,
+        }
+      );
+
+      console.log("Raw server response:", JSON.stringify(response.data));
+
+      // Validate response data
+      if (!response.data || !response.data.message_id) {
+        throw new Error("Invalid server response: missing message ID");
       }
 
-      const tempId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-      const fileExtension = file.fileName?.split(".").pop()?.toLowerCase() || file.uri.split(".").pop()?.toLowerCase();
-      const normalizedType =
-        type === "image" || (fileExtension && ["jpg", "jpeg", "png", "gif"].includes(fileExtension))
-          ? "image"
-          : type === "video" || (fileExtension && ["mp4", "mov"].includes(fileExtension))
-          ? "video"
-          : type === "pdf" || fileExtension === "pdf"
-          ? "pdf"
-          : "image";
-      const now = Date.now();
-      const fileName =
-        file.fileName ||
-        file.name ||
-        `file_${Date.now()}.${normalizedType === "video" ? "mp4" : normalizedType === "pdf" ? "pdf" : "jpg"}`;
+      const messageId = Number(response.data.message_id);
+      if (isNaN(messageId)) {
+        throw new Error(`Invalid message ID in response: ${response.data.message_id}`);
+      }
+
+      const newConversationId = String(response.data.conversation_id || currentConversationId);
+      if (newConversationId !== currentConversationId && isValidConversationId(newConversationId)) {
+        await cacheConversationId(shopId, newConversationId);
+        console.log("Cached conversationId in SQLite:", newConversationId, "for shopId:", shopId);
+        router.setParams({ conversation_id: newConversationId });
+      }
+
+      const serverMessage = {
+        id: messageId,
+        conversation_id: newConversationId || currentConversationId,
+        content: response.data.content || null,
+        sender_id: userId,
+        timestamp: response.data.timestamp || new Date().toISOString(),
+        attachment: response.data.file_url
+          ? response.data.file_url.replace(/conversation_attachments/g, "chat_attachments")
+          : null,
+        msg_type: response.data.msg_type || normalizedType,
+        thumbnail_url: response.data.thumbnail_url
+          ? response.data.thumbnail_url.replace(/conversation_thumbnails/g, "chat_thumbnails")
+          : null,
+        read: response.data.read || false,
+        pending: false,
+        name: response.data.file_url?.split("/").pop() || fileName,
+        temp_id: tempId,
+      };
+
+      // FIX: Add to receivedMessagesRef to block WS echo duplicate
+      receivedMessagesRef.current.add(messageId);
+      if (tempId) receivedMessagesRef.current.add(tempId);
 
       setMessages((prevMessages) => {
-        console.log("Adding temporary message:", { tempId, attachment: file.uri, conversation_id: currentConversationId });
-        const newMessages = [
-          ...prevMessages.filter(
-            (msg) =>
-              now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
-              msg.conversation_id === (currentConversationId || `temp_${shopId}`)
-          ),
-          {
-            id: tempId,
-            content: null,
-            sender_id: userId,
-            timestamp: new Date().toISOString(),
-            attachment: file.uri,
-            msg_type: normalizedType,
-            thumbnail_url: null,
-            read: false,
-            pending: true,
-            name: fileName,
-            temp_id: tempId,
-            conversation_id: currentConversationId || `temp_${shopId}`,
-          },
-        ];
-        cacheMessages(newMessages, currentConversationId || `temp_${shopId}`);
-        return newMessages;
+        const now = Date.now();
+        const filteredMessages = prevMessages.filter(
+          (msg) =>
+            (msg.id !== tempId &&
+             msg.temp_id !== tempId &&
+             !(msg.attachment && msg.attachment === serverMessage.attachment)) &&
+            now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+            msg.conversation_id === (newConversationId || currentConversationId)
+        );
+        const updatedMessages = [...filteredMessages, serverMessage].sort((a, b) => a.id - b.id);
+        console.log("Replacing temp attachment message with server message:", serverMessage.id);
+        cacheMessages(updatedMessages, newConversationId || currentConversationId);
+        return updatedMessages;
       });
 
-      try {
-        const formData = new FormData();
-        formData.append("sender_id", String(userId));
-        formData.append("shop_id", String(shopId));
-        formData.append("msg_type", normalizedType);
-
-        let fileUri = file.uri;
-        let mimeType =
-          file.mimeType ||
-          (normalizedType === "video" ? "video/mp4" : normalizedType === "pdf" ? "application/pdf" : "image/jpeg");
-
-        if (Platform.OS === "ios" && !fileUri.startsWith("file://")) {
-          fileUri = `file://${fileUri}`;
+      setIsAtBottom(true);
+      InteractionManager.runAfterInteractions(() => {
+        if (messages.length > 0 && flatListRef.current) {
+          console.log("Scrolling to bottom after sending attachment");
+          flatListRef.current.scrollToEnd({ animated: true });
         }
+      });
 
-        let newFile;
-        if (fileUri.startsWith("blob:")) {
-          const response = await fetch(fileUri);
-          if (!response.ok) throw new Error("Failed to fetch blob data");
-          const blob = await response.blob();
-          newFile = new File([blob], fileName, {
-            type: mimeType || blob.type || "application/octet-stream",
-          });
-        } else {
-          newFile = {
-            uri: fileUri,
-            type: mimeType,
-            name: fileName,
-          };
-        }
+      // FIX: Remove this entire block—let server broadcast via WS
+      // if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
+      //   websocketRef.current.send(/* ... */);
+      // }
+    } catch (error) {
+      console.error("Error sending attachment:", error);
+      Alert.alert("Attachment Failed", "Unable to send attachment. Please try again.");
 
-        formData.append("file", newFile);
-
-        console.log("Uploading attachment:", { type: normalizedType, fileName });
-        const response = await axios.post(
-          `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/upload/${currentConversationId}/`,
-          formData,
-          {
-            headers: {
-              Authorization: sessionId,
-              "Content-Type": "multipart/form-data",
-            },
-            timeout: 30000,
-          }
+      setMessages((prevMessages) => {
+        const now = Date.now();
+        const updatedMessages = prevMessages.filter(
+          (msg) =>
+            (msg.id !== tempId && msg.temp_id !== tempId) &&
+            now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
+            msg.conversation_id === (conversation_id || `temp_${shopId}`)
         );
-
-        console.log("Raw server response:", JSON.stringify(response.data));
-
-        // Validate response data
-        if (!response.data || !response.data.message_id) {
-          throw new Error("Invalid server response: missing message ID");
-        }
-
-        const messageId = Number(response.data.message_id);
-        if (isNaN(messageId)) {
-          throw new Error(`Invalid message ID in response: ${response.data.message_id}`);
-        }
-
-        const newConversationId = String(response.data.conversation_id || currentConversationId);
-        if (newConversationId !== currentConversationId && isValidConversationId(newConversationId)) {
-          await cacheConversationId(shopId, newConversationId);
-          console.log("Cached conversationId in SQLite:", newConversationId, "for shopId:", shopId);
-          router.setParams({ conversation_id: newConversationId });
-        }
-
-        const serverMessage = {
-          id: messageId,
-          conversation_id: newConversationId || currentConversationId,
-          content: response.data.content || null,
-          sender_id: userId,
-          timestamp: response.data.timestamp || new Date().toISOString(),
-          attachment: response.data.file_url
-            ? response.data.file_url.replace(/conversation_attachments/g, "chat_attachments")
-            : null,
-          msg_type: response.data.msg_type || normalizedType,
-          thumbnail_url: response.data.thumbnail_url
-            ? response.data.thumbnail_url.replace(/conversation_thumbnails/g, "chat_thumbnails")
-            : null,
-          read: response.data.read || false,
-          pending: false,
-          name: response.data.file_url?.split("/").pop() || fileName,
-          temp_id: tempId,
-        };
-
-        setMessages((prevMessages) => {
-          const now = Date.now();
-          const filteredMessages = prevMessages.filter(
-            (msg) =>
-              (msg.id !== tempId &&
-               msg.temp_id !== tempId &&
-               !(msg.attachment && msg.attachment === serverMessage.attachment)) &&
-              now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
-              msg.conversation_id === (newConversationId || currentConversationId)
-          );
-          const updatedMessages = [...filteredMessages, serverMessage].sort((a, b) => a.id - b.id);
-          console.log("Replacing temp attachment message with server message:", serverMessage.id);
-          cacheMessages(updatedMessages, newConversationId || currentConversationId);
-          return updatedMessages;
-        });
-
-        setIsAtBottom(true);
-        InteractionManager.runAfterInteractions(() => {
-          if (messages.length > 0 && flatListRef.current) {
-            console.log("Scrolling to bottom after sending attachment");
-            flatListRef.current.scrollToEnd({ animated: true });
-          }
-        });
-
-        if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
-          websocketRef.current.send(
-            JSON.stringify({
-              sender_id: userId,
-              conversation_id: newConversationId || currentConversationId,
-              type: normalizedType,
-              timestamp: new Date().toISOString(),
-              content: null,
-              attachment: serverMessage.attachment,
-              thumbnail_url: serverMessage.thumbnail_url || null,
-              temp_id: tempId,
-              receiver_id: shopId,
-              message_id: serverMessage.id,
-            })
-          );
-        }
-      } catch (error) {
-        console.error("Error sending attachment:", error);
-        Alert.alert("Attachment Failed", "Unable to send attachment. Please try again.");
-
-        setMessages((prevMessages) => {
-          const now = Date.now();
-          const updatedMessages = prevMessages.filter(
-            (msg) =>
-              (msg.id !== tempId && msg.temp_id !== tempId) &&
-              now - new Date(msg.timestamp).getTime() <= CACHE_EXPIRATION_MS &&
-              msg.conversation_id === (conversation_id || `temp_${shopId}`)
-          );
-          console.log("Removing failed temp attachment message:", tempId);
-          cacheMessages(updatedMessages, conversation_id || `temp_${shopId}`);
-          return updatedMessages;
-        });
-      }
-    },
-    [userId, shopId, conversation_id, messages, isShopActive, sessionId]
-  );
+        console.log("Removing failed temp attachment message:", tempId);
+        cacheMessages(updatedMessages, conversation_id || `temp_${shopId}`);
+        return updatedMessages;
+      });
+    }
+  },
+  [userId, shopId, conversation_id, messages, isShopActive, sessionId]
+);
 
   // Handle screen focus
   useFocusEffect(

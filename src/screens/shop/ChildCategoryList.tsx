@@ -9,7 +9,7 @@ import {
   Alert,
   StatusBar,
 } from 'react-native';
-import axios from 'axios';
+import api from '../../api';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,7 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring, withTiming } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_BASE_URL = 'https://retail-alvinia-goza-f6a0e4f7.koyeb.app';
+const API_BASE_URL = '';
 
 // In-memory cache for child categories
 const categoryCache = new Map();
@@ -75,7 +75,7 @@ const ChildCategoryList = () => {
         }
         // Fetch from API
         const sessionToken = await AsyncStorage.getItem('sessionToken');
-        const response = await axios.get(`${API_BASE_URL}/shop-childcategories/${categoryId}/`, {
+        const response = await api.get(`${API_BASE_URL}/shop-childcategories/${categoryId}/`, {
           headers: sessionToken ? { Authorization: sessionToken } : {},
         });
         const data = response.data;

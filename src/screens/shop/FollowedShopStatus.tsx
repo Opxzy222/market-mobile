@@ -11,7 +11,7 @@ import {
   RefreshControl,
   Alert,
 } from "react-native";
-import axios from "axios";
+import api from '../../api';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter, useFocusEffect } from "expo-router";
@@ -21,7 +21,7 @@ import ShopPostsFeed from "../../components/shop/ShopPostsFeed";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
 
-const BACKEND_URL = "https://retail-alvinia-goza-f6a0e4f7.koyeb.app";
+const BACKEND_URL = "";
 const FALLBACK_IMAGE = "https://via.placeholder.com/150";
 
 const FollowedShopStatusScreen = () => {
@@ -63,7 +63,7 @@ const FollowedShopStatusScreen = () => {
       console.log("Using user_id for request:", userIdString);
 
       // Fetch combined feed
-      const response = await axios.get(
+      const response = await api.get(
         `${BACKEND_URL}/combined-feed/?user_id=${userId}`,
         {
           headers: { Authorization: `Bearer ${userIdString}` },
@@ -319,7 +319,7 @@ const FollowedShopStatusScreen = () => {
             console.error(`No shopId found for status ID ${statusId}`);
             return null;
           }
-          const response = await axios.get(
+          const response = await api.get(
             `${BACKEND_URL}/shops/regenerate-image-url/?shop_id=${shopId}`,
             {
               headers: { Authorization: `Bearer ${userId}` },
@@ -347,7 +347,7 @@ const FollowedShopStatusScreen = () => {
           console.log(`Regenerated shop image URL for status ID ${statusId}: ${image_url}`);
           return image_url;
         } else {
-          const response = await axios.get(
+          const response = await api.get(
             `${BACKEND_URL}/statuses/regenerate-url/?status_id=${statusId}`,
             {
               headers: { Authorization: `Bearer ${userId}` },
@@ -391,7 +391,7 @@ const FollowedShopStatusScreen = () => {
             console.error(`No shopId provided for post ID ${postId}`);
             return null;
           }
-          const response = await axios.get(
+          const response = await api.get(
             `${BACKEND_URL}/shops/regenerate-image-url/?shop_id=${shopId}`,
             {
               headers: { Authorization: `Bearer ${userId}` },
@@ -411,7 +411,7 @@ const FollowedShopStatusScreen = () => {
           console.log(`Regenerated shop image URL for post ID ${postId}: ${image_url}`);
           return image_url;
         } else {
-          const response = await axios.get(
+          const response = await api.get(
             `${BACKEND_URL}/posts/regenerate-url/?post_id=${postId}&media_index=${mediaIndex}`,
             {
               headers: { Authorization: `Bearer ${userId}` },

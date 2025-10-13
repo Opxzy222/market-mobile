@@ -29,7 +29,10 @@
       },
       "env": {
         "EXPO_USE_COMMUNITY_AUTOLINKING": "0",
-        "JAVA_HOME": "/usr/lib/jvm/java-17-openjdk-amd64"
+        "JAVA_HOME": "/usr/lib/jvm/java-17-openjdk-amd64",
+        "EXPO_PUBLIC_API_URL": "https://retail-alvinia-goza-f6a0e4f7.koyeb.app",
+        "EXPO_PUBLIC_HOW_TO_SELL": "Bj8cHbYaASc",
+        "EXPO_PUBLIC_HOW_TO_BUY": "Bj8cHbYaASc"
       }
     }
   },

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import api from '../../api';
 
 const ShopIdSearch = () => {
   const [shopId, setShopId] = useState("");
@@ -28,24 +29,24 @@ const ShopIdSearch = () => {
 
     setLoading(true);
     try {
-      const response = await fetch("https://retail-alvinia-goza-f6a0e4f7.koyeb.app/search-shop-id/", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: sessionId,
-        },
-        body: JSON.stringify({ shop_id: shopId }),
-      });
+      const response = await api.post(
+        "/search-shop-id/",
+        { shop_id: shopId },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: sessionId,
+          },
+        }
+      );
 
-      const data = await response.json();
-
-      if (response.ok) {
+      if (response.status === 200) {
         router.push({
           pathname: "/shop/shop-page",
-          params: { shopId: data.shop_id },
+          params: { shopId: response.data.shop_id },
         });
       } else {
-        setError(data.error || "Shop not found");
+        setError(response.data.error || "Shop not found");
       }
     } catch (err) {
       setError("Something went wrong. Please try again.");

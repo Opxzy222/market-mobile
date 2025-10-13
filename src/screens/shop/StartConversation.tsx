@@ -19,7 +19,7 @@ import {
   Image,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
+import api from '../../api';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { Ionicons } from '@expo/vector-icons';
@@ -330,65 +330,69 @@ const StartConversation = () => {
   // Load session data, cached conversationId, and messages, then fetch if necessary
   useEffect(() => {
     const loadData = async () => {
-      if (!shopId) {
-        console.warn("No shopId provided, skipping data load");
-        return;
+  if (!shopId) {
+    console.warn("No shopId provided, skipping data load");
+    return;
+  }
+
+  try {
+    // Clean up old caches
+    await cleanOldCaches();
+
+    // Load sessionId and userId from AsyncStorage
+    const [sessionIdString, userIdString] = await Promise.all([
+      AsyncStorage.getItem("sessionToken"),
+      AsyncStorage.getItem("user_id"),
+    ]);
+    console.log("Fetched session ID from AsyncStorage:", sessionIdString, "user ID:", userIdString);
+    setSessionId(sessionIdString);
+
+    // Declare parsedUserId outside the if block to ensure it's always in scope
+    let parsedUserId = null;
+    if (userIdString) {
+      parsedUserId = parseInt(userIdString, 10);
+      if (isValidUserId(parsedUserId)) {
+        setUserId(parsedUserId);
+        console.log("User ID loaded:", parsedUserId);
+      } else {
+        console.warn("Invalid userId in AsyncStorage:", userIdString);
+        Alert.alert("Error", "Invalid user ID. Please log in again.");
       }
+    } else {
+      console.warn("No userId found in AsyncStorage");
+      Alert.alert("Error", "User not logged in. Please log in to start a conversation.");
+    }
 
-      try {
-        // Clean up old caches
-        await cleanOldCaches();
+    // Load cached conversationId
+    const cachedId = await loadCachedConversationId(shopId);
+    if (cachedId) {
+      setConversationId(cachedId);
+      setConversationStarted(true);
+      const cachedMessages = await loadCachedMessages(cachedId);
+      console.log("Setting messages from SQLite cache:", {
+        messageCount: cachedMessages.length,
+        messages: cachedMessages.map((msg) => ({
+          id: msg.id,
+          conversation_id: msg.conversation_id,
+          content: msg.content,
+          type: msg.type,
+          thumbnail_url: msg.thumbnail_url,
+        })),
+      });
+      setMessages(cachedMessages);
+      setMessagesLoaded(!!cachedMessages.length);
+    }
 
-        // Load sessionId and userId from AsyncStorage
-        const [sessionIdString, userIdString] = await Promise.all([
-          AsyncStorage.getItem("sessionToken"),
-          AsyncStorage.getItem("user_id"),
-        ]);
-        console.log("Fetched session ID from AsyncStorage:", sessionIdString, "user ID:", userIdString);
-        setSessionId(sessionIdString);
-        if (userIdString) {
-          const parsedUserId = parseInt(userIdString, 10);
-          if (isValidUserId(parsedUserId)) {
-            setUserId(parsedUserId);
-            console.log("User ID loaded:", parsedUserId);
-          } else {
-            console.warn("Invalid userId in AsyncStorage:", userIdString);
-            Alert.alert("Error", "Invalid user ID. Please log in again.");
-          }
-        } else {
-          console.warn("No userId found in AsyncStorage");
-          Alert.alert("Error", "User not logged in. Please log in to start a conversation.");
-        }
-
-        // Load cached conversationId
-        const cachedId = await loadCachedConversationId(shopId);
-        if (cachedId) {
-          setConversationId(cachedId);
-          setConversationStarted(true);
-          const cachedMessages = await loadCachedMessages(cachedId);
-          console.log("Setting messages from SQLite cache:", {
-            messageCount: cachedMessages.length,
-            messages: cachedMessages.map((msg) => ({
-              id: msg.id,
-              conversation_id: msg.conversation_id,
-              content: msg.content,
-              type: msg.type,
-              thumbnail_url: msg.thumbnail_url,
-            })),
-          });
-          setMessages(cachedMessages);
-          setMessagesLoaded(!!cachedMessages.length);
-        }
-
-        // Fetch messages if no cached conversationId and not already fetched
-        if (!cachedId && sessionIdString && isValidUserId(parsedUserId)) {
-          hasFetchedMessages.current = true;
-          await fetchMessages(sessionIdString, parsedUserId);
-        }
-      } catch (error) {
-        console.error("Error loading data:", error);
-      }
-    };
+    // Fetch messages if no cached conversationId and not already fetched
+    // Now parsedUserId is always defined, and isValidUserId(null) will safely return false
+    if (!cachedId && sessionIdString && isValidUserId(parsedUserId)) {
+      hasFetchedMessages.current = true;
+      await fetchMessages(sessionIdString, parsedUserId);
+    }
+  } catch (error) {
+    console.error("Error loading data:", error);
+  }
+};
     loadData();
   }, [shopId]);
 
@@ -405,8 +409,8 @@ const StartConversation = () => {
     receivedMessagesRef.current.clear();
 
     try {
-      const response = await axios.get(
-        `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/messages/?user_id=${userId}&shop_id=${shopId}`,
+      const response = await api.get(
+        `/messages/?user_id=${userId}&shop_id=${shopId}`,
         { headers: { Authorization: sessionId } }
       );
 
@@ -553,8 +557,8 @@ const StartConversation = () => {
 
     try {
       console.log("Marking messages as read for conversationId:", localConversationId);
-      await axios.post(
-        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/mark-messages-read/",
+      await api.post(
+        "/mark-messages-read/",
         { conversation_id: localConversationId },
         { headers: { "Content-Type": "application/json", Authorization: sessionId } }
       );
@@ -618,8 +622,8 @@ const StartConversation = () => {
 
     try {
       console.log("Sending HTTP message:", inputMessage);
-      const response = await axios.post(
-        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/messages/",
+      const response = await api.post(
+        "/messages/",
         { sender_id: userId, shop_id: shopId, content: inputMessage },
         { headers: { Authorization: sessionId } }
       );
@@ -1183,8 +1187,8 @@ const StartConversation = () => {
         formData.append("file", newFile);
 
         console.log("Uploading attachment:", { type: normalizedType, fileName });
-        const response = await axios.post(
-          `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/upload-conversation/`,
+        const response = await api.post(
+          `/upload-conversation/`,
           formData,
           {
             headers: {

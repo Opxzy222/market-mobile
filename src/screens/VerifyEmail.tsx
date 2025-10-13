@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, StatusBar } from 'react-native';
-import axios from 'axios';
+import api from '../api';
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from 'expo-linear-gradient';
@@ -42,7 +42,7 @@ const VerifyEmailScreen = () => {
       const formData = new FormData();
       formData.append('token', code);
 
-      const response = await axios.post(
+      const response = await api.post(
         'https://retail-alvinia-goza-f6a0e4f7.koyeb.app/verify-email/',
         formData,
         {
@@ -69,7 +69,7 @@ const VerifyEmailScreen = () => {
       const formData = new FormData();
       formData.append('email', email);
 
-      await axios.post(
+      await api.post(
         'https://retail-alvinia-goza-f6a0e4f7.koyeb.app/request-email-verification/',
         formData,
         {

@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
+import api from '../api'; // Import axios
 
 const PhoneVerificationScreen = () => {
   const [phoneNo, setPhoneNo] = useState('');
@@ -42,34 +43,23 @@ const PhoneVerificationScreen = () => {
       const requestBody = { phone_no: formattedPhoneNo };
       console.log('Request body:', requestBody);
 
-      const response = await fetch('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/api/phone-verification/request/', {
-        method: 'POST',
-        headers: {
-          'Authorization': authToken,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
+      const response = await api.post(
+        '/api/phone-verification/request/',
+        requestBody,
+        {
+          headers: {
+            Authorization: authToken,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
 
-      const responseText = await response.text();
       console.log('Response status:', response.status);
-      console.log('Response body:', responseText);
+      console.log('Response body:', response.data);
 
-      let result;
-      try {
-        result = JSON.parse(responseText);
-      } catch (jsonError) {
-        console.error('JSON parse error:', jsonError);
-        Toast.show({
-          type: 'error',
-          text1: 'Invalid server response',
-          text2: 'The server returned an unexpected response. Please try again later.',
-        });
-        setLoading(false);
-        return;
-      }
+      const result = response.data;
 
-      if (response.ok) {
+      if (response.status === 200) {
         Toast.show({ type: 'success', text1: 'OTP sent to your phone number' });
         router.push({
           pathname: '/OTPVerificationScreen',
@@ -83,8 +73,20 @@ const PhoneVerificationScreen = () => {
         });
       }
     } catch (error) {
-      console.error('Fetch error:', error);
-      Toast.show({ type: 'error', text1: 'Something went wrong', text2: error.message });
+      console.error('Axios error:', error);
+      if (error.response) {
+        Toast.show({
+          type: 'error',
+          text1: error.response.data.error || 'Failed to send OTP',
+          text2: error.response.data.details || 'Please try again later.',
+        });
+      } else {
+        Toast.show({
+          type: 'error',
+          text1: 'Something went wrong',
+          text2: error.message || 'An unexpected error occurred.',
+        });
+      }
     } finally {
       setLoading(false);
     }

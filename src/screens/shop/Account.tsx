@@ -12,7 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, usePathname } from 'expo-router';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import axios from 'axios';
+import api from '../../api';
 
 const Account = () => {
   const [userId, setUserId] = useState(null);
@@ -23,7 +23,7 @@ const Account = () => {
   const pathname = usePathname();
   const router = useRouter();
 
-  const API_BASE_URL = 'https://retail-alvinia-goza-f6a0e4f7.koyeb.app';
+  const API_BASE_URL = '';
 
   useEffect(() => {
     const loadCachedData = async () => {
@@ -65,7 +65,7 @@ const Account = () => {
         if (userIdString && token) {
           setUserId(parseInt(userIdString, 10));
           setLoading(true);
-          const response = await axios.get(`${API_BASE_URL}/payments/balance/`, {
+          const response = await api.get(`/payments/balance/`, {
             headers: { Authorization: token },
           });
           const { balance, virtual_account, subscription } = response.data;

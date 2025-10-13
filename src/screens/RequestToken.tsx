@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { StyleSheet } from 'react-native';
-import axios from 'axios';
+import api from '../api'; // Assuming api is a preconfigured Axios instance
 
 const RequestTokenScreen = () => {
   const [email, setEmail] = useState('');
@@ -22,14 +22,11 @@ const RequestTokenScreen = () => {
     }
 
     setLoading(true);
-    const formData = new FormData();
-    formData.append('email', email);
-
     try {
-      const response = await axios.post(
-        'https://retail-alvinia-goza-f6a0e4f7.koyeb.app/request-email-verification/',
-        formData,
-        { headers: { 'Content-Type': 'multipart/form-data' } }
+      const response = await api.post(
+        '/request-email-verification/',
+        { email },
+        { headers: { 'Content-Type': 'application/json' } }
       );
 
       Alert.alert('Success', 'A verification email has been sent.');

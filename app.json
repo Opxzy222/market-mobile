@@ -2,7 +2,7 @@
   "expo": {
     "name": "Gogo Market",
     "slug": "gogo-mobile",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon2.png",
     "scheme": "gogo-mobile",
@@ -19,7 +19,6 @@
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "UIBackgroundModes": [
-          "remote-notification",
           "remote-notification"
         ],
         "NSUserNotificationsUsageDescription": "Allow this app to send you notifications about new followers, reviews, posts, and receipts.",
@@ -47,10 +46,27 @@
         "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.READ_PHONE_STATE",
-        "android.permission.CAMERA",
-        "android.permission.ACTIVITY_RECOGNITION"
+        "android.permission.ACTIVITY_RECOGNITION",
+        "com.google.android.gms.permission.AD_ID"
       ],
-      "edgeToEdgeEnabled": true
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "gogo-mobile",
+              "host": "verification",
+              "pathPrefix": "/"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ],
+      "edgeToEdgeEnabled": true,
+      "buildProperties": {
+        "android.enableR8.fullMode": true,
+        "android.enableProguardInReleaseBuilds": true
+      }
     },
     "web": {
       "bundler": "metro",
@@ -63,7 +79,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow this app to access your photos and videos to share them in chats.",
+          "photosPermission": "Allow this app to access your photos and videos to share them in chats."
         }
       ],
       [
@@ -142,6 +158,7 @@
             "minSdkVersion": 24,
             "ndkVersion": "25.2.9519653",
             "enableHermes": false,
+            "enableProguardInReleaseBuilds": true,
             "edgeToEdgeEnabled": true
           },
           "ios": {
@@ -171,7 +188,9 @@
       ],
       "./plugins/firebase-manifest-fix.js",
       "./plugins/withCustomNotificationChannel",
-      "./plugins/withDependencyFix"
+      "./plugins/withDependencyFix",
+      "./plugins/withNoCameraPermission",
+      "expo-mail-composer"
     ],
     "experiments": {
       "typedRoutes": true
@@ -180,6 +199,15 @@
       "**/*",
       "assets/sounds/**/*"
     ],
+    "updates": {
+      "enabled": true,
+      "url": "https://u.expo.dev/11a350ba-590c-4271-9e5a-a2ba71d36ffc",
+      "comment": "Enables OTA updates to push new JavaScript bundles, including updated EXPO_PUBLIC_API_URL for switching API endpoints (e.g., from https://retail-alvinia-goza-f6a0e4f7.koyeb.app to https://api.gogo-digital.com) without rebuilding or resubmitting to app stores."
+    },
+    "runtimeVersion": {
+      "policy": "sdkVersion",
+      "value": "1.0.0"
+    },
     "extra": {
       "router": {},
       "eas": {

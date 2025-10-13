@@ -10,7 +10,7 @@ import {
   StatusBar,
   AppState,
 } from "react-native";
-import axios from "axios";
+import api from '../../api';
 import { useRouter, usePathname, useFocusEffect } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialIcons } from "@expo/vector-icons";
@@ -129,8 +129,8 @@ const MyShop = () => {
       lastFetchTimeRef.current = now;
 
       try {
-        const response = await axios.post(
-          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops-product-count/",
+        const response = await api.post(
+          "/shops-product-count/",
           {},
           {
             headers: {
@@ -309,8 +309,8 @@ const MyShop = () => {
           text: "Close Space",
           onPress: async () => {
             try {
-              await axios.delete(
-                `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/close-shop/${shopId}/`,
+              await api.delete(
+                `/close-shop/${shopId}/`,
                 {
                   headers: { Authorization: sessionId },
                 }

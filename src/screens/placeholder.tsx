@@ -36,7 +36,7 @@ export default function CreateShopScreen({ navigation }) {
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const response = await axios.post(
+        const response = await api.post(
           "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/category/dropdown-options/"
         );
         setCategories(
@@ -69,7 +69,7 @@ export default function CreateShopScreen({ navigation }) {
       const formData = new FormData();
       formData.append("parent_id", selectedOption);
 
-      const response = await axios.post(
+      const response = await api.post(
         "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/category/subcategories/",
         formData,
         {
@@ -145,7 +145,7 @@ export default function CreateShopScreen({ navigation }) {
         formData.append("subcategories[]", sub.value)
       );
   
-      const response = await axios.post(
+      const response = await api.post(
         "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/create-shop/",
         formData,
         { headers: { "Content-Type": "multipart/form-data" } }

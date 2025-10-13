@@ -109,8 +109,8 @@ const AdminShopPage = () => {
  if (!sessionId) {
  throw new Error("No session token found");
  }
- const response = await axios.get(
- `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/${shopId}/combined/`,
+ const response = await api.get(
+ `/shops/${shopId}/combined/`,
  {
  headers: {
  Authorization: sessionId,

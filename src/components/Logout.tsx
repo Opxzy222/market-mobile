@@ -3,6 +3,7 @@ import React, { useState, useCallback } from 'react';
 import { Alert, ActivityIndicator, ToastAndroid, TouchableOpacity, Text, Platform } from 'react-native';
 import { useRouter, useNavigation } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import api from '../api';
 import { clearNonSuggestionData } from '../storage/storage';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useAppReset } from '@/context/AppResetContext';
@@ -40,20 +41,23 @@ const Logout: React.FC<LogoutProps> = ({
         return;
       }
 
-      const response = await fetch('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/logout/', {
-        method: 'POST',
-        headers: { Authorization: sessionId },
-      });
+      const response = await api.post(
+        '/logout/',
+        {},
+        {
+          headers: { Authorization: sessionId },
+        }
+      );
       console.log('Logout API response status:', response.status);
 
-      if (response.ok) {
+      if (response.status === 200) {
         await AsyncStorage.multiRemove(['sessionToken', 'user_id']);
         await clearNonSuggestionData();
         console.log('Completed clearNonSuggestionData');
 
         // Navigate first
         try {
-          router.replace('/'); // Navigate to index as in old code
+          router.replace('/');
         } catch (error) {
           console.error('Navigation error:', error);
           navigation.reset({
@@ -66,7 +70,7 @@ const Logout: React.FC<LogoutProps> = ({
         setTimeout(() => {
           resetAppState();
           console.log('resetAppState called after navigation');
-        }, 100); // 100ms delay to ensure navigation completes
+        }, 100);
 
         if (Platform.OS === 'android') {
           ToastAndroid.show('Logout successful', ToastAndroid.SHORT);

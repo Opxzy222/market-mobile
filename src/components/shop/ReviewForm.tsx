@@ -8,7 +8,7 @@ import {
   Alert,
 } from 'react-native';
 import StarRating from 'react-native-star-rating-widget';
-import axios from 'axios';
+import api from '../../api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const ReviewForm = ({ shopId, onReviewSubmitted }) => {
@@ -77,8 +77,8 @@ const ReviewForm = ({ shopId, onReviewSubmitted }) => {
     formData.append('comment', comment);
 
     try {
-      const response = await axios.post(
-        'https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/reviews/submit/',
+      const response = await api.post(
+        '/shops/reviews/submit/',
         formData,
         {
           headers: {

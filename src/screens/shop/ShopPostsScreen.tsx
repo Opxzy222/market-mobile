@@ -17,7 +17,7 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import ImageViewer from "react-native-image-zoom-viewer";
 import { Ionicons } from "@expo/vector-icons";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import axios from "axios";
+import api from '../../api';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -25,7 +25,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 const getFullUrl = (url) => {
-  const BASE_URL = "https://retail-alvinia-goza-f6a0e4f7.koyeb.app";
+  const BASE_URL = "";
   return url && typeof url === "string" && url.startsWith("http") ? url : `${BASE_URL}${url || ""}`;
 };
 
@@ -455,8 +455,8 @@ const ShopPostsScreen = () => {
           return;
         }
 
-        const response = await axios.get(
-          `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop-posts/?user_id=${userId}&page=${page}&page_size=20`
+        const response = await api.get(
+          `/shop-posts/?user_id=${userId}&page=${page}&page_size=20`
         );
         const newPosts = response.data[params.type === "followed" ? "followed_posts" : "nearby_posts"] || [];
         const transformPosts = Array.isArray(newPosts)
@@ -502,8 +502,8 @@ const ShopPostsScreen = () => {
         return;
       }
 
-      const response = await axios.get(
-        `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop-posts/?user_id=${userId}&page=1&page_size=20`
+      const response = await api.get(
+        `/shop-posts/?user_id=${userId}&page=1&page_size=20`
       );
       const newPosts = response.data[params.type === "followed" ? "followed_posts" : "nearby_posts"] || [];
       const transformPosts = Array.isArray(newPosts)

@@ -20,7 +20,7 @@ import SearchBar from '../../components/shop/SearchBar';
 import Categories from '../../components/shop/Categories';
 import RecentShops from '../../components/shop/RecentShops';
 import AdMobManager from '../../components/AdMobManager';
-import axios from 'axios';
+import api from '../../api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { clearNonSuggestionData } from '../../storage/storage';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
@@ -107,8 +107,8 @@ const ShopHomePage = () => {
         return;
       }
 
-      const response = await axios.get(
-        'https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop-dashboard-overview/',
+      const response = await api.get(
+        '/shop-dashboard-overview/',
         {
           headers: {
             Authorization: sessionTokenRef.current,
@@ -120,6 +120,7 @@ const ShopHomePage = () => {
       await AsyncStorage.setItem('shopDashboardData', JSON.stringify(newData));
       await AsyncStorage.setItem('user_verified', JSON.stringify(newData.user_verified));
       await AsyncStorage.setItem('phone_verified', JSON.stringify(newData.phone_verified));
+      await AsyncStorage.setItem("user_name", newData.user_name);
       console.log('Fetched and updated dashboard data:', newData);
       hasFetchedOnceRef.current = true;
     } catch (error) {

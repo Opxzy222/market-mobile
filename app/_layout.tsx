@@ -14,6 +14,10 @@ import { initializeApp } from 'firebase/app';
 import { AdProvider } from "@/context/AdContext";
 import { AppResetContext } from '@/context/AppResetContext';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import * as WebBrowser from 'expo-web-browser';
+
+// Call this early (e.g., in App.tsx or index.tsx)
+WebBrowser.maybeCompleteAuthSession(); // Handles redirect callbacks
 
 // Firebase configuration
 const firebaseConfig = {
@@ -716,7 +720,9 @@ const RootLayout = () => {
         'homepage',
         'PhoneVerification',
         'OTPVerification',
-        'VerificationStatus'
+        'VerificationStatus',
+        'IDVerification',
+        'verification'
       ].map((name) => ({
         name,
         options: {

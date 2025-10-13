@@ -29,6 +29,7 @@ import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import { Image } from "expo-image";
 import * as SplashScreen from "expo-splash-screen";
 import { SafeAreaView } from "react-native-safe-area-context";
+import YoutubePlayer from "react-native-youtube-iframe";
 
 // Constants
 const COLORS = {
@@ -42,13 +43,14 @@ const COLORS = {
   gradientStart: "#4B6CB7",
   gradientEnd: "#8B5CF6",
   goldAccent: "#D4A017",
-  statusBar: "#4B6CB7", 
-  headerBg: "#3A7BD5", // Kept unchanged
+  statusBar: "#4B6CB7",
+  headerBg: "#3A7BD5",
   fabBg: "#4A5ABA",
   darkBackground: "#1F2937",
   darkCardBackground: "#374151",
   darkTextPrimary: "#F9FAFB",
   darkTextSecondary: "#D1D5DB",
+  youtubeRed: "#FF0000",
 };
 
 const SPACING = {
@@ -102,10 +104,59 @@ const FeatureCard = memo(({ icon, title, description }) => {
   );
 });
 
+const VideoCard = memo(({ title, videoId, onPlay }) => {
+  const scale = useSharedValue(1);
+  const shadowOpacity = useSharedValue(0.1);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    shadowOpacity: shadowOpacity.value,
+  }));
+
+  const handlePressIn = () => {
+    scale.value = withSpring(0.95, { stiffness: 400, damping: 20 });
+    shadowOpacity.value = withTiming(0.3, { duration: 100 });
+  };
+
+  const handlePressOut = () => {
+    scale.value = withSpring(1, { stiffness: 400, damping: 20 });
+    shadowOpacity.value = withTiming(0.1, { duration: 100 });
+  };
+
+  if (!videoId || typeof videoId !== "string") {
+    console.warn(`Invalid videoId for ${title}:`, videoId);
+    return null;
+  }
+
+  return (
+    <TouchableOpacity
+      onPress={() => onPlay(videoId)}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      activeOpacity={0.9}
+      accessibilityLabel={`Play ${title} video`}
+    >
+      <Animated.View style={[styles.featureCard, animatedStyle]}>
+        <LinearGradient
+          colors={[COLORS.gradientStart, COLORS.accent]}
+          style={styles.featureIconContainer}
+        >
+          <MaterialIcons name="play-arrow" size={28} color={COLORS.youtubeRed} />
+        </LinearGradient>
+        <Text style={styles.featureTitle}>{title}</Text>
+        <Text style={styles.featureDescription}>Watch the tutorial</Text>
+      </Animated.View>
+    </TouchableOpacity>
+  );
+});
+
 const Homepage = () => {
   const router = useRouter();
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [videoVisible, setVideoVisible] = useState(false);
+  const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
+  const [isVideoLoading, setIsVideoLoading] = useState(false); // New state for video loading
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
 
@@ -129,6 +180,9 @@ const Homepage = () => {
       }
     };
 
+    console.log("EXPO_PUBLIC_HOW_TO_SELL:", process.env.EXPO_PUBLIC_HOW_TO_SELL);
+    console.log("EXPO_PUBLIC_HOW_TO_BUY:", process.env.EXPO_PUBLIC_HOW_TO_BUY);
+
     checkSession();
 
     heroImageScale.value = withTiming(1, {
@@ -145,6 +199,30 @@ const Homepage = () => {
       true
     );
   }, []);
+
+  const handlePlayVideo = useCallback(async (videoId: string) => {
+    if (!videoId || typeof videoId !== "string") {
+      Alert.alert("Error", "No valid video ID provided.");
+      return;
+    }
+
+    try {
+      setCurrentVideoId(videoId);
+      setIsVideoLoading(true); // Set loading state to true
+      setVideoVisible(true);
+    } catch (error) {
+      console.error("Video load error:", error);
+      Alert.alert("Error", "Failed to load video.");
+      setVideoVisible(false);
+      setIsVideoLoading(false);
+    }
+  }, []);
+
+  const handleCloseVideo = () => {
+    setVideoVisible(false);
+    setCurrentVideoId(null);
+    setIsVideoLoading(false);
+  };
 
   const handleExplorePress = useCallback(() => {
     if (!sessionToken) {
@@ -200,6 +278,17 @@ const Homepage = () => {
     { icon: "search", title: "Easy Discovery", description: "Browse with ease." },
   ];
 
+  const videoTutorials = [
+    {
+      title: "How to Create Business Space",
+      videoId: process.env.EXPO_PUBLIC_HOW_TO_BUY || "Bj8cHbYaASc",
+    },
+    {
+      title: "How to Find Seller",
+      videoId: process.env.EXPO_PUBLIC_HOW_TO_SELL || "Bj8cHbYaASc",
+    },
+  ].filter(item => item.videoId && typeof item.videoId === "string");
+
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -211,7 +300,7 @@ const Homepage = () => {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
-      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
+      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
           <View style={styles.headerBrand}>
@@ -267,6 +356,33 @@ const Homepage = () => {
           </View>
         </View>
 
+        <View style={styles.videoSection}>
+          <Text style={styles.sectionTitle}>How to Use Gogo</Text>
+          {videoTutorials.length > 0 ? (
+            <FlatList
+              data={videoTutorials}
+              renderItem={({ item }) => (
+                <VideoCard
+                  title={item.title}
+                  videoId={item.videoId}
+                  onPlay={handlePlayVideo}
+                />
+              )}
+              keyExtractor={(item) => item.title}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.featureList}
+              snapToAlignment="center"
+              snapToInterval={200 + SPACING.md}
+              decelerationRate="fast"
+              initialNumToRender={2}
+              style={styles.featureFlatList}
+            />
+          ) : (
+            <Text style={styles.featureDescription}>No tutorials available</Text>
+          )}
+        </View>
+
         <View style={styles.featuresSection}>
           <Text style={styles.sectionTitle}>Why Choose Gogo?</Text>
           <FlatList
@@ -317,6 +433,44 @@ const Homepage = () => {
         </LinearGradient>
       </ScrollView>
 
+      {videoVisible && currentVideoId && (
+        <View style={styles.videoModal}>
+          {isVideoLoading && (
+            <View style={styles.videoLoadingContainer}>
+              <ActivityIndicator size="large" color={COLORS.youtubeRed} />
+              <Text style={styles.videoLoadingText}>Loading video...</Text>
+            </View>
+          )}
+          <YoutubePlayer
+            height={300}
+            width={width}
+            play={videoVisible}
+            videoId={currentVideoId}
+            onReady={() => setIsVideoLoading(false)} // Set loading to false when video is ready
+            onChangeState={(event) => {
+              if (event === "ended" || event === "paused") {
+                setVideoVisible(false);
+                setCurrentVideoId(null);
+                setIsVideoLoading(false);
+              }
+            }}
+            onError={(error) => {
+              console.error("YouTube playback error:", error);
+              Alert.alert("Error", "Failed to play video.");
+              setVideoVisible(false);
+              setIsVideoLoading(false);
+            }}
+          />
+          <TouchableOpacity
+            onPress={handleCloseVideo}
+            style={styles.videoCloseButton}
+            accessibilityLabel="Close video"
+          >
+            <MaterialIcons name="close" size={28} color={COLORS.white} />
+          </TouchableOpacity>
+        </View>
+      )}
+
       <Animated.View style={[styles.fab, fabAnimatedStyle]}>
         <TouchableOpacity
           style={styles.fabButton}
@@ -354,7 +508,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 16,
     paddingHorizontal: 16,
-    backgroundColor: COLORS.headerBg, // Kept unchanged
+    backgroundColor: COLORS.headerBg,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
     shadowColor: "#000",
@@ -465,6 +619,11 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: COLORS.white,
     letterSpacing: 1,
+  },
+  videoSection: {
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.lg,
+    marginBottom: SPACING.lg,
   },
   featuresSection: {
     paddingHorizontal: SPACING.xl,
@@ -579,6 +738,35 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     elevation: 6,
+  },
+  videoModal: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.95)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 1000,
+  },
+  videoCloseButton: {
+    position: "absolute",
+    top: Platform.OS === "ios" ? 50 : 20,
+    right: 20,
+    padding: 10,
+    zIndex: 1100, // Ensure close button is above loading indicator
+  },
+  videoLoadingContainer: {
+    position: "absolute",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 1050, // Above video player but below close button
+  },
+  videoLoadingText: {
+    color: COLORS.white,
+    fontSize: 16,
+    marginTop: SPACING.sm,
   },
 });
 

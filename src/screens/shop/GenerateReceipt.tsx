@@ -15,7 +15,7 @@ import {
   StatusBar,
   Linking, Image
 } from "react-native";
-import axios from "axios";
+import api from '../../api';
 import { useLocalSearchParams, useRouter } from "expo-router";
 import SubscriptionProvider, { SubscriptionContext } from "../../components/SubscriptionProvider";
 import { MaterialIcons } from "@expo/vector-icons";
@@ -55,8 +55,8 @@ const GenerateReceipt = () => {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const response = await axios.get(
-          `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop/${shopId}/products/`
+        const response = await api.get(
+          `/shop/${shopId}/products/`
         );
         setShopProducts(response.data.shop_products);
       } catch (error) {
@@ -76,8 +76,8 @@ const GenerateReceipt = () => {
   const fetchCustomerName = async (customerId) => {
     setNameLoading(true);
     try {
-      const response = await axios.get(
-        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/customer-fullname/",
+      const response = await api.get(
+        "/customer-fullname/",
         { params: { customer_id: customerId } }
       );
       setCustomerName(response.data.full_name);
@@ -179,8 +179,8 @@ const GenerateReceipt = () => {
       formData.append("total_amount", totalAmount.toString());
       formData.append("customer_id", customerId);
 
-      const response = await axios.post(
-        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/generate-receipt/",
+      const response = await api.post(
+        "/generate-receipt/",
         formData,
         { headers: { "Content-Type": "multipart/form-data" } }
       );

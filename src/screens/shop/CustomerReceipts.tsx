@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import { Card, Divider, Chip } from "react-native-paper";
 import Animated, { FadeInUp, FadeOut } from "react-native-reanimated";
-import axios from "axios";
+import api from '../../api';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
@@ -135,6 +135,8 @@ const CustomerReceipts = () => {
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
+  const [tempStartDate, setTempStartDate] = useState(null); // Temporary start date
+  const [tempEndDate, setTempEndDate] = useState(null); // Temporary end date
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerType, setPickerType] = useState(null);
   const [tempDate, setTempDate] = useState(new Date());
@@ -176,12 +178,9 @@ const CustomerReceipts = () => {
     setLoading(true);
     try {
       console.log("Fetching receipts with sessionId:", sessionId);
-      const response = await axios.get(
-        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/receipts/customer/",
-        {
-          headers: { Authorization: sessionId },
-        }
-      );
+      const response = await api.get("/receipts/customer/", {
+        headers: { Authorization: sessionId },
+      });
       const fetchedReceipts = Array.isArray(response.data.receipts)
         ? response.data.receipts.filter(
             (item) => item && typeof item === "object" && item.id && item.created_at
@@ -205,6 +204,18 @@ const CustomerReceipts = () => {
     }, [fetchReceipts])
   );
 
+  // Reset filter states when tab changes
+  useEffect(() => {
+    console.log("Active tab changed to:", activeTab);
+    setStartDate(null);
+    setEndDate(null);
+    setTempStartDate(null); // Reset temporary dates
+    setTempEndDate(null);
+    setFilterModalVisible(false);
+    setPickerVisible(false);
+    setPickerType(null);
+  }, [activeTab]);
+
   // Handle accept/reject actions
   const handleAction = useCallback(
     async (receiptId, action) => {
@@ -219,8 +230,8 @@ const CustomerReceipts = () => {
               text: "Confirm",
               onPress: async () => {
                 try {
-                  await axios.post(
-                    `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/receipts/${receiptId}/${action}/`,
+                  await api.post(
+                    `/receipts/${receiptId}/${action}/`,
                     {},
                     { headers: { Authorization: sessionId } }
                   );
@@ -256,35 +267,46 @@ const CustomerReceipts = () => {
         return;
       }
       if (pickerType === "start") {
-        if (endDate && selectedDate > endDate) {
-          Alert.alert("Invalid Date", "Start date cannot be after end date.");
-          return;
-        }
-        setStartDate(selectedDate);
-        console.log("Start date set:", selectedDate);
+        setTempStartDate(selectedDate); // Store in temp state
+        console.log("Temp start date set:", selectedDate);
       } else if (pickerType === "end") {
-        if (startDate && selectedDate < startDate) {
-          Alert.alert("Invalid Date", "End date cannot be before start date.");
-          return;
-        }
-        setEndDate(selectedDate);
-        console.log("End date set:", selectedDate);
+        setTempEndDate(selectedDate); // Store in temp state
+        console.log("Temp end date set:", selectedDate);
       }
       setPickerVisible(false);
       setPickerType(null);
     },
-    [pickerType, startDate, endDate]
+    [pickerType]
   );
+
+  // Handle Apply button press
+  const handleApplyFilters = useCallback(() => {
+    // Validate dates before applying
+    if (tempStartDate && tempEndDate && tempStartDate > tempEndDate) {
+      Alert.alert("Invalid Date", "Start date cannot be after end date.");
+      return;
+    }
+    setStartDate(tempStartDate); // Update actual startDate
+    setEndDate(tempEndDate); // Update actual endDate
+    console.log("Applying date filter:", { startDate: tempStartDate, endDate: tempEndDate });
+    setFilterModalVisible(false); // Close modal
+  }, [tempStartDate, tempEndDate]);
 
   // Show DatePicker
   const showDatePicker = useCallback(
     (type) => {
       console.log("Opening DatePicker for type:", type);
       setPickerType(type);
-      setTempDate(type === "start" && startDate ? startDate : type === "end" && endDate ? endDate : new Date());
+      setTempDate(
+        type === "start" && tempStartDate
+          ? tempStartDate
+          : type === "end" && tempEndDate
+          ? tempEndDate
+          : new Date()
+      );
       setPickerVisible(true);
     },
-    [startDate, endDate]
+    [tempStartDate, tempEndDate]
   );
 
   // Filter receipts
@@ -300,8 +322,10 @@ const CustomerReceipts = () => {
 
       const matchesStatus = tabStatus === "all" || receiptStatus === tabStatus;
       let matchesDate = true;
-      if (startDate) matchesDate = matchesDate && receiptDate >= new Date(startDate.setHours(0, 0, 0, 0));
-      if (endDate) matchesDate = matchesDate && receiptDate <= new Date(endDate.setHours(23, 59, 59, 999));
+      if (startDate)
+        matchesDate = matchesDate && receiptDate >= new Date(startDate.setHours(0, 0, 0, 0));
+      if (endDate)
+        matchesDate = matchesDate && receiptDate <= new Date(endDate.setHours(23, 59, 59, 999));
 
       return matchesStatus && matchesDate;
     });
@@ -482,6 +506,8 @@ const CustomerReceipts = () => {
         console.log("Closing filter modal");
         setFilterModalVisible(false);
         setPickerVisible(false);
+        setTempStartDate(startDate); // Reset temporary dates
+        setTempEndDate(endDate);
       }}
     >
       <StatusBar barStyle="dark-content" backgroundColor="rgba(0, 0, 0, 0.4)" />
@@ -493,7 +519,7 @@ const CustomerReceipts = () => {
             onPress={() => showDatePicker("start")}
           >
             <Text style={styles.dateInputText}>
-              {startDate ? formatDate(startDate.toISOString()) : "Start Date"}
+              {tempStartDate ? formatDate(tempStartDate.toISOString()) : "Start Date"}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -501,16 +527,13 @@ const CustomerReceipts = () => {
             onPress={() => showDatePicker("end")}
           >
             <Text style={styles.dateInputText}>
-              {endDate ? formatDate(endDate.toISOString()) : "End Date"}
+              {tempEndDate ? formatDate(tempEndDate.toISOString()) : "End Date"}
             </Text>
           </TouchableOpacity>
           <View style={styles.modalButtons}>
             <TouchableOpacity
               style={styles.applyButton}
-              onPress={() => {
-                console.log("Applying date filter:", { startDate, endDate });
-                setFilterModalVisible(false);
-              }}
+              onPress={handleApplyFilters}
             >
               <LinearGradient colors={["#2563EB", "#10B981"]} style={styles.buttonGradient}>
                 <Text style={styles.buttonText}>Apply</Text>
@@ -520,6 +543,8 @@ const CustomerReceipts = () => {
               style={styles.clearButton}
               onPress={() => {
                 console.log("Clearing date filters");
+                setTempStartDate(null);
+                setTempEndDate(null);
                 setStartDate(null);
                 setEndDate(null);
                 setFilterModalVisible(false);
@@ -534,24 +559,24 @@ const CustomerReceipts = () => {
           <DatePicker
             date={tempDate}
             mode="date"
-            open={pickerVisible}
-            onConfirm={handleDateChange}
-            onCancel={() => {
-              console.log("DatePicker cancelled");
-              setPickerVisible(false);
-              setPickerType(null);
-            }}
             maximumDate={new Date()}
+            onDateChange={handleDateChange}
             textColor="#1F2A44"
-            theme="auto"
-            confirmText="Apply"
-            cancelText="Cancel"
             style={styles.dateTimePicker}
           />
         )}
       </View>
     </Modal>
-  ), [filterModalVisible, startDate, endDate, pickerVisible, tempDate, handleDateChange, showDatePicker]);
+  ), [
+    filterModalVisible,
+    tempStartDate,
+    tempEndDate,
+    pickerVisible,
+    tempDate,
+    handleDateChange,
+    showDatePicker,
+    handleApplyFilters,
+  ]);
 
   // Render FlatList item
   const renderItem = useCallback(
@@ -626,6 +651,8 @@ const CustomerReceipts = () => {
             style={styles.filterButton}
             onPress={() => {
               console.log("Filter button pressed, setting filterModalVisible to true");
+              setTempStartDate(startDate); // Initialize temp dates
+              setTempEndDate(endDate);
               setFilterModalVisible(true);
             }}
           >
@@ -633,7 +660,8 @@ const CustomerReceipts = () => {
           </TouchableOpacity>
           {(startDate || endDate) && (
             <Text style={styles.filterInfoText} numberOfLines={1}>
-              {startDate ? formatDate(startDate.toISOString()) : "Start"} - {endDate ? formatDate(endDate.toISOString()) : "End"}
+              {startDate ? formatDate(startDate.toISOString()) : "Start"} -{" "}
+              {endDate ? formatDate(endDate.toISOString()) : "End"}
             </Text>
           )}
         </View>

@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { View, StyleSheet, Text, Alert } from 'react-native';
-import axios from 'axios';
+import api from '../../api';
 import * as Location from 'expo-location';
 import AutocompleteInput from '../AutocompleteInput';
 import { useInterstitialAd } from '../../components/AdMobManager';
@@ -30,7 +30,7 @@ export default function GeolocationSearch({ onSearch, onFocusChange, onSuggestio
         const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
         const { latitude, longitude } = location.coords;
 
-        const response = await axios.get('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop-product-search/', {
+        const response = await api.get('/shop-product-search/', {
           params: { input: query, lat: latitude, lon: longitude },
         });
 

@@ -11,7 +11,7 @@ import {
   StatusBar,
   Dimensions,
 } from 'react-native';
-import axios from 'axios';
+import api from '../../api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, usePathname, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -104,8 +104,8 @@ const MessageList = () => {
     setFetchError(false);
 
     try {
-      const response = await axios.get(
-        'https://retail-alvinia-goza-f6a0e4f7.koyeb.app/message-list/',
+      const response = await api.get(
+        '/message-list/',
         { headers: { Authorization: sessionId } }
       );
       const newMessages = response.data;

@@ -13,8 +13,9 @@ import {
   Platform,
   StatusBar,
   Animated,
+  Modal,
 } from 'react-native';
-import axios from 'axios';
+import api from '../../api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import ReviewForm from '../../components/shop/ReviewForm';
@@ -30,7 +31,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AdMobManager from '../../components/AdMobManager';
 import { SubscriptionContext } from '../../components/SubscriptionProvider';
 import { getFullUrl } from '../../utils/imageUtils';
-import { format, parseISO } from 'date-fns'; // Import date-fns for date formatting
+import { format, parseISO } from 'date-fns';
 
 const ShopPage = () => {
   const { subscriptionStatus, loading } = useContext(SubscriptionContext);
@@ -52,16 +53,17 @@ const ShopPage = () => {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [descriptionAnim] = useState(new Animated.Value(0));
   const [statusAnim] = useState(new Animated.Value(0));
+  const [isImageModalVisible, setIsImageModalVisible] = useState(false);
 
   const fetchShopData = async () => {
     if (!sessionId || !shopId) return;
 
     try {
-      const response = await axios.get(
-        `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/${shopId}/combined/`,
-        { headers: { Authorization: sessionId } }
-      );
+      const response = await api.get(`/shops/${shopId}/combined/`, {
+        headers: { Authorization: sessionId },
+      });
       const data = response.data;
+      console.log('Shop image from API:', data.shop.image);
 
       setShop({
         name: data.shop.name,
@@ -75,9 +77,12 @@ const ShopPage = () => {
         latitude: data.shop.geo_location?.latitude,
         longitude: data.shop.geo_location?.longitude,
         is_open: data.shop.is_open,
-        average_rating: typeof data.shop.average_rating === 'number' ? data.shop.average_rating : null,
+        average_rating:
+          typeof data.shop.average_rating === 'number'
+            ? data.shop.average_rating
+            : null,
         owner_is_verified: data.shop.owner_is_verified || false,
-        created_at: data.shop.created_at, // Add created_at to shop state
+        created_at: data.shop.created_at,
       });
       setReviews(data.reviews);
       setFollowerCount(data.follower_count);
@@ -178,15 +183,33 @@ const ShopPage = () => {
     setSelectedCategory(category);
   };
 
-  // Format the created_at date
   const formatCreatedAt = (dateString) => {
     try {
       const date = parseISO(dateString);
-      return format(date, 'MMMM d, yyyy'); // e.g., "September 11, 2025"
+      return format(date, 'MMMM d, yyyy');
     } catch (e) {
       console.error('Error formatting created_at date:', e);
       return 'Unknown date';
     }
+  };
+
+  const openImageModal = () => {
+    if (shop?.image && getFullUrl(shop.image)) {
+      console.log('Opening image modal for URL:', getFullUrl(shop.image));
+      setIsImageModalVisible(true);
+    } else {
+      console.log('No valid image URL to open modal');
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('No image available', ToastAndroid.SHORT);
+      } else {
+        Alert.alert('Error', 'No image available to display');
+      }
+    }
+  };
+
+  const closeImageModal = () => {
+    console.log('Closing image modal');
+    setIsImageModalVisible(false);
   };
 
   const categoryGradients = [
@@ -226,7 +249,10 @@ const ShopPage = () => {
               </LinearGradient>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity style={styles.backButtonError} onPress={() => router.back()}>
+            <TouchableOpacity
+              style={styles.backButtonError}
+              onPress={() => router.back()}
+            >
               <LinearGradient
                 colors={['#3B82F6', '#1D4ED8']}
                 style={styles.backButtonGradient}
@@ -281,36 +307,58 @@ const ShopPage = () => {
                 source={{ uri: getFullUrl(shop.image) }}
                 style={styles.backgroundImage}
                 resizeMode="cover"
-                onError={(e) => console.error(`Background image load error for shop ${shopId}:`, e.nativeEvent.error)}
+                onError={(e) =>
+                  console.error(
+                    `Background image load error for shop ${shopId}:`,
+                    e.nativeEvent.error
+                  )
+                }
               />
               <LinearGradient
                 colors={['rgba(0, 0, 0, 0.7)', 'rgba(0, 0, 0, 0.5)']}
                 style={styles.backgroundOverlay}
               />
-              <Image
-                source={{ uri: getFullUrl(shop.image) }}
-                style={styles.shopImage}
-                resizeMode="contain"
-                onError={(e) => console.error(`Shop image load error for shop ${shopId}:`, e.nativeEvent.error)}
-              />
+              <TouchableOpacity
+                onPress={openImageModal}
+                activeOpacity={0.7}
+                style={styles.imageTouchable}
+              >
+                <Image
+                  source={{ uri: getFullUrl(shop.image) }}
+                  style={styles.shopImage}
+                  resizeMode="contain"
+                  onError={(e) =>
+                    console.error(
+                      `Shop image load error for shop ${shopId}:`,
+                      e.nativeEvent.error
+                    )
+                  }
+                />
+              </TouchableOpacity>
               <View style={styles.imageGlow} />
               <LinearGradient
                 colors={['rgba(0, 0, 0, 0.5)', 'transparent']}
                 style={styles.imageOverlay}
+                pointerEvents="none"
               />
               <View style={styles.ratingBadgeContainer}>
-                {typeof shop.average_rating === 'number' && !isNaN(shop.average_rating) && (
-                  <View style={styles.ratingBadge}>
-                    <MaterialIcons name="star" size={12} color="#FFD700" />
-                    <Text style={styles.ratingText}>{shop.average_rating.toFixed(1)}</Text>
-                  </View>
-                )}
+                {typeof shop.average_rating === 'number' &&
+                  !isNaN(shop.average_rating) && (
+                    <View style={styles.ratingBadge}>
+                      <MaterialIcons name="star" size={12} color="#FFD700" />
+                      <Text style={styles.ratingText}>
+                        {shop.average_rating.toFixed(1)}
+                      </Text>
+                    </View>
+                  )}
               </View>
               <View style={styles.verifiedContainer}>
                 {shop.owner_is_verified && (
-                  <View style={styles.verifiedBadge}>
-                    <MaterialIcons name="verified" size={12} color="#0FA958" />
-                    <Text style={styles.verifiedText}>Verified</Text>
+                  <View style={styles.ownerVerifiedBadge}>
+                    <MaterialIcons name="person" size={16} color="#0FA958" />
+                    <View style={styles.verifiedIconOverlay}>
+                      <MaterialIcons name="verified" size={10} color="#0FA958" />
+                    </View>
                   </View>
                 )}
               </View>
@@ -377,6 +425,37 @@ const ShopPage = () => {
             </View>
           </View>
 
+          <Modal
+            visible={isImageModalVisible}
+            transparent={false}
+            animationType="fade"
+            onRequestClose={closeImageModal}
+          >
+            {console.log('Modal rendering, visible:', isImageModalVisible)}
+            <SafeAreaView style={styles.fullScreenContainer}>
+              <View style={styles.fullScreenImageContainer}>
+                <Image
+                  source={{ uri: getFullUrl(shop?.image) }}
+                  style={styles.fullScreenImage}
+                  resizeMode="contain"
+                  onError={(e) =>
+                    console.error(
+                      `Full-screen image load error for shop ${shopId}:`,
+                      e.nativeEvent.error
+                    )
+                  }
+                />
+                <TouchableOpacity
+                  style={styles.closeModalButton}
+                  onPress={closeImageModal}
+                  activeOpacity={0.7}
+                >
+                  <MaterialIcons name="close" size={30} color="#FFF" />
+                </TouchableOpacity>
+              </View>
+            </SafeAreaView>
+          </Modal>
+
           <View style={styles.details}>
             <LinearGradient
               colors={['#FFFFFF', '#F8FAFC']}
@@ -401,14 +480,17 @@ const ShopPage = () => {
               >
                 {shop.description || 'No description available'}
               </Animated.Text>
-              {/* Add Created At display */}
               {shop.created_at && (
                 <View style={styles.createdAtContainer}>
                   <LinearGradient
                     colors={['#E5E7EB', '#D1D5DB']}
                     style={styles.createdAtBadge}
                   >
-                    <MaterialIcons name="calendar-today" size={14} color="#4B5563" />
+                    <MaterialIcons
+                      name="calendar-today"
+                      size={14}
+                      color="#4B5563"
+                    />
                     <Text style={styles.createdAtText}>
                       Created on {formatCreatedAt(shop.created_at)}
                     </Text>
@@ -438,7 +520,9 @@ const ShopPage = () => {
                 <Text style={styles.categoriesTitle}>Categories</Text>
               </View>
               <View style={styles.categoriesWrapper}>
-                {shop.categories && Array.isArray(shop.categories) && shop.categories.length > 0 ? (
+                {shop.categories &&
+                Array.isArray(shop.categories) &&
+                shop.categories.length > 0 ? (
                   shop.categories.map((cat, index) => (
                     <TouchableOpacity
                       key={index}
@@ -456,7 +540,9 @@ const ShopPage = () => {
                   ))
                 ) : (
                   <View style={[styles.categoryBadge, styles.noCategoryBadge]}>
-                    <Text style={[styles.categoryBadgeText, styles.noCategoryBadgeText]}>
+                    <Text
+                      style={[styles.categoryBadgeText, styles.noCategoryBadgeText]}
+                    >
                       No categories available
                     </Text>
                   </View>
@@ -465,7 +551,8 @@ const ShopPage = () => {
               {selectedCategory && (
                 <View style={styles.categoryTooltip}>
                   <Text style={styles.categoryTooltipText}>
-                    {selectedCategory.name || 'Category'} - Explore products and services in this category.
+                    {selectedCategory.name || 'Category'} - Explore products and
+                    services in this category.
                   </Text>
                   <TouchableOpacity
                     style={styles.closeTooltipButton}
@@ -516,8 +603,13 @@ const ShopPage = () => {
             )}
             {activeTab === 'customers' && <Followers followers={followers} />}
             {activeTab === 'reviews' && (
-              <View style={[styles.reviewsContainer, { keyboardShouldPersistTaps: 'always' }]}>
-                <ReviewForm shopId={shopId} onReviewSubmitted={handleReviewSubmitted} />
+              <View
+                style={[styles.reviewsContainer, { keyboardShouldPersistTaps: 'always' }]}
+              >
+                <ReviewForm
+                  shopId={shopId}
+                  onReviewSubmitted={handleReviewSubmitted}
+                />
                 <ShopReview reviews={reviews} />
               </View>
             )}
@@ -623,6 +715,11 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 12,
     borderTopRightRadius: 12,
   },
+  imageTouchable: {
+    width: '100%',
+    height: '100%',
+    zIndex: 5,
+  },
   shopImage: {
     width: '100%',
     height: '100%',
@@ -690,7 +787,7 @@ const styles = StyleSheet.create({
     color: '#FFD700',
     marginLeft: 4,
   },
-  verifiedBadge: {
+  ownerVerifiedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#E3FCEF',
@@ -706,11 +803,13 @@ const styles = StyleSheet.create({
     elevation: 3,
     marginRight: 4,
   },
-  verifiedText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#0FA958',
-    marginLeft: 4,
+  verifiedIconOverlay: {
+    position: 'relative',
+    bottom: 8,
+    left: -4,
+    backgroundColor: '#E3FCEF',
+    borderRadius: 8,
+    padding: 2,
   },
   shopStatusOverlay: {
     position: 'absolute',
@@ -727,6 +826,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 3,
     elevation: 2,
+    zIndex: 10,
   },
   shopStatusText: {
     fontSize: 13,
@@ -1103,6 +1203,30 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
+  },
+  fullScreenContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  fullScreenImageContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  fullScreenImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'contain',
+  },
+  closeModalButton: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    padding: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 20,
+    zIndex: 20,
   },
 });
 

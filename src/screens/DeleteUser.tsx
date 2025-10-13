@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import api from '../api'; // Import axios
 
 const DeleteAccountScreen = () => {
   const router = useRouter();
@@ -21,7 +22,7 @@ const DeleteAccountScreen = () => {
 
   const handleDelete = async () => {
     const email = await AsyncStorage.getItem('email');
-    console.log(email,'email')
+    console.log(email, 'email');
     if (!email || !password) {
       Alert.alert('Error', 'Email and password are required.');
       return;
@@ -29,17 +30,19 @@ const DeleteAccountScreen = () => {
 
     setLoading(true);
     try {
-      const response = await fetch('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/delete-user/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-      });
+      const response = await api.post(
+        '/delete-user/',
+        { email, password },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
 
-      const data = await response.json();
+      const data = response.data;
 
-      if (response.ok) {
+      if (response.status === 200) {
         // Clear AsyncStorage
         await AsyncStorage.clear();
         Alert.alert('Success', 'Account deactivation requested. It will be permanently deleted in 7 days.');

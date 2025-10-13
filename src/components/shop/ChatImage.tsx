@@ -1,14 +1,25 @@
 import React, { useState } from 'react';
-import { View, Image, Dimensions, TouchableOpacity, StyleSheet } from 'react-native';
+import {
+  View,
+  Image,
+  Dimensions,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  Platform,
+} from 'react-native';
 import ImageViewing from 'react-native-image-viewing';
 import { Ionicons } from '@expo/vector-icons';
-import axios from 'axios';
+import api from '../../api';
+import * as FileSystem from 'expo-file-system';
+import * as MediaLibrary from 'expo-media-library';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export default function ChatImage({ uri, messageId, sessionId }) {
   const [isVisible, setIsVisible] = useState(false);
   const [currentUri, setCurrentUri] = useState(uri);
+  const [saving, setSaving] = useState(false);
 
   const handleImagePress = () => {
     if (currentUri) {
@@ -22,8 +33,8 @@ export default function ChatImage({ uri, messageId, sessionId }) {
   const handleError = async () => {
     console.error('Thumbnail image error:', currentUri);
     try {
-      const response = await axios.get(
-        `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/regenerate-attachment-url/`,
+      const response = await api.get(
+        `/regenerate-attachment-url/`,
         {
           params: { message_id: messageId },
           headers: { Authorization: sessionId },
@@ -38,6 +49,69 @@ export default function ChatImage({ uri, messageId, sessionId }) {
       }
     } catch (error) {
       console.error('Failed to regenerate image URL:', error);
+    }
+  };
+
+  const requestPermissions = async () => {
+    const { status } = await MediaLibrary.requestPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'Storage permission is required to save images.');
+      return false;
+    }
+    return true;
+  };
+
+  const saveImage = async () => {
+    if (saving || !currentUri) return;
+    setSaving(true);
+
+    try {
+      const hasPermission = await requestPermissions();
+      if (!hasPermission) {
+        setSaving(false);
+        return;
+      }
+
+      const fileName = `chat_image_${messageId}_${Date.now()}.jpg`;
+      const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+
+      console.log(`Downloading image: ${currentUri}`);
+      const downloadResult = await FileSystem.downloadAsync(currentUri, fileUri);
+      if (downloadResult.status !== 200) {
+        throw new Error(`Download failed with status ${downloadResult.status}`);
+      }
+
+      // Create asset first
+      const asset = await MediaLibrary.createAssetAsync(fileUri);
+      console.log(`Created asset: ${asset.id}`);
+
+      // Check for existing album
+      let album = await MediaLibrary.getAlbumAsync('ChatImages');
+      if (!album) {
+        console.log('Creating ChatImages album');
+        // On Android, createAlbumAsync requires an asset; on iOS, it can be null
+        album = await MediaLibrary.createAlbumAsync(
+          'ChatImages',
+          Platform.OS === 'android' ? asset : null,
+          false
+        );
+      }
+
+      // Add asset to album (only needed if album already existed or on iOS)
+      if (album && Platform.OS !== 'android') {
+        console.log(`Adding asset ${asset.id} to ChatImages album ${album.id}`);
+        await MediaLibrary.addAssetsToAlbumAsync([asset], album.id, false);
+      }
+
+      // Clean up downloaded file
+      await FileSystem.deleteAsync(fileUri, { idempotent: true });
+
+      Alert.alert('Success', 'Image saved to ChatImages album!');
+    } catch (error) {
+      console.error('Error saving image:', error);
+      Alert.alert('Error', `Failed to save image: ${error.message}`);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -63,6 +137,18 @@ export default function ChatImage({ uri, messageId, sessionId }) {
               accessibilityLabel="Close fullscreen image"
             >
               <Ionicons name="close" size={28} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={saveImage}
+              style={styles.downloadButton}
+              accessibilityLabel="Download image"
+              disabled={saving}
+            >
+              <Ionicons
+                name={saving ? 'hourglass-outline' : 'download-outline'}
+                size={28}
+                color="#fff"
+              />
             </TouchableOpacity>
           </View>
         )}
@@ -97,11 +183,17 @@ const styles = StyleSheet.create({
   },
   header: {
     position: 'absolute',
-    top: 40,
-    right: 20,
+    top: Platform.OS === 'ios' ? 50 : 5,
+    right: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
     zIndex: 10,
   },
   closeButton: {
     padding: 10,
+  },
+  downloadButton: {
+    padding: 10,
+    marginLeft: 10,
   },
 });

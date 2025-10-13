@@ -29,7 +29,7 @@ const NotificationSettings = () => {
           Toast.show({ type: 'error', text1: 'Not authenticated' });
           return;
         }
-        const response = await fetch('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/api/notification-preferences/', {
+        const response = await fetch('/api/notification-preferences/', {
           headers: { Authorization: authToken }, // Fixed header
         });
         const data = await response.json();
@@ -59,7 +59,7 @@ const NotificationSettings = () => {
         Toast.show({ type: 'error', text1: 'Not authenticated' });
         return;
       }
-      const response = await fetch('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/api/notification-preferences/', {
+      const response = await fetch('/api/notification-preferences/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

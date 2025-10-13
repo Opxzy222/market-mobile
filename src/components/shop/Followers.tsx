@@ -1,6 +1,7 @@
-// src/components/shop/Followers.tsx
 import React from 'react';
 import { View, Text, StyleSheet, FlatList, Image } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const Followers = ({ followers = [] }) => {
   const getColorForAlphabet = (alphabet) => {
@@ -31,7 +32,19 @@ const Followers = ({ followers = [] }) => {
           </Text>
         </View>
       )}
-      <Text style={styles.followerUsername}>{item.username}</Text>
+      <View style={styles.followerInfo}>
+        <Text style={styles.followerUsername}>{item.username}</Text>
+        {item.is_verified && (
+          <LinearGradient
+            colors={['#34D399', '#10B981']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.verifiedIconContainer}
+          >
+            <MaterialIcons name="verified" size={16} color="#FFF" />
+          </LinearGradient>
+        )}
+      </View>
     </View>
   );
 
@@ -95,10 +108,25 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#FFF',
   },
+  followerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
   followerUsername: {
     fontSize: 16,
     fontWeight: '500',
     color: '#333',
+    marginRight: 8,
+  },
+  verifiedIconContainer: {
+    borderRadius: 12,
+    padding: 4,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 2,
   },
   noFollowersText: {
     fontSize: 16,

@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import { Picker } from "@react-native-picker/picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import axios from "axios";
+import api from '../../api';
 import { useRouter, useLocalSearchParams } from "expo-router";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import { Ionicons } from "@expo/vector-icons";
@@ -368,8 +368,8 @@ const ShopProfileScreen: React.FC = () => {
   useEffect(() => {
     const fetchShopDetails = async () => {
       try {
-        const response = await axios.get<ShopDetails>(
-          `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop/profile/${shopId}/`,
+        const response = await api.get<ShopDetails>(
+          `/shop/profile/${shopId}/`,
           {
             headers: {
               Authorization: sessionId ? `Bearer ${sessionId}` : "",
@@ -400,8 +400,8 @@ const ShopProfileScreen: React.FC = () => {
   useEffect(() => {
     const fetchParentCategories = async () => {
       try {
-        const response = await axios.post<{ categories: { id: number; name: string }[] }>(
-          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/category/dropdown-options/"
+        const response = await api.post<{ categories: { id: number; name: string }[] }>(
+          "/category/dropdown-options/"
         );
         // Sort parent categories alphabetically by name
         const sortedParentCategories = response.data.categories
@@ -429,8 +429,8 @@ const ShopProfileScreen: React.FC = () => {
         console.log("Fetching subcategories for parent category:", selectedParentCategory);
         const formData = new FormData();
         formData.append("parent_id", selectedParentCategory.toString());
-        const response = await axios.post<{ subcategories: { id: number; name: string }[] }>(
-          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/category/subcategories/",
+        const response = await api.post<{ subcategories: { id: number; name: string }[] }>(
+          "/category/subcategories/",
           formData,
           { headers: { "Content-Type": "multipart/form-data" } }
         );
@@ -590,8 +590,8 @@ const ShopProfileScreen: React.FC = () => {
       // Append shop_id for valid updates
       formData.append("shop_id", shopId);
 
-      const response = await axios.post(
-        `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop/profile/${shopId}/`,
+      const response = await api.post(
+        `/shop/profile/${shopId}/`,
         formData,
         {
           headers: {
@@ -724,6 +724,7 @@ const ShopProfileScreen: React.FC = () => {
                       setSelectedParentCategory(value);
                     }}
                     style={styles.picker}
+                    itemStyle={styles.pickerItem}
                   >
                     <Picker.Item label="Select Parent Category" value={null} />
                     {parentCategories.map((cat) => (
@@ -867,6 +868,11 @@ const styles = StyleSheet.create({
   picker: {
     height: Platform.OS === "ios" ? 150 : 50,
     width: "100%",
+    color: "#333", // Ensure selected label is visible
+  },
+  pickerItem: {
+    color: "#333",
+    fontSize: 16,
   },
   updateButton: {
     marginTop: 20,

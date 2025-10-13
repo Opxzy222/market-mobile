@@ -7,9 +7,9 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
+  View,
 } from 'react-native';
-import axios from 'axios';
+import api from '../../api';
 import * as SecureStore from 'expo-secure-store';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -61,44 +61,44 @@ const AllCategories = () => {
   const router = useRouter();
   const { prevRoute } = useLocalSearchParams();
 
-  useEffect(() => {
-    const fetchCategories = async () => {
-      try {
-        // Check for cached categories
-        const cachedCategories = await SecureStore.getItemAsync('categories_cache');
-        if (cachedCategories) {
-          if (__DEV__) {
-            console.log('Using cached categories');
-          }
-          const parsedCategories = JSON.parse(cachedCategories);
-          setCategories(parsedCategories);
-          setLoading(false);
-          return;
-        }
-
-        // Fetch from backend if no cache
+  const fetchCategories = async () => {
+    try {
+      // Check for cached categories
+      const cachedCategories = await SecureStore.getItemAsync('categories_cache');
+      if (cachedCategories) {
         if (__DEV__) {
-          console.log('Fetching all categories from backend');
+          console.log('Using cached categories');
         }
-        setLoading(true);
-        const response = await axios.get('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/all-shop-categories/');
-        const categoryArray = Object.values(response.data);
-        const sortedCategories = categoryArray.sort((a, b) => a.name.localeCompare(b.name));
-        setCategories(sortedCategories);
-
-        // Cache the fetched categories
-        await SecureStore.setItemAsync('categories_cache', JSON.stringify(sortedCategories));
-        if (__DEV__) {
-          console.log('Fetched and cached categories:', sortedCategories.map(item => item.name));
-        }
-      } catch (error) {
-        console.error('Error fetching categories:', error);
-        setError(error);
-      } finally {
+        const parsedCategories = JSON.parse(cachedCategories);
+        setCategories(parsedCategories);
         setLoading(false);
+        return;
       }
-    };
 
+      // Fetch from backend if no cache
+      if (__DEV__) {
+        console.log('Fetching all categories from backend');
+      }
+      setLoading(true);
+      const response = await api.get('/all-shop-categories/');
+      const categoryArray = Object.values(response.data);
+      const sortedCategories = categoryArray.sort((a, b) => a.name.localeCompare(b.name));
+      setCategories(sortedCategories);
+
+      // Cache the fetched categories
+      await SecureStore.setItemAsync('categories_cache', JSON.stringify(sortedCategories));
+      if (__DEV__) {
+        console.log('Fetched and cached categories:', sortedCategories.map(item => item.name));
+      }
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      setError(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchCategories();
   }, []);
 
@@ -183,7 +183,7 @@ const AllCategories = () => {
               onPress={() => {
                 setLoading(true);
                 setError(null);
-                fetchCategories();
+                fetchCategories(); // Now in scope
               }}
             >
               <Text style={styles.retryButtonText}>Retry</Text>

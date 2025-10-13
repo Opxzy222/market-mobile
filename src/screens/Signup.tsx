@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import axios from "axios";
+import api from '../api';
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
@@ -29,7 +29,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage"; // Added f
 
 const { width } = Dimensions.get("window");
 
-const API_URL = "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/complete-registration/";
+const API_URL = "/complete-registration/";
 
 const COLORS = {
   primary: "#1E3A8A",
@@ -147,7 +147,7 @@ const SignUp = () => {
     setLoading(true);
     setErrorMessage("");
     try {
-      const response = await axios.post(API_URL, formData, {
+      const response = await api.post(API_URL, formData, {
         headers: {
           "Content-Type": "multipart/form-data",
           ...(sessionId ? { Authorization: sessionId } : {}), // Include session token if available

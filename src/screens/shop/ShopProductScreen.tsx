@@ -15,7 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import axios from "axios";
+import api from '../../api';
 import debounce from "lodash.debounce";
 import { useInterstitialAd } from "../../components/AdMobManager";
 
@@ -78,8 +78,8 @@ const ShopProduct = () => {
         let response;
         for (let attempt = 1; attempt <= 3; attempt++) {
           try {
-            response = await axios.post(
-              "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shop-products/",
+            response = await api.post(
+              "/shop-products/",
               formData,
               {
                 headers: {

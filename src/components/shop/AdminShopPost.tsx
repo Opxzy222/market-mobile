@@ -13,14 +13,14 @@ import {
 import { Image } from "expo-image"; // Use expo-image for consistency
 import { useVideoPlayer, VideoView } from "expo-video";
 import { Ionicons } from "@expo/vector-icons";
-import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SafeAreaView } from "react-native-safe-area-context"; // Added for better layout control
+import api from '../../api';
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 const getFullUrl = (url) => {
-  const BASE_URL = "https://retail-alvinia-goza-f6a0e4f7.koyeb.app";
+  const BASE_URL = "";
   return url && url.startsWith("http") ? url : `${BASE_URL}${url || ""}`;
 };
 
@@ -275,8 +275,8 @@ const AdminShopPosts = ({ posts, shopId, onPostDeleted }) => {
           style: "destructive",
           onPress: async () => {
             try {
-              const response = await axios.delete(
-                `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/${shopId}/posts/${postId}/`,
+              const response = await api.delete(
+                `/shops/${shopId}/posts/${postId}/`,
                 {
                   timeout: 3000,
                   headers: {

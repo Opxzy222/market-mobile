@@ -7,9 +7,10 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StatusBar,
-  Modal, Platform
+  Modal,
+  Platform,
 } from "react-native";
-import axios from "axios";
+import api from '../../api';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
@@ -21,6 +22,7 @@ import { format, parseISO, isToday, isYesterday } from "date-fns";
 import DatePicker from "react-native-date-picker";
 import { getFullUrl } from "../../utils/imageUtils";
 import { StyleSheet } from "react-native";
+
 
 // Format date for display
 const formatVisitedAt = (dateStr) => {
@@ -43,6 +45,8 @@ export default function AllRecentlyVisitedShops() {
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
+  const [tempStartDate, setTempStartDate] = useState(null); // Temporary start date
+  const [tempEndDate, setTempEndDate] = useState(null); // Temporary end date
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerType, setPickerType] = useState(null);
   const [tempDate, setTempDate] = useState(new Date());
@@ -62,14 +66,11 @@ export default function AllRecentlyVisitedShops() {
     if (sessionId) {
       const fetchRecentlyVisitedShops = async () => {
         try {
-          const response = await axios.get(
-            "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/all-recently-visited/",
-            {
-              headers: {
-                Authorization: sessionId,
-              },
-            }
-          );
+          const response = await api.get("/shops/all-recently-visited/", {
+            headers: {
+              Authorization: sessionId,
+            },
+          });
           const shopsData = response.data.recently_visited_shops;
           setShops(shopsData);
           shopsData.forEach((shop) => {
@@ -96,21 +97,13 @@ export default function AllRecentlyVisitedShops() {
         return;
       }
       if (pickerType === "start") {
-        if (endDate && selectedDate > endDate) {
-          alert("Invalid Date: Start date cannot be after end date.");
-          return;
-        }
-        setStartDate(selectedDate);
+        setTempStartDate(selectedDate); // Store in temp state
       } else if (pickerType === "end") {
-        if (startDate && selectedDate < startDate) {
-          alert("Invalid Date: End date cannot be before start date.");
-          return;
-        }
-        setEndDate(selectedDate);
+        setTempEndDate(selectedDate); // Store in temp state
       }
       setPickerType(null);
     },
-    [pickerType, startDate, endDate]
+    [pickerType]
   );
 
   // Show DatePicker
@@ -118,16 +111,28 @@ export default function AllRecentlyVisitedShops() {
     (type) => {
       setPickerType(type);
       setTempDate(
-        type === "start" && startDate
-          ? startDate
-          : type === "end" && endDate
-          ? endDate
+        type === "start" && tempStartDate
+          ? tempStartDate
+          : type === "end" && tempEndDate
+          ? tempEndDate
           : new Date()
       );
       setPickerVisible(true);
     },
-    [startDate, endDate]
+    [tempStartDate, tempEndDate]
   );
+
+  // Handle Apply button press
+  const handleApplyFilters = useCallback(() => {
+    // Validate dates before applying
+    if (tempStartDate && tempEndDate && tempStartDate > tempEndDate) {
+      alert("Invalid Date: Start date cannot be after end date.");
+      return;
+    }
+    setStartDate(tempStartDate); // Update actual startDate
+    setEndDate(tempEndDate); // Update actual endDate
+    setFilterModalVisible(false); // Close modal
+  }, [tempStartDate, tempEndDate]);
 
   // Filter and sort shops
   const filteredShops = useMemo(() => {
@@ -172,6 +177,9 @@ export default function AllRecentlyVisitedShops() {
       onRequestClose={() => {
         setFilterModalVisible(false);
         setPickerVisible(false);
+        // Reset temporary dates when closing modal
+        setTempStartDate(startDate);
+        setTempEndDate(endDate);
       }}
     >
       <View style={styles.modalOverlay}>
@@ -182,7 +190,9 @@ export default function AllRecentlyVisitedShops() {
             onPress={() => showDatePicker("start")}
           >
             <Text style={styles.dateInputText}>
-              {startDate ? formatVisitedAt(startDate.toISOString()) : "Start Date"}
+              {tempStartDate
+                ? formatVisitedAt(tempStartDate.toISOString())
+                : "Start Date"}
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -190,13 +200,15 @@ export default function AllRecentlyVisitedShops() {
             onPress={() => showDatePicker("end")}
           >
             <Text style={styles.dateInputText}>
-              {endDate ? formatVisitedAt(endDate.toISOString()) : "End Date"}
+              {tempEndDate
+                ? formatVisitedAt(tempEndDate.toISOString())
+                : "End Date"}
             </Text>
           </TouchableOpacity>
           <View style={styles.modalButtons}>
             <TouchableOpacity
               style={styles.applyButton}
-              onPress={() => setFilterModalVisible(false)}
+              onPress={handleApplyFilters}
             >
               <LinearGradient
                 colors={["#3B82F6", "#1D4ED8"]}
@@ -208,6 +220,8 @@ export default function AllRecentlyVisitedShops() {
             <TouchableOpacity
               style={styles.clearButton}
               onPress={() => {
+                setTempStartDate(null);
+                setTempEndDate(null);
                 setStartDate(null);
                 setEndDate(null);
                 setFilterModalVisible(false);
@@ -253,7 +267,10 @@ export default function AllRecentlyVisitedShops() {
           style={styles.shopCard}
           activeOpacity={0.9}
           onPress={() =>
-            router.push({ pathname: "/shop/shop-page", params: { shopId: item.data.id } })
+            router.push({
+              pathname: "/shop/shop-page",
+              params: { shopId: item.data.id },
+            })
           }
         >
           <View style={styles.imageContainer}>
@@ -263,7 +280,10 @@ export default function AllRecentlyVisitedShops() {
                 style={styles.shopImage}
                 resizeMode="cover"
                 onError={(e) =>
-                  console.error(`Image load error for shop ${item.data.id}:`, e.nativeEvent.error)
+                  console.error(
+                    `Image load error for shop ${item.data.id}:`,
+                    e.nativeEvent.error
+                  )
                 }
               />
             ) : (
@@ -294,7 +314,9 @@ export default function AllRecentlyVisitedShops() {
                 {item.data.description}
               </Text>
             </View>
-            <Animated.View entering={ZoomIn.delay(index * 100 + 200).duration(200)}>
+            <Animated.View
+              entering={ZoomIn.delay(index * 100 + 200).duration(200)}
+            >
               {/* Uncomment if you want to restore the Visit button */}
               {/* <TouchableOpacity style={styles.visitButton} activeOpacity={0.7}>
                 <LinearGradient
@@ -345,7 +367,11 @@ export default function AllRecentlyVisitedShops() {
         <View style={styles.filterContainer}>
           <TouchableOpacity
             style={styles.filterButton}
-            onPress={() => setFilterModalVisible(true)}
+            onPress={() => {
+              setTempStartDate(startDate); // Initialize temp dates
+              setTempEndDate(endDate);
+              setFilterModalVisible(true);
+            }}
           >
             <LinearGradient
               colors={["#3B82F6", "#1D4ED8"]}

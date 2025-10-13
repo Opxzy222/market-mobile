@@ -19,10 +19,11 @@ import * as Location from "expo-location";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useFocusEffect } from "expo-router";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
-import axios from "axios";
+import api from '../../api';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SelectList } from "react-native-dropdown-select-list";
 import { MultiSelect as RNMultiSelect } from "react-native-element-dropdown";
+import axios from "axios";
 
 export default function CreateShopScreen({ navigation }) {
   const [name, setName] = useState("");
@@ -116,8 +117,8 @@ export default function CreateShopScreen({ navigation }) {
       const fetchCategories = async () => {
         try {
           console.log("Fetching categories...");
-          const response = await axios.post(
-            "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/category/dropdown-options/",
+          const response = await api.post(
+            "/category/dropdown-options/",
             {},
             { cancelToken: cancelTokenSourceRef.current.token }
           );
@@ -140,8 +141,8 @@ export default function CreateShopScreen({ navigation }) {
       const fetchTopLevelLocations = async () => {
         try {
           console.log("Fetching top-level locations...");
-          const response = await axios.post(
-            "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/states/",
+          const response = await api.post(
+            "/location/states/",
             {},
             { cancelToken: cancelTokenSourceRef.current.token }
           );
@@ -195,8 +196,8 @@ export default function CreateShopScreen({ navigation }) {
         const formData = new FormData();
         formData.append("parent_id", selectedOption);
 
-        const response = await axios.post(
-          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/children/",
+        const response = await api.post(
+          "/location/children/",
           formData,
           {
             headers: { "Content-Type": "multipart/form-data" },
@@ -233,8 +234,8 @@ export default function CreateShopScreen({ navigation }) {
         const formData = new FormData();
         formData.append("parent_id", selectedOption);
 
-        const response = await axios.post(
-          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/children/",
+        const response = await api.post(
+          "/location/children/",
           formData,
           {
             headers: { "Content-Type": "multipart/form-data" },
@@ -275,8 +276,8 @@ export default function CreateShopScreen({ navigation }) {
       const formData = new FormData();
       formData.append("parent_id", key);
 
-      const response = await axios.post(
-        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/category/subcategories/",
+      const response = await api.post(
+        "/category/subcategories/",
         formData,
         {
           headers: { "Content-Type": "multipart/form-data" },
@@ -465,8 +466,8 @@ export default function CreateShopScreen({ navigation }) {
         formData.append("subcategories[]", subId)
       );
 
-      const response = await axios.post(
-        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/create-shop/",
+      const response = await api.post(
+        "/create-shop/",
         formData,
         {
           headers: {

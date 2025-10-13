@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, Alert } from 'react-native';
-import axios from 'axios';
+import api from '../../api';
 import { SelectList } from 'react-native-dropdown-select-list';
 import AutocompleteInput from '../AutocompleteInput';
 import { useRouter } from 'expo-router';
@@ -21,7 +21,7 @@ const LocationSearch = ({ onSearch, onFocusChange, onSuggestionsStateChange }) =
   useEffect(() => {
     const fetchTopLevelLocations = async () => {
       try {
-        const response = await axios.post('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/states/');
+        const response = await api.post('/location/states/');
         console.log('Top-level locations response:', response.data);
         // Sort locations alphabetically by name
         const sortedLocations = response.data.locations
@@ -49,8 +49,8 @@ const LocationSearch = ({ onSearch, onFocusChange, onSuggestionsStateChange }) =
         const formData = new FormData();
         formData.append('parent_id', selectedOption);
 
-        const response = await axios.post(
-          'https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/children/',
+        const response = await api.post(
+          '/location/children/',
           formData,
           { headers: { 'Content-Type': 'multipart/form-data' } }
         );
@@ -78,8 +78,8 @@ const LocationSearch = ({ onSearch, onFocusChange, onSuggestionsStateChange }) =
         const formData = new FormData();
         formData.append('parent_id', selectedOption);
 
-        const response = await axios.post(
-          'https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/children/',
+        const response = await api.post(
+          '/location/children/',
           formData,
           { headers: { 'Content-Type': 'multipart/form-data' } }
         );
@@ -127,7 +127,7 @@ const LocationSearch = ({ onSearch, onFocusChange, onSuggestionsStateChange }) =
       try {
         const params = { input: trimmedQuery, location_id: locationId };
 
-        const response = await axios.get('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/search/', {
+        const response = await api.get('/location/search/', {
           params,
           headers: {
             'Content-Type': 'application/json',

@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator,
   TouchableOpacity, TextInput, Button, KeyboardAvoidingView, FlatList,
   Platform, Modal, TouchableWithoutFeedback, Alert, Keyboard, StatusBar
 } from 'react-native';
-import axios from 'axios';
+import api from '../../api';
 import { Checkbox } from 'expo-checkbox';
 import { useLocalSearchParams, useRouter } from 'expo-router'; 
 import { Table, Row, Rows } from "react-native-table-component";
@@ -94,23 +94,20 @@ const savePriceFromModal = () => {
   const fetchProductSuggestions = async () => {
     setIsFetching(true); // Start loading
     try {
-      const response = await fetch("https://retail-alvinia-goza-f6a0e4f7.koyeb.app/product-suggestion/", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({ shop_id: shop_id }).toString(),
-      });
+      const response = await api.post(
+        '/product-suggestion/',
+        new URLSearchParams({ shop_id: shop_id }).toString(),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        }
+      );
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log("Fetch Success:", data);
+      console.log('Fetch Success:', response.data);
 
       // Destructure the response
-      const { product_suggestions, selected_products } = data;
+      const { product_suggestions, selected_products } = response.data;
 
       if (product_suggestions && selected_products) {
         setGroupedProductSuggestions(product_suggestions);
@@ -430,7 +427,7 @@ allProducts.forEach(product => {
             formData.append(`subcategory_custom_${index}`, customProduct.subcategory_id || ''); 
         });
 
-        const response = await axios.post('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/update-shop-products/', formData, {
+        const response = await api.post('/update-shop-products/', formData, {
             headers: {
                 'Content-Type': 'multipart/form-data',
             },
@@ -645,7 +642,7 @@ return (
                   <TextInput
                     ref={customNameInputRef}
                     style={styles.customNameInput}
-                    placeholder="Input your listing name"
+                    placeholder="Input your custom listing"
                     placeholderTextColor="#5A5A5A"
                     value={customProductName}
                     onChangeText={(text) => setCustomProductName(text)}

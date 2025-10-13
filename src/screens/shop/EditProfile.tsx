@@ -17,7 +17,7 @@ import {
   ToastAndroid,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import axios from "axios";
+import api from '../../api';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -106,8 +106,8 @@ const EditProfileScreen = () => {
     setLoading(true);
     setError("");
     try {
-      const response = await axios.get(
-        `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/user/profile/`,
+      const response = await api.get(
+        `/user/profile/`,
         {
           headers: {
             Authorization: sessionId,
@@ -202,8 +202,8 @@ const EditProfileScreen = () => {
     }
 
     try {
-      const response = await axios.post(
-        `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/user/profile/`,
+      const response = await api.post(
+        `/user/profile/`,
         formData,
         {
           headers: {

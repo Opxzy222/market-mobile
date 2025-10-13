@@ -7,11 +7,15 @@ import {
   ActivityIndicator,
   Text,
   Dimensions,
+  Alert,
+  Platform,
 } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 import PropTypes from 'prop-types';
-import axios from 'axios';
+import api from '../../api';
+import * as FileSystem from 'expo-file-system';
+import * as MediaLibrary from 'expo-media-library';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -32,6 +36,7 @@ function ChatVideo({ uri, name, thumbnailUrl, pending, messageId, sessionId }) {
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
   const [currentUri, setCurrentUri] = useState(uri);
   const [currentThumbnailUrl, setCurrentThumbnailUrl] = useState(thumbnailUrl);
+  const [saving, setSaving] = useState(false);
 
   const playerRef = useRef(null);
   const videoViewRef = useRef(null);
@@ -46,8 +51,8 @@ function ChatVideo({ uri, name, thumbnailUrl, pending, messageId, sessionId }) {
   const handleError = async (type = 'video') => {
     console.error(`${type} load error:`, type === 'video' ? currentUri : currentThumbnailUrl, 'messageId:', messageId);
     try {
-      const response = await axios.get(
-        `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/regenerate-attachment-url/`,
+      const response = await api.get(
+        `/regenerate-attachment-url/`,
         {
           params: { message_id: messageId },
           headers: { Authorization: sessionId },
@@ -129,6 +134,74 @@ function ChatVideo({ uri, name, thumbnailUrl, pending, messageId, sessionId }) {
           }
         }
       }
+    }
+  };
+
+  const requestPermissions = async () => {
+    const { status } = await MediaLibrary.requestPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'Storage permission is required to save videos.');
+      return false;
+    }
+    return true;
+  };
+
+  const saveVideo = async () => {
+    if (saving || !currentUri) return;
+    setSaving(true);
+
+    try {
+      const hasPermission = await requestPermissions();
+      if (!hasPermission) {
+        setSaving(false);
+        return;
+      }
+
+      const fileExtension = name?.toLowerCase().endsWith('.mp4') || currentUri.toLowerCase().endsWith('.mp4')
+        ? 'mp4'
+        : name?.toLowerCase().endsWith('.mov') || currentUri.toLowerCase().endsWith('.mov')
+        ? 'mov'
+        : 'mp4'; // Default to mp4 if unknown
+      const fileName = `chat_video_${messageId}_${Date.now()}.${fileExtension}`;
+      const fileUri = `${FileSystem.documentDirectory}${fileName}`;
+
+      console.log(`Downloading video: ${currentUri}`);
+      const downloadResult = await FileSystem.downloadAsync(currentUri, fileUri);
+      if (downloadResult.status !== 200) {
+        throw new Error(`Download failed with status ${downloadResult.status}`);
+      }
+
+      // Create asset first
+      const asset = await MediaLibrary.createAssetAsync(fileUri);
+      console.log(`Created asset: ${asset.id}`);
+
+      // Check for existing album
+      let album = await MediaLibrary.getAlbumAsync('ChatVideos');
+      if (!album) {
+        console.log('Creating ChatVideos album');
+        // On Android, createAlbumAsync requires an asset; on iOS, it can be null
+        album = await MediaLibrary.createAlbumAsync(
+          'ChatVideos',
+          Platform.OS === 'android' ? asset : null,
+          false
+        );
+      }
+
+      // Add asset to album (only needed if album already existed or on iOS)
+      if (album && Platform.OS !== 'android') {
+        console.log(`Adding asset ${asset.id} to ChatVideos album ${album.id}`);
+        await MediaLibrary.addAssetsToAlbumAsync([asset], album.id, false);
+      }
+
+      // Clean up downloaded file
+      await FileSystem.deleteAsync(fileUri, { idempotent: true });
+
+      Alert.alert('Success', 'Video saved to ChatVideos album!');
+    } catch (error) {
+      console.error('Error saving video:', error);
+      Alert.alert('Error', `Failed to save video: ${error.message}`);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -346,13 +419,27 @@ function ChatVideo({ uri, name, thumbnailUrl, pending, messageId, sessionId }) {
           />
         )}
         {isFullscreen && (
-          <TouchableOpacity
-            onPress={handleCloseFullscreen}
-            style={styles.closeButton}
-            accessibilityLabel="Close fullscreen video"
-          >
-            <Ionicons name="close" size={28} color="#fff" />
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity
+              onPress={handleCloseFullscreen}
+              style={styles.closeButton}
+              accessibilityLabel="Close fullscreen video"
+            >
+              <Ionicons name="close" size={28} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={saveVideo}
+              style={styles.downloadButton}
+              accessibilityLabel="Download video"
+              disabled={saving}
+            >
+              <Ionicons
+                name={saving ? 'hourglass-outline' : 'download-outline'}
+                size={28}
+                color="#fff"
+              />
+            </TouchableOpacity>
+          </>
         )}
       </View>
     );
@@ -488,8 +575,15 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     position: 'absolute',
-    top: 40,
+    top: Platform.OS === 'ios' ? 50 : 20,
     right: 20,
+    padding: 10,
+    zIndex: 10,
+  },
+  downloadButton: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 20,
+    right: 70, // Adjusted to position left of closeButton
     padding: 10,
     zIndex: 10,
   },

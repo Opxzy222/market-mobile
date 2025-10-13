@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
-import axios from 'axios';
+import api from '../../api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -21,8 +21,8 @@ const FollowButton = ({ shopId, onPress }) => {
     const checkFollowingStatus = async () => {
       try {
         const userId = await AsyncStorage.getItem('user_id');
-        const response = await axios.get(
-          `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/${shopId}/followers-status/`,
+        const response = await api.get(
+          `/shops/${shopId}/followers-status/`,
           {
             params: { user_id: userId },
             headers: {
@@ -45,8 +45,8 @@ const FollowButton = ({ shopId, onPress }) => {
       formData.append('shop_id', shopId);
       formData.append('user_id', userId);
 
-      await axios.post(
-        'https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/follow/',
+      await api.post(
+        '/shops/follow/',
         formData.toString(),
         {
           headers: {

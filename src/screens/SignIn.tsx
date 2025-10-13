@@ -9,11 +9,12 @@ import {
   StyleSheet,
   Dimensions,
   Platform,
-  KeyboardAvoidingView, ScrollView
+  KeyboardAvoidingView,
+  ScrollView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import axios from "axios";
+import api from '../api';
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -28,13 +29,13 @@ import { Image } from "expo-image";
 
 const { width } = Dimensions.get("window");
 
-const API_URL = "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/login/";
+const API_URL = "/login/";
 
 // Constants for consistent theming (aligned with Homepage)
 const COLORS = {
   primary: "#1E3A8A",
   accent: "#FCD34D",
-  background: "#f7f8fc", // Kept original background color
+  background: "#f7f8fc",
   cardBackground: "#FFFFFF",
   textPrimary: "#111827",
   textSecondary: "#6B7280",
@@ -57,13 +58,13 @@ const SPACING = {
   xxl: 32,
 };
 
-async function login(email, password) {
+async function login(email: string, password: string) {
   try {
     const formData = new URLSearchParams();
     formData.append("email", email);
     formData.append("password", password);
 
-    const response = await axios.post(API_URL, formData.toString(), {
+    const response = await api.post(API_URL, formData.toString(), {
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         Accept: "application/json",
@@ -71,17 +72,22 @@ async function login(email, password) {
     });
 
     if (response.data.message === "login successful") {
-      const { user_id, session_id, user_name, userId, userVerified, phoneVerified } = response.data;
+      const { user_id, session_id, user_name, userId, userVerified, phoneVerified, plan, is_active, start_date, end_date } = response.data;
       console.log("Login response user_id:", user_id);
+      // Store user-related data
       await AsyncStorage.setItem("sessionToken", session_id);
       await AsyncStorage.setItem("user_id", user_id.toString());
       await AsyncStorage.setItem("userId", userId);
       await AsyncStorage.setItem("user_name", user_name);
       await AsyncStorage.setItem("email", email);
-      console.log(email,'email')
+      console.log(email, 'email');
       await AsyncStorage.setItem("user_verified", JSON.stringify(userVerified));
       await AsyncStorage.setItem("phone_verified", JSON.stringify(phoneVerified));
       console.log("userVerified:", userVerified);
+      // Store subscription data
+      const subscriptionData = { plan, is_active, start_date, end_date };
+      await AsyncStorage.setItem("subscription_cache", JSON.stringify(subscriptionData));
+      console.log("Stored subscription data:", subscriptionData);
       return { id: user_id, name: user_name };
     }
     throw new Error(response.data.message || "Login failed");
@@ -300,7 +306,7 @@ const SignIn = () => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: COLORS.background, // #f7f8fc
+    backgroundColor: COLORS.background,
   },
   container: {
     flexGrow: 1,

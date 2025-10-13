@@ -16,7 +16,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import axios from 'axios';
+import api from '../../api';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { FadeInDown, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing } from 'react-native-reanimated';
 import SubscriptionProvider, { SubscriptionContext } from '../../components/SubscriptionProvider';
@@ -35,7 +35,7 @@ const Subscription = () => {
   const dropdownOpacity = useSharedValue(0);
   const dropdownTranslateY = useSharedValue(20);
 
-  const API_BASE_URL = 'https://retail-alvinia-goza-f6a0e4f7.koyeb.app';
+  const API_BASE_URL = '';
 
   const PLAN_DETAILS = {
     regular: {
@@ -118,7 +118,7 @@ const Subscription = () => {
     setLoading(true);
     try {
       const token = await AsyncStorage.getItem('sessionToken');
-      const response = await axios.post(
+      const response = await api.post(
         `${API_BASE_URL}/payments/purchase/`,
         { plan: selectedPlan },
         {
@@ -132,7 +132,7 @@ const Subscription = () => {
       setModalVisible(true);
 
       await refreshSubscription();
-      const balanceResponse = await axios.get(`${API_BASE_URL}/payments/balance/`, {
+      const balanceResponse = await api.get(`${API_BASE_URL}/payments/balance/`, {
         headers: { Authorization: token },
       });
       const { balance, virtual_account, subscription } = balanceResponse.data;
@@ -192,7 +192,7 @@ const Subscription = () => {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="light-content" backgroundColor="#1E40AF" />
+      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
       <LinearGradient colors={['#E0F2FE', '#BFDBFE']} style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity
@@ -393,7 +393,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 16,
     paddingHorizontal: 16,
-    backgroundColor: '#1E40AF',
+    backgroundColor: '#3A7BD5',
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
     shadowColor: '#000',

@@ -5,8 +5,8 @@ import Toast from 'react-native-toast-message';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInUp, FadeInDown, ZoomIn } from 'react-native-reanimated';
+import api from '../api';
 
 const VerificationStatusScreen = () => {
   const [phoneVerified, setPhoneVerified] = useState(false);
@@ -16,13 +16,47 @@ const VerificationStatusScreen = () => {
   useEffect(() => {
     const loadVerificationStatus = async () => {
       try {
-        const phoneVerifiedStr = await AsyncStorage.getItem('phone_verified');
-        const userVerifiedStr = await AsyncStorage.getItem('user_verified');
-        setPhoneVerified(phoneVerifiedStr ? JSON.parse(phoneVerifiedStr) : false);
-        setUserVerified(userVerifiedStr ? JSON.parse(userVerifiedStr) : false);
+        const sessionToken = await AsyncStorage.getItem('sessionToken');
+        console.log('Session Token:', sessionToken); // Debug session token
+        if (!sessionToken) {
+          Toast.show({ type: 'error', text1: 'Error', text2: 'Please log in again.' });
+          router.push('/login');
+          return;
+        }
+        const response = await api.get('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/user-profile/', {
+          headers: {
+            Authorization: sessionToken,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        const data = response.data;
+        console.log('API Response:', data); // Debug API response
+        if (response.status === 200) {
+          const isPhoneVerified = !!data.is_phone_verified; // Ensure boolean
+          const isUserVerified = !!data.is_verified; // Ensure boolean
+          setPhoneVerified(isPhoneVerified);
+          setUserVerified(isUserVerified);
+          console.log('Phone Verified:', isPhoneVerified, 'User Verified:', isUserVerified); // Debug state
+          Toast.show({
+            type: 'info',
+            text1: 'Verification Status Loaded',
+            text2: `Phone: ${isPhoneVerified ? 'Verified' : 'Not Verified'}, ID: ${isUserVerified ? 'Verified' : 'Not Verified'}`,
+          });
+        } else {
+          Toast.show({
+            type: 'error',
+            text1: 'Error',
+            text2: data.error || 'Failed to load verification status.',
+          });
+        }
       } catch (error) {
-        Toast.show({ type: 'error', text1: 'Error', text2: 'Failed to load verification status.' });
-        console.error(error);
+        Toast.show({
+          type: 'error',
+          text1: 'Error',
+          text2: error.response?.data?.error || 'Failed to connect to server.',
+        });
+        console.error('Error fetching verification status:', error);
       }
     };
     loadVerificationStatus();
@@ -35,29 +69,34 @@ const VerificationStatusScreen = () => {
         text1: 'Already Verified',
         text2: 'Your phone number is already verified.',
       });
+      console.log('Phone verification already completed');
       return;
     }
-    router.push({ pathname: '/PhoneVerification' });
+    console.log('Navigating to PhoneVerification');
+    router.push('/PhoneVerification');
   };
 
   const handleIDVerification = () => {
-    if (userVerified) {
-      Toast.show({
-        type: 'success',
-        text1: 'Already Verified',
-        text2: 'Your ID is already verified.',
-      });
-      return;
-    }
     if (!phoneVerified) {
       Toast.show({
         type: 'error',
         text1: 'Phone Verification Required',
         text2: 'Please verify your phone number first.',
       });
+      console.log('ID Verification blocked: Phone not verified');
       return;
     }
-    router.push({ pathname: '/IDVerification' });
+    if (userVerified) {
+      Toast.show({
+        type: 'success',
+        text1: 'Already Verified',
+        text2: 'Your ID is already verified.',
+      });
+      console.log('ID Verification blocked: Already verified');
+      return;
+    }
+    console.log('Navigating to IDVerification');
+    router.push('/IDVerification');
   };
 
   return (
@@ -66,10 +105,7 @@ const VerificationStatusScreen = () => {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={styles.backButton}
-          >
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <MaterialIcons name="arrow-back" size={26} color="white" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Verification Status</Text>
@@ -124,16 +160,15 @@ const VerificationStatusScreen = () => {
                   </Animated.View>
                 </View>
                 <View>
-                  <Text style={styles.statusText}>ID Verification</Text>
-                  <Text style={styles.statusSubText}>
+                  <Text style={[styles.statusText, !phoneVerified && styles.statusTextDisabled]}>
+                    ID Verification
+                  </Text>
+                  <Text style={[styles.statusSubText, !phoneVerified && styles.statusSubTextDisabled]}>
                     {userVerified ? 'Verified' : !phoneVerified ? 'Requires phone verification' : 'Verify your identity'}
                   </Text>
                 </View>
               </View>
             </TouchableOpacity>
-
-            {/* Continue Button */}
-            
           </Animated.View>
         </Animated.View>
       </View>
@@ -144,7 +179,7 @@ const VerificationStatusScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5', // Maintained original background color
+    backgroundColor: '#f5f5f5',
   },
   header: {
     flexDirection: 'row',
@@ -179,19 +214,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 32,
   },
-  title: {
-    fontSize: 30,
-    fontWeight: '800',
-    color: '#111827',
-    marginBottom: 8,
-    fontFamily: 'System', // Suggest 'Inter_800ExtraBold' or 'Poppins_ExtraBold'
-  },
   subtitle: {
     fontSize: 16,
     fontWeight: '400',
     color: '#6B7280',
     marginBottom: 24,
-    fontFamily: 'System', // Suggest 'Inter_Regular' or 'Poppins_Regular'
   },
   card: {
     backgroundColor: '#FFFFFF',
@@ -231,36 +258,17 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#111827',
-    fontFamily: 'System', // Suggest 'Inter_SemiBold' or 'Poppins_SemiBold'
+  },
+  statusTextDisabled: {
+    color: '#6B7280',
   },
   statusSubText: {
     fontSize: 14,
     fontWeight: '400',
     color: '#6B7280',
-    fontFamily: 'System', // Suggest 'Inter_Regular' or 'Poppins_Regular'
   },
-  button: {
-    borderRadius: 10,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
-    marginTop: 16,
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonGradient: {
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  buttonText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    fontFamily: 'System', // Suggest 'Inter_SemiBold' or 'Poppins_SemiBold'
+  statusSubTextDisabled: {
+    color: '#9CA3AF',
   },
 });
 

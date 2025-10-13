@@ -84,8 +84,8 @@ export default function CreateShopScreen({ navigation }) {
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const response = await axios.post(
-          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/category/dropdown-options/"
+        const response = await api.post(
+          "/category/dropdown-options/"
         );
         setCategories(
           response.data.categories.map((cat) => ({
@@ -116,8 +116,8 @@ export default function CreateShopScreen({ navigation }) {
   useEffect(() => {
     const fetchTopLevelLocations = async () => {
       try {
-        const response = await axios.post(
-          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/states/"
+        const response = await api.post(
+          "/location/states/"
         );
         setLocations(
           response.data.locations.map((loc) => ({
@@ -142,8 +142,8 @@ export default function CreateShopScreen({ navigation }) {
       const formData = new FormData();
       formData.append("parent_id", selectedOption);
   
-      const response = await axios.post(
-        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/children/",
+      const response = await api.post(
+        "/location/children/",
         formData,
         {
           headers: {
@@ -171,8 +171,8 @@ export default function CreateShopScreen({ navigation }) {
       const formData = new FormData();
       formData.append("parent_id", selectedOption);
   
-      const response = await axios.post(
-        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/location/children/",
+      const response = await api.post(
+        "/location/children/",
         formData,
         {
           headers: {
@@ -204,8 +204,8 @@ export default function CreateShopScreen({ navigation }) {
       const formData = new FormData();
       formData.append("parent_id", selectedOption);
 
-      const response = await axios.post(
-        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/category/subcategories/",
+      const response = await api.post(
+        "/category/subcategories/",
         formData,
         {
           headers: { "Content-Type": "multipart/form-data" },
@@ -289,8 +289,8 @@ export default function CreateShopScreen({ navigation }) {
         formData.append("subcategories[]", sub.value)
       );
 
-      const response = await axios.post(
-        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/create-shop/",
+      const response = await api.post(
+        "/create-shop/",
         formData,
         {
           headers: {

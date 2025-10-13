@@ -12,6 +12,7 @@ import debounce from 'lodash.debounce';
 import axios from 'axios';
 import { Ionicons } from '@expo/vector-icons';
 import { initializeDatabase, getSuggestions, cacheSuggestions, getSuggestionsCount } from '../storage/storage';
+import api from '../api';
 
 const TOTAL_SUGGESTIONS = 163000; // Total number of suggestions
 const PROCESSING_BATCH_SIZE = 1000; // Batch size for processing suggestions
@@ -74,7 +75,7 @@ const AutocompleteInput = ({
       lastProgressRef.current = 0;
       onPopulationStateChange?.({ isPopulating: true, progress: 0 });
 
-      const response = await axios.get('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/all-suggestions/', {
+      const response = await api.get('/all-suggestions/', {
         timeout: 60000,
         headers: {
           'Content-Type': 'application/json',
@@ -151,7 +152,7 @@ const AutocompleteInput = ({
         let results = await getSuggestions(input, 20, 0);
         if (results.length === 0) {
           console.log('No SQLite suggestions, fetching from backend');
-          const response = await axios.get('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/all-suggestions/', {
+          const response = await api.get('/all-suggestions/', {
             timeout: 60000,
             headers: {
               'Content-Type': 'application/json',

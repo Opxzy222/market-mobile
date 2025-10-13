@@ -20,7 +20,7 @@ import {
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import { Ionicons } from "@expo/vector-icons";
-import axios from "axios";
+import api from '../../api';
 import { SubscriptionContext } from "../../components/SubscriptionProvider";
 import SubscriptionRequired from "@/components/RequiredSubscription";
 
@@ -224,8 +224,8 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
     }
 
     try {
-      const response = await axios.post(
-        `https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/${shopId}/posts/create/`,
+      const response = await api.post(
+        `/shops/${shopId}/posts/create/`,
         formData,
         {
           headers: {

@@ -27,11 +27,11 @@ import SubscriptionProvider, { SubscriptionContext } from "../../components/Subs
 import SubscriptionRequired from "@/components/RequiredSubscription";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import axios from "axios";
+import api from '../../api';
 import { format } from "date-fns";
 
 const { width } = Dimensions.get("window");
-const BACKEND_URL = "https://retail-alvinia-goza-f6a0e4f7.koyeb.app";
+const BACKEND_URL = "";
 const FALLBACK_IMAGE = "https://randomuser.me/api/portraits/lego/1.jpg";
 
 const StatusItem = ({ item, index, onPress, onDelete, regenerateMediaUrl, sessionId }) => {
@@ -40,7 +40,7 @@ const StatusItem = ({ item, index, onPress, onDelete, regenerateMediaUrl, sessio
   const handleImageError = async (type) => {
     console.error(`Failed to load ${type} for status ID ${item.id}: ${mediaUrls[type]}`);
     try {
-      const response = await axios.get(`${BACKEND_URL}/status/regenerate-url/?status_id=${item.id}`, {
+      const response = await api.get(`${BACKEND_URL}/status/regenerate-url/?status_id=${item.id}`, {
         headers: { Authorization: `Bearer ${sessionId}` },
       });
       const { media_url, thumbnail_url } = response.data;
@@ -140,7 +140,7 @@ const StatusScreen = () => {
   const fetchStatuses = useCallback(async () => {
     try {
         setLoading(true);
-        const response = await axios.get(`${BACKEND_URL}/shop/${shopId}/active_status/`, {
+        const response = await api.get(`${BACKEND_URL}/shop/${shopId}/active_status/`, {
             headers: {
                 "Content-Type": "application/json",
                 Authorization: sessionId ? `Bearer ${sessionId}` : "",
@@ -305,7 +305,7 @@ const StatusScreen = () => {
       setLoading(true);
       const formData = new FormData();
       formData.append("text", statusText);
-      await axios.post(`${BACKEND_URL}/shop/${shopId}/status/`, formData, {
+      await api.post(`${BACKEND_URL}/shop/${shopId}/status/`, formData, {
         headers: {
           "Content-Type": "multipart/form-data",
           Authorization: `Bearer ${sessionId}`,
@@ -373,7 +373,7 @@ const StatusScreen = () => {
         return;
       }
 
-      await axios.post(`${BACKEND_URL}/shop/${shopId}/status/`, formData, {
+      await api.post(`${BACKEND_URL}/shop/${shopId}/status/`, formData, {
         headers: {
           "Content-Type": "multipart/form-data",
           Authorization: `Bearer ${sessionId}`,

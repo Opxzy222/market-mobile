@@ -10,7 +10,6 @@ import {
   StatusBar,
   TextInput,
 } from "react-native";
-import axios from "axios";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -23,6 +22,7 @@ import Animated, {
   Easing,
 } from "react-native-reanimated";
 import { getFullUrl } from "../../utils/imageUtils";
+import api from '../../api';
 
 const CACHE_KEY = "followedShopsCache";
 
@@ -70,8 +70,7 @@ const AllFollowedShops = () => {
 
       const fetchAllFollowedShops = async () => {
         try {
-          const response = await axios.get(
-            "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/shops/followed/",
+          const response = await api.get("/shops/followed/",
             {
               headers: {
                 Authorization: sessionId,

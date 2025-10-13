@@ -211,9 +211,7 @@ const SearchResults = () => {
     }
     setIsVerified(tempIsVerified);
     setIsPremium(tempIsPremium);
-    setModalVisible(false)
-    // Do not close the modal to allow further filter adjustments
-    // setModalVisible(false); // Removed to keep modal open
+    setModalVisible(false);
   }, [tempMinRating, tempMaxRating, tempMinDistance, tempMaxDistance, tempIsVerified, tempIsPremium, allDistancesNull]);
 
   // Memoized reset filters
@@ -233,7 +231,7 @@ const SearchResults = () => {
     setIsVerified(false);
     setIsPremium(false);
     setFilteredResults(Array.isArray(searchResults) ? searchResults : []);
-    setModalVisible(false)
+    setModalVisible(false);
   }, [allDistancesNull, searchResults]);
 
   // Memoized shop card renderer
@@ -243,9 +241,11 @@ const SearchResults = () => {
         <View style={styles.imageContainer}>
           <View style={styles.ratingContainer}>
             {item.verified && (
-              <View style={styles.verifiedBadge}>
-                <MaterialIcons name="verified" size={12} color="#0FA958" />
-                <Text style={styles.verifiedText}>Verified</Text>
+              <View style={styles.ownerVerifiedBadge}>
+                <MaterialIcons name="person" size={16} color="#0FA958" />
+                <View style={styles.verifiedIconOverlay}>
+                  <MaterialIcons name="verified" size={10} color="#0FA958" />
+                </View>
               </View>
             )}
             {item.average_rating !== null && (
@@ -375,7 +375,7 @@ const SearchResults = () => {
         )}
         <View style={styles.switchContainer}>
           <View style={styles.switchRow}>
-            <Text style={styles.switchLabel}>Verified Space Only</Text>
+            <Text style={styles.switchLabel}>Owner Verified Only</Text>
             <Switch
               value={tempIsVerified}
               onValueChange={setTempIsVerified}
@@ -383,7 +383,7 @@ const SearchResults = () => {
               thumbColor={tempIsVerified ? '#FFFFFF' : '#F4F4F5'}
             />
           </View>
-          <Text style={styles.switchDescription}>Show only space with verified owners.</Text>
+          <Text style={styles.switchDescription}>Show only spaces with verified owners.</Text>
         </View>
         <View style={styles.switchContainer}>
           <View style={styles.switchRow}>
@@ -476,7 +476,6 @@ const SearchResults = () => {
   );
 };
 
-// Styles remain unchanged
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -536,6 +535,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexWrap: 'wrap',
   },
+  ownerVerifiedBadge: {
+    position: 'relative',
+    backgroundColor: '#E3FCEF',
+    padding: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#0FA958',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 3,
+    marginRight: 4,
+  },
+  verifiedIconOverlay: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    backgroundColor: '#E3FCEF',
+    borderRadius: 8,
+    padding: 1,
+  },
   ratingBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -554,28 +575,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
     color: '#FFD700',
-    marginLeft: 4,
-  },
-  verifiedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#E3FCEF',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#0FA958',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 3,
-    marginRight: 4,
-  },
-  verifiedText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#0FA958',
     marginLeft: 4,
   },
   planBadge: {

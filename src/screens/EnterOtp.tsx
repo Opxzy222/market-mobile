@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert,
   StatusBar
- } from 'react-native';
+} from 'react-native';
 import { useLocalSearchParams, useRouter } from "expo-router";
+import api from '../api'; // Import axios
 
 const EnterOTPScreen = () => {
   const [otp, setOtp] = useState('');
@@ -19,15 +20,17 @@ const EnterOTPScreen = () => {
     setLoading(true);
     setError('');
     try {
-      const response = await fetch('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/auth/confirm-reset-token/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, token: otp }),
-      });
+      const response = await api.post(
+        '/auth/confirm-reset-token/',
+        { email, token: otp },
+        {
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
 
-      const data = await response.json();
+      const data = response.data;
 
-      if (response.ok) {
+      if (response.status === 200) {
         router.push({ pathname: '/ResetPassword', params: { email: email, token: otp } });
       } else {
         setError(data.error || 'Invalid OTP. Please try again.');
@@ -42,17 +45,20 @@ const EnterOTPScreen = () => {
   const handleResendOTP = async () => {
     setResendLoading(true);
     try {
-      const res = await fetch('https://retail-alvinia-goza-f6a0e4f7.koyeb.app/auth/request-reset-token/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      });
-      const data = await response.json();
+      const response = await api.post(
+        '/auth/request-reset-token/',
+        { email },
+        {
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
 
-      if (!response.ok) {
-        Alert.alert('Error', data.error || 'Could not resend OTP.');
-      } else {
+      const data = response.data;
+
+      if (response.status === 200) {
         Alert.alert('Success', 'A new OTP has been sent to your email.');
+      } else {
+        Alert.alert('Error', data.error || 'Could not resend OTP.');
       }
     } catch (error) {
       Alert.alert('Error', 'Network issue. Please try again.');

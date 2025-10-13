@@ -1,7 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import { Platform, Alert, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
+import api from '../api';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
 
@@ -76,8 +76,8 @@ export const setupNotificationHandlers = async () => {
     const authToken = await AsyncStorage.getItem('sessionToken');
     if (userId && authToken) {
       try {
-        await axios.post(
-          'https://retail-alvinia-goza-f6a0e4f7.koyeb.app/api/register-device/',
+        await api.post(
+          '/api/register-device/',
           {
             user_id: userId,
             device_token: token.data,
