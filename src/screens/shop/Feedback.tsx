@@ -65,6 +65,7 @@ const FeedbackScreen = () => {
   );
 
   return (
+    <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
     <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity
@@ -94,6 +95,7 @@ const FeedbackScreen = () => {
         </TouchableOpacity>
       </View>
     </LinearGradient>
+    </SafeAreaView>
   );
 };
 
