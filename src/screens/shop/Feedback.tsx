@@ -13,6 +13,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const supabaseUrl = 'https://gpkffwjenljkiyjnuldl.supabase.co';
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdwa2Zmd2plbmxqa2l5am51bGRsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAxNzkzNDEsImV4cCI6MjA3NTc1NTM0MX0.elswjg5HN_Y3Lv2vyTskcQJhmg5KM3uGfgtVkea-MQk';
@@ -79,7 +80,7 @@ const FeedbackScreen = () => {
         <Text style={styles.label}>How would you rate the app?</Text>
         {renderStars()}
         <Text style={styles.ratingText}>Rating: {rating}/5</Text>
-        <Text style={styles.label}>Your thoughts (optional)</Text>
+        <Text style={styles.label}>Your thoughts </Text>
         <TextInput
           style={styles.textArea}
           multiline
