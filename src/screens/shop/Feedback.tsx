@@ -87,6 +87,7 @@ const FeedbackScreen = () => {
           multiline
           numberOfLines={4}
           placeholder="Tell us what you love or how we can improve..."
+          placeholderTextColor="#6B7280"
           value={feedback}
           onChangeText={setFeedback}
         />
