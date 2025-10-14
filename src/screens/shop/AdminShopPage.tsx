@@ -14,7 +14,7 @@ import {
  KeyboardAvoidingView,
  StatusBar,
 } from "react-native";
-import axios from "axios";
+import api from '../../api';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import ShopReview from "../../components/shop/ShopReview";
