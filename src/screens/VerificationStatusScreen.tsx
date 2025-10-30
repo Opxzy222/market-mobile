@@ -1,61 +1,72 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, StatusBar } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Toast from 'react-native-toast-message';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Animated, { FadeInUp, FadeInDown, ZoomIn } from 'react-native-reanimated';
 
+interface VerificationStatus {
+  phoneVerified: boolean;
+  userVerified: boolean;
+}
+
 const VerificationStatusScreen = () => {
-  const [phoneVerified, setPhoneVerified] = useState(false);
-  const [userVerified, setUserVerified] = useState(false);
+  const [status, setStatus] = useState<VerificationStatus>({ phoneVerified: false, userVerified: false });
   const router = useRouter();
 
-  useEffect(() => {
-    const loadVerificationStatus = async () => {
-      try {
-        const sessionToken = await AsyncStorage.getItem('sessionToken');
-        console.log('Session Token:', sessionToken); // Debug session token
-        if (!sessionToken) {
-          Toast.show({ type: 'error', text1: 'Error', text2: 'Please log in again.' });
-          router.push('/login');
-          return;
-        }
-
-        // Retrieve verification statuses from AsyncStorage
-        const phoneVerifiedStr = await AsyncStorage.getItem('phone_verified');
-        const userVerifiedStr = await AsyncStorage.getItem('user_verified');
-        
-        console.log('Phone Verified (raw):', phoneVerifiedStr, 'User Verified (raw):', userVerifiedStr); // Debug raw values
-        
-        // Parse JSON strings to booleans, default to false if not found
-        const isPhoneVerified = phoneVerifiedStr ? JSON.parse(phoneVerifiedStr) : false;
-        const isUserVerified = userVerifiedStr ? JSON.parse(userVerifiedStr) : false;
-        
-        setPhoneVerified(!!isPhoneVerified); // Ensure boolean
-        setUserVerified(!!isUserVerified); // Ensure boolean
-        console.log('Phone Verified:', isPhoneVerified, 'User Verified:', isUserVerified); // Debug state
-        
-        Toast.show({
-          type: 'info',
-          text1: 'Verification Status Loaded',
-          text2: `Phone: ${isPhoneVerified ? 'Verified' : 'Not Verified'}, ID: ${isUserVerified ? 'Verified' : 'Not Verified'}`,
-        });
-      } catch (error) {
-        Toast.show({
-          type: 'error',
-          text1: 'Error',
-          text2: 'Failed to load verification status from storage.',
-        });
-        console.error('Error fetching verification status from AsyncStorage:', error);
+  const loadVerificationStatus = useCallback(async () => {
+    try {
+      const sessionToken = await AsyncStorage.getItem('sessionToken');
+      console.log('Session Token:', sessionToken); // Debug session token
+      if (!sessionToken) {
+        Toast.show({ type: 'error', text1: 'Error', text2: 'Please log in again.' });
+        router.push('/login');
+        return;
       }
-    };
-    loadVerificationStatus();
-  }, []);
+
+      // Retrieve verification statuses from AsyncStorage
+      const phoneVerifiedStr = await AsyncStorage.getItem('phone_verified');
+      const userVerifiedStr = await AsyncStorage.getItem('user_verified');
+
+      console.log('Phone Verified (raw):', phoneVerifiedStr, 'User Verified (raw):', userVerifiedStr); // Debug raw values
+
+      // Parse JSON strings to booleans, default to false if not found
+      const isPhoneVerified = phoneVerifiedStr ? JSON.parse(phoneVerifiedStr) : false;
+      const isUserVerified = userVerifiedStr ? JSON.parse(userVerifiedStr) : false;
+
+      // Update state with latest values
+      setStatus({ phoneVerified: !!isPhoneVerified, userVerified: !!isUserVerified });
+      console.log('Phone Verified:', isPhoneVerified, 'User Verified:', isUserVerified); // Debug state
+
+      Toast.show({
+        type: 'info',
+        text1: 'Verification Status Loaded',
+        text2: `Phone: ${isPhoneVerified ? 'Verified' : 'Not Verified'}, ID: ${isUserVerified ? 'Verified' : 'Not Verified'}`,
+      });
+    } catch (error) {
+      console.error('Error fetching verification status from AsyncStorage:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: 'Failed to load verification status. Please try again.',
+      });
+      // Reset to default state on error to avoid stale data
+      setStatus({ phoneVerified: false, userVerified: false });
+    }
+  }, [router]);
+
+  // Fetch data every time the screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      loadVerificationStatus();
+      // No cleanup needed, as AsyncStorage operations are idempotent
+    }, [loadVerificationStatus])
+  );
 
   const handlePhoneVerification = () => {
-    if (phoneVerified) {
+    if (status.phoneVerified) {
       Toast.show({
         type: 'success',
         text1: 'Already Verified',
@@ -69,7 +80,7 @@ const VerificationStatusScreen = () => {
   };
 
   const handleIDVerification = () => {
-    if (!phoneVerified) {
+    if (!status.phoneVerified) {
       Toast.show({
         type: 'error',
         text1: 'Phone Verification Required',
@@ -78,7 +89,7 @@ const VerificationStatusScreen = () => {
       console.log('ID Verification blocked: Phone not verified');
       return;
     }
-    if (userVerified) {
+    if (status.userVerified) {
       Toast.show({
         type: 'success',
         text1: 'Already Verified',
@@ -97,7 +108,7 @@ const VerificationStatusScreen = () => {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.navigate("(tabs)/profile")} style={styles.backButton}>
+          <TouchableOpacity onPress={() => router.navigate('(tabs)/profile')} style={styles.backButton}>
             <MaterialIcons name="arrow-back" size={26} color="white" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Verification Status</Text>
@@ -112,24 +123,24 @@ const VerificationStatusScreen = () => {
           <Animated.View style={styles.card} entering={FadeInDown.duration(500).delay(300)}>
             {/* Phone Verification */}
             <TouchableOpacity
-              style={[styles.statusItem, phoneVerified && styles.statusItemDisabled]}
+              style={[styles.statusItem, status.phoneVerified && styles.statusItemDisabled]}
               onPress={handlePhoneVerification}
-              disabled={phoneVerified}
+              disabled={status.phoneVerified}
             >
               <View style={styles.statusContent}>
                 <View style={styles.statusIconContainer}>
                   <Animated.View entering={ZoomIn.duration(400).delay(400)}>
                     <MaterialIcons
-                      name={phoneVerified ? 'check-circle' : 'phone'}
+                      name={status.phoneVerified ? 'check-circle' : 'phone'}
                       size={28}
-                      color={phoneVerified ? '#10B981' : '#6B7280'}
+                      color={status.phoneVerified ? '#10B981' : '#6B7280'}
                     />
                   </Animated.View>
                 </View>
                 <View>
                   <Text style={styles.statusText}>Phone Verification</Text>
                   <Text style={styles.statusSubText}>
-                    {phoneVerified ? 'Verified' : 'Verify your phone number'}
+                    {status.phoneVerified ? 'Verified' : 'Verify your phone number'}
                   </Text>
                 </View>
               </View>
@@ -137,26 +148,26 @@ const VerificationStatusScreen = () => {
 
             {/* ID Verification */}
             <TouchableOpacity
-              style={[styles.statusItem, (userVerified || !phoneVerified) && styles.statusItemDisabled]}
+              style={[styles.statusItem, (status.userVerified || !status.phoneVerified) && styles.statusItemDisabled]}
               onPress={handleIDVerification}
-              disabled={userVerified || !phoneVerified}
+              disabled={status.userVerified || !status.phoneVerified}
             >
               <View style={styles.statusContent}>
                 <View style={styles.statusIconContainer}>
                   <Animated.View entering={ZoomIn.duration(400).delay(500)}>
                     <MaterialIcons
-                      name={userVerified ? 'check-circle' : 'badge'}
+                      name={status.userVerified ? 'check-circle' : 'badge'}
                       size={28}
-                      color={userVerified ? '#10B981' : !phoneVerified ? '#D1D5DB' : '#6B7280'}
+                      color={status.userVerified ? '#10B981' : !status.phoneVerified ? '#D1D5DB' : '#6B7280'}
                     />
                   </Animated.View>
                 </View>
                 <View>
-                  <Text style={[styles.statusText, !phoneVerified && styles.statusTextDisabled]}>
+                  <Text style={[styles.statusText, !status.phoneVerified && styles.statusTextDisabled]}>
                     ID Verification
                   </Text>
-                  <Text style={[styles.statusSubText, !phoneVerified && styles.statusSubTextDisabled]}>
-                    {userVerified ? 'Verified' : !phoneVerified ? 'Requires phone verification' : 'Verify your identity'}
+                  <Text style={[styles.statusSubText, !status.phoneVerified && styles.statusSubTextDisabled]}>
+                    {status.userVerified ? 'Verified' : !status.phoneVerified ? 'Requires phone verification' : 'Verify your identity'}
                   </Text>
                 </View>
               </View>

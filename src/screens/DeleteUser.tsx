@@ -14,6 +14,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../api'; // Import axios
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const DeleteAccountScreen = () => {
   const router = useRouter();
@@ -57,16 +58,13 @@ const DeleteAccountScreen = () => {
     }
   };
 
-  const handleBack = () => {
-    router.back();
-  };
-
   return (
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
       <LinearGradient colors={['#F7FAFC', '#E5E7EB']} style={styles.linearContainer}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+          <TouchableOpacity onPress={() => router.navigate("(tabs)/profile")} style={styles.backButton}>
             <MaterialIcons name="arrow-back" size={26} color="white" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Delete Account</Text>
@@ -102,6 +100,7 @@ const DeleteAccountScreen = () => {
         </View>
       </LinearGradient>
     </View>
+    </SafeAreaView>
   );
 };
 

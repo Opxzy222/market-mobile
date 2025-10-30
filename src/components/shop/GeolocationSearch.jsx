@@ -41,7 +41,7 @@ export default function GeolocationSearch({ onSearch, onFocusChange, onSuggestio
         }
 
         if (response.data.shops.length === 0) {
-          Alert.alert('No Results', 'No shops found for your search.');
+          Alert.alert('No Results', 'No space found for your search.');
           setLoading(false);
           return;
         }

@@ -1,1023 +1,240 @@
-from django.db import models
-from django.utils import timezone
-from mptt.models import MPTTModel, TreeForeignKey
-from django.db.models import Sum
-from django.contrib.gis.db import models as gis_models
-from django.db.models.signals import post_save
-from django.dispatch import receiver
-from channels.layers import get_channel_layer
-from asgiref.sync import async_to_sync
-import random
-from django.core.validators import FileExtensionValidator
-from django.utils.translation import gettext_lazy as _
-from datetime import timedelta
-from django.core.cache import cache
-from django.db.models import Subquery, Avg
-from datetime import datetime
-from django.utils.timezone import localtime
-from django.utils.crypto import get_random_string
-import uuid
-from django.contrib.postgres.indexes import GinIndex
-from utils.thumbnail_generator import save_thumbnail_to_model
-from django.conf import settings
-import os
-from django.core.files.storage import default_storage
-import re
-from django_b2.storage import B2Storage
-
-
-class User(models.Model):
-    id = models.AutoField(primary_key=True)
-    firstname = models.CharField(max_length=250, null=False)
-    lastname = models.CharField(max_length=250, null=False)
-    email = models.CharField(max_length=250, null=False, unique=True)
-    password = models.CharField(max_length=250, null=False)
-    session_id = models.CharField(max_length=250, null=True)
-    phone_no = models.BigIntegerField(null=True, default='012456520')
-    reset_token = models.CharField(max_length=250, null=True)
-    date_joined = models.DateTimeField(default=timezone.now)
-    user_id = models.CharField(max_length=8, unique=True, editable=False, null=True, blank=True)
-    image = models.ImageField(
-        upload_to='profile_picture/',
-        storage=B2Storage(),
-        max_length=200,
-        null=True,
-        blank=True,
-        default='profile_picture/default/user_default.png'  # B2 path for default image
-    )
-    is_active = models.BooleanField(default=True)
-    is_verified = models.BooleanField(default=False)  # ID verification
-    email_verification_token = models.CharField(max_length=64, null=True, blank=True) 
-    is_email_verified = models.BooleanField(default=False)  # Email verification
-    reset_token_expiry = models.DateTimeField(null=True, blank=True)  # ✅ New field
-    paystack_customer_code = models.CharField(max_length=50, blank=True, null=True)
-    balance = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    is_phone_verified = models.BooleanField(default=False)  # Tracks phone number verification
-    phone_verification_token = models.CharField(max_length=6, null=True, blank=True)  # Stores OTP
-    phone_verification_expires_at = models.DateTimeField(null=True, blank=True)  # OTP expiration
-
-    def save(self, *args, **kwargs):
-        if not self.user_id:  # Generate only if it's a new user
-            self.user_id = self.generate_unique_user_id()
-        super().save(*args, **kwargs)
-
-    def generate_unique_user_id(self):
-        while True:
-            random_id = str(random.randint(10000000, 99999999))  # Generate a 6-digit number
-            if not User.objects.filter(user_id=random_id).exists():
-                return random_id
-
-    def generate_email_verification_token(self):
-        self.email_verification_token = str(random.randint(100000, 999999))
-        self.save()
-
-        # Assuming you're also storing this in the PendingUser model, create the pending user
-        pending_user = PendingUser.objects.create(
-            email=self.email,
-            verification_token=self.email_verification_token,
-        )
-
-    def verify_user(self):
-        """Set user as verified."""
-        self.is_verified = True
-        self.save()
-
-    @staticmethod
-    def set_user_verified(user_id):
-        """Static method to verify a user by user_id."""
-        user = User.objects.filter(user_id=user_id).first()
-        if user:
-            user.is_verified = True
-            user.save()
-            return True
-        return False
-
-    def delete(self, *args, **kwargs):
-        self.is_active = False
-        self.save()
-
-    @property
-    def fullname(self):
-        # Ensure the first letter of each name is capitalized
-        return f'{self.firstname} {self.lastname}'.title()
-
-    @property
-    def is_authenticated(self):
-        """ Required by Django’s authentication system """
-        return True  # Since this is a valid user, always return True
-
-    def __str__(self):
-        # name representation of the class
-        return self.fullname
-
-def default_verification_expires_at():
-    return timezone.now() + timezone.timedelta(minutes=10)  # 10-minute expiration
-
-def generate_six_digit_token():
-        return str(random.randint(100000, 999999))
-
-class PendingUser(models.Model):
-    email = models.EmailField(unique=True)
-    verification_token = models.CharField(
-        max_length=6,  # max_length can be 6 now
-        unique=True,
-        default=generate_six_digit_token
-    )
-    created_at = models.DateTimeField(default=timezone.now)
-    verification_expires_at = models.DateTimeField(default=default_verification_expires_at)  # Fix default callable
-    is_verified = models.BooleanField(default=False)
-    verified_at = models.DateTimeField(null=True, blank=True)  # Stores timestamp of verification
-
-    def reset_verification(self):
-        """Resets verification details for resending the verification email."""
-        self.verification_token = str(random.randint(100000, 999999))
-        self.verification_expires_at = timezone.now() + timezone.timedelta(minutes=10)
-        self.verified_at = None
-        self.is_verified = False
-        self.save()
-
-    def __str__(self):
-        return self.email
-
-class AttributeType(models.Model):
-    name = models.CharField(max_length=100)
-    is_checkbox = models.BooleanField(default=False) 
-
-    def __str__(self):
-        return self.name
-
-class AttributeValue(models.Model):
-    attribute_type = models.ForeignKey(AttributeType, on_delete=models.CASCADE, related_name='values')
-    value = models.CharField(max_length=100)
-
-    def __str__(self):
-        return self.value
-
-class Category(MPTTModel):
-    #Category model
-    id = models.AutoField(primary_key=True)
-    name = models.CharField(max_length=100, default='Default Category Name')
-    parent = TreeForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='children')
-    tree_id = models.CharField(max_length=100, default='tree-id')
-    level = models.PositiveIntegerField(default=0)
-    keywords = models.TextField(blank=True, null=True)  # New field for keywords
-
-    class MPTTMeta:
-        order_insertion_by = ['name']
-        unique_together = ('name', 'parent')
-
-    rght = models.PositiveIntegerField(default=1)
-    lft = models.PositiveIntegerField(default=1)
-
-    def __str__(self):
-        return self.name
-
-    def product_count(self):
-        # Get the count of products in all subcategories recursively
-        subcategory_product_count = self.get_all_subcategory_product_count()
-        # Sum up the counts
-        total_product_count = subcategory_product_count 
-        return total_product_count
-
-    def get_all_subcategory_product_count(self):
-        # Initialize the total count
-        total_count = self.category_items.count()
-        # Iterate through each subcategory recursively
-        for subcategory in self.children.all():
-            # Add the product count of the current subcategory
-            total_count += subcategory.get_all_subcategory_product_count()
-        return total_count
-
-class CategoryAttribute(models.Model):
-    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='attributes')
-    attribute_type = models.ForeignKey(AttributeType, on_delete=models.CASCADE)
-    attribute_value = models.ForeignKey(AttributeValue, on_delete=models.CASCADE, related_name='category_attributes')
-
-    class Meta:
-        unique_together = ('category', 'attribute_type', 'attribute_value')
-
-    def __str__(self):
-        return f"{self.category} - {self.attribute_type}"
-
-class Location(models.Model):
-    name = models.CharField(max_length=255)
-    parent = models.ForeignKey(
-        "self", on_delete=models.CASCADE, null=True, blank=True, related_name="children"
-    )
-    level = models.CharField(
-        max_length=50,
-        choices=[("state", "State"), ("lga", "LGA"), ("location", "Location")],
-    )
-    suffix = models.CharField(max_length=10, unique=True, null=True, blank=True)  # Unique suffix
-
-    def save(self, *args, **kwargs):
-        if not self.suffix:
-            self.suffix = self.generate_suffix()
-        super().save(*args, **kwargs)
-
-    def generate_suffix(self):
-        if self.level == "state":
-            # Generate state suffix (A-Z, then AA-ZZ for more states)
-            state_count = Location.objects.filter(level="state").count()
-            if state_count < 26:
-                return chr(65 + state_count)  # A-Z
-            else:
-                first_letter = chr(65 + (state_count // 26) - 1)  # AA, AB, etc.
-                second_letter = chr(65 + (state_count % 26))
-                return f"{first_letter}{second_letter}"
-
-        elif self.level == "lga":
-            # Generate LGA suffix based on parent (state)
-            siblings = Location.objects.filter(parent=self.parent, level="lga")
-            return f"{self.parent.suffix}{len(siblings) + 1:02d}"  # E.g., A01, A02
-
-        elif self.level == "location":
-            # Generate location suffix based on parent (LGA)
-            siblings = Location.objects.filter(parent=self.parent, level="location")
-            return f"{self.parent.suffix}{len(siblings) + 1:02d}"  # E.g., A0101
-
-        return None
-
-    def __str__(self):
-        return self.name
-
-class Product(models.Model):
-    title = models.TextField(max_length=100, default='title')
-    description = models.TextField()
-    price = models.DecimalField(decimal_places=2, max_digits=10)
-    negotiable = models.BooleanField(null=True)
-    image = models.ImageField(upload_to='Image/Image', null=False, default='product_image.jpg')
-    seller = models.ForeignKey(User, on_delete=models.CASCADE, related_name='seller_id', null=False)
-    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name='category_items')
-    product_name = models.CharField(max_length=100, blank=True)
-    location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name='product_location', default=15, null=True)
-    attributes = models.ManyToManyField(CategoryAttribute, through='ProductAttribute')
-
-    def save(self, *args, **kwargs):
-        # Retrieve the related Category name
-        if self.category:
-            self.product_name = self.category.name
-        super().save(*args, **kwargs)
-
-class ProductAttribute(models.Model):
-    product = models.ForeignKey(Product, on_delete=models.CASCADE)
-    category_attribute = models.ForeignKey(CategoryAttribute, on_delete=models.CASCADE)
-    value = models.ForeignKey(AttributeValue, on_delete=models.CASCADE)
-
-    def __str__(self):
-        return f"{self.product} - {self.category_attribute.attribute_type}: {self.value}"
-
-class Image(models.Model):
-    DEFAULT_PRODUCT_ID = 26  # You can change this default value as needed
-    DEFAULT_PRODUCT_NAME = "Default Product"
-
-    product = models.ForeignKey(Product, related_name='images', on_delete=models.CASCADE, default=DEFAULT_PRODUCT_ID)
-    image_file = models.ImageField(upload_to='Image/Image', default='product_image.jpg')
-
-    def __str__(self):
-        return self.image_file.name
-    
-class Subcategory(models.Model):
-    name = models.CharField(max_length=255)
-    category = models.ForeignKey(Category, on_delete=models.CASCADE)
-    keywords = models.TextField(blank=True, null=True) 
-
-    class Meta:
-        pass 
-
-    def __str__(self):
-        return self.name
-    
-class ProductSuggestion(models.Model):
-    name = models.CharField(max_length=255)
-    category = models.ForeignKey(Category, on_delete=models.CASCADE)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    subcategory = models.ForeignKey(Subcategory, on_delete=models.CASCADE, null=True, blank=True)
-
-    class Meta:
-        pass 
-
-    def __str__(self):
-        return self.name
-    
-class ShopManager(models.Manager):
-    def get_queryset(self):
-        return super().get_queryset().filter(is_active=True)
-
-class Shop(models.Model):
-    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='shops')
-    name = models.CharField(max_length=255)
-    description = models.TextField(null=True)
-    location = models.ForeignKey(Location, on_delete=models.CASCADE, related_name='shop_location', null=True)
-    geo_location = gis_models.PointField(srid=4326, null=True)  # Geospatial field for location
-    address = models.TextField(null=True)
-    created_at = models.DateTimeField(auto_now_add=True, null=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    category = models.ManyToManyField(Category)
-    image = models.ImageField(
-        upload_to='shop_images/',
-        storage=B2Storage(),
-        max_length=200,
-        null=True,
-        blank=True,
-        default='shop_images/default/shop_default.png'  # B2 path for default image
-    )
-    signature = models.ImageField(
-        upload_to='receipts/signatures/',
-        storage=B2Storage(),
-        max_length=200,
-        null=True,
-        blank=True
-    )
-    is_24_7 = models.BooleanField(default=False)
-    is_active = models.BooleanField(default=True)  # Soft deletion flag
-    deletion_requested_at = models.DateTimeField(null=True, blank=True)
-    
-    # New fields
-    lga = models.ForeignKey(Location, on_delete=models.CASCADE, null=True, related_name="lga_shops")  # Reference to the LGA
-    shop_id = models.CharField(max_length=7, unique=True, null=True, blank=True)  # Unique 7-digit Shop ID
-
-    objects = ShopManager()  # Default manager filters active shops
-    all_objects = models.Manager()  # Access all shops, including soft-deleted
-
-    def save(self, *args, **kwargs):
-        if not self.shop_id:
-            self.shop_id = self.generate_shop_id()
-            super().save(*args, **kwargs)  # Save Shop first to get an ID
-            ShopIdHistory.objects.create(shop_id=self.shop_id, related_shop=self)  # Now create history
-        else:
-            super().save(*args, **kwargs)
-
-    def delete(self, *args, **kwargs):
-        """Soft delete: mark as inactive and set deletion request time."""
-        self.is_active = False
-        self.deletion_requested_at = timezone.now()
-        if self.shop_id:
-            history = ShopIdHistory.objects.get(shop_id=self.shop_id)
-            history.deleted_at = timezone.now()
-            history.save()
-        self.save()
-
-
-    def generate_shop_id(self):
-        """
-        Generate a unique 7-digit shop ID based on the LGA, using the suffix and random numbers.
-        """
-        if not self.lga or not self.lga.suffix:
-            logger.error(f"LGA is missing or has no valid suffix: {self.lga}")
-            raise ValueError("LGA must have a valid suffix to generate a shop ID.")
-
-        base_suffix = str(self.lga.suffix).strip()  # Ensure it's a string and remove spaces
-
-        if len(base_suffix) > 3:
-            logger.warning(f"LGA suffix '{base_suffix}' is too long. Trimming to 3 characters.")
-            base_suffix = base_suffix[:3]  # Trim to 3 characters max
-
-        if len(base_suffix) < 2:
-            logger.error(f"LGA suffix '{base_suffix}' is too short!")
-            raise ValueError("LGA suffix must be at least 2 characters.")
-
-        max_attempts = 50  # Allow more attempts before failing
-
-        for _ in range(max_attempts):
-            random_digits = random.randint(1000, 9999)  # Always 4 digits
-            shop_id = f"{base_suffix}{random_digits}"
-
-            if len(shop_id) == 7 and not ShopIdHistory.objects.filter(shop_id=shop_id).exists():
-                return shop_id
-
-        logger.error(f"Failed to generate unique Shop ID for LGA {self.lga} after {max_attempts} attempts.")
-        raise ValueError("Failed to generate a unique Shop ID after multiple attempts.")
-
-    def __str__(self):
-        return self.name
-
-    def average_rating(self):
-        latest_reviews = Review.objects.filter(
-            id__in=Subquery(
-                Review.objects.filter(shop=self)
-                .order_by("reviewer", "-created_at")
-                .distinct("reviewer")
-                .values("id")
-            )
-        )
-        if not latest_reviews.exists():
-            return None
-        avg = latest_reviews.aggregate(avg_rating=Avg("rating"))["avg_rating"]
-        return round(avg, 1) if avg is not None else None
-
-    def is_open_now(self):
-        """Check if the shop is currently open based on working hours."""
-        now = localtime()  # Ensures timezone consistency
-        today = now.strftime('%A').lower()  # 'monday', 'tuesday', etc.
-
-        working_hours = getattr(self, "working_hours", None)
-        if not working_hours:
-            return False
-
-        if working_hours.is_24_7:
-            return True
-
-        if getattr(working_hours, f"{today}_closed", False):
-            return False
-
-        open_time = getattr(working_hours, f"{today}_open", None)
-        close_time = getattr(working_hours, f"{today}_close", None)
-
-        if not open_time or not close_time:
-            return False
-
-        current_time = now.time()
-        return open_time <= current_time <= close_time
-    
-class ShopIdHistory(models.Model):
-    shop_id = models.CharField(max_length=7, unique=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    deleted_at = models.DateTimeField(null=True, blank=True)
-    related_shop = models.ForeignKey(Shop, on_delete=models.SET_NULL, null=True, blank=True, related_name='id_history')
-
-    class Meta:
-        indexes = [models.Index(fields=['shop_id'])]
-
-    def __str__(self):
-        return self.shop_id
-
-class WorkingHours(models.Model):
-    shop = models.OneToOneField("Shop", on_delete=models.CASCADE, related_name="working_hours")
-    is_24_7 = models.BooleanField(default=False)
-
-    monday_open = models.TimeField(null=True, blank=True)
-    monday_close = models.TimeField(null=True, blank=True)
-    monday_closed = models.BooleanField(default=False)  # New closed flag
-
-    tuesday_open = models.TimeField(null=True, blank=True)
-    tuesday_close = models.TimeField(null=True, blank=True)
-    tuesday_closed = models.BooleanField(default=False)
-
-    wednesday_open = models.TimeField(null=True, blank=True)
-    wednesday_close = models.TimeField(null=True, blank=True)
-    wednesday_closed = models.BooleanField(default=False)
-
-    thursday_open = models.TimeField(null=True, blank=True)
-    thursday_close = models.TimeField(null=True, blank=True)
-    thursday_closed = models.BooleanField(default=False)
-
-    friday_open = models.TimeField(null=True, blank=True)
-    friday_close = models.TimeField(null=True, blank=True)
-    friday_closed = models.BooleanField(default=False)
-
-    saturday_open = models.TimeField(null=True, blank=True)
-    saturday_close = models.TimeField(null=True, blank=True)
-    saturday_closed = models.BooleanField(default=False)
-
-    sunday_open = models.TimeField(null=True, blank=True)
-    sunday_close = models.TimeField(null=True, blank=True)
-    sunday_closed = models.BooleanField(default=False)
-
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f"Working Hours for {self.shop.name}"
-
-
-class ShopProduct(models.Model):
-    shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name='shopproduct')
-    subcategory = models.ForeignKey(Subcategory, on_delete=models.CASCADE, null=True)
-    product_suggestion = models.ForeignKey(ProductSuggestion, on_delete=models.SET_NULL, null=True, blank=True)
-    custom_name = models.CharField(max_length=255, blank=True, null=True)
-    is_available = models.BooleanField(default=True)
-    price = models.DecimalField(decimal_places=2, max_digits=15, null=True, blank=True)
-
-    class Meta:
-        pass 
-
-    def __str__(self):
-        if self.custom_name:
-            return self.custom_name
-        return self.product_suggestion.name if self.product_suggestion else "Unnamed Product"
-
-class Review(models.Model):
-    shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name="reviews")
-    reviewer = models.ForeignKey(User, on_delete=models.CASCADE)
-    rating = models.IntegerField()  # 1-5 scale
-    comment = models.TextField(blank=True, null=True)
-    created_at = models.DateTimeField(auto_now_add=True)  # Track review time
-    updated_at = models.DateTimeField(auto_now=True)  # Track latest update
-
-    def __str__(self):
-        return f"Review for {self.shop.name} by {self.reviewer.fullname}"
-    
-class ShopPost(models.Model):
-    shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name='posts')
-    description = models.TextField()
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f"Post by {self.shop.name} on {self.created_at.strftime('%Y-%m-%d')}"
-
-class ShopPostMedia(models.Model):
-    post = models.ForeignKey(ShopPost, on_delete=models.CASCADE, related_name='media')
-    file = models.FileField(upload_to='shop_posts/')
-    thumbnail = models.ImageField(upload_to='thumbnails/', null=True, blank=True)
-
-    def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
-        if self.file and not self.thumbnail:
-            save_thumbnail_to_model(self)
-
-class Conversation(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='conversations')
-    shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name='conversations')
-    user_initial_name = models.CharField(max_length=255, null=True)  # Store the initial name for the user
-    shop_initial_name = models.CharField(max_length=255, null=True)  # Store the initial name for the shop
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    attachment = models.FileField(
-        upload_to="conversation_attachments/",
-        null=True,
-        blank=True,
-        validators=[FileExtensionValidator(allowed_extensions=["jpg", "jpeg", "png", "mp4", "pdf", "docx"])]
-    )
-
-    thumbnail = models.ImageField(
-        upload_to="chat_thumbnails/",
-        null=True,
-        blank=True
-    )  
-
-    class Meta:
-        indexes = [
-            models.Index(fields=['user', 'shop']),
-        ]
-
-    def __str__(self):
-        return f"Conversation between {self.user.fullname} and {self.shop.name}"
-
-    def save(self, *args, **kwargs):
-        if not self.user_initial_name:
-            self.user_initial_name = self.user.fullname
-        if not self.shop_initial_name:
-            self.shop_initial_name = self.shop.name
-        super().save(*args, **kwargs)
-
-class Message(models.Model):
-    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='messages')
-    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_messages')
-    receiver = models.ForeignKey(User, on_delete=models.CASCADE, related_name='received_messages')
-    shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name='messages')
-    content = models.TextField(blank=True, null=True)  # Optional text content
-    attachment = models.FileField(
-        upload_to="chat_attachments/",
-        null=True,
-        blank=True,
-        validators=[FileExtensionValidator(allowed_extensions=["jpg", "jpeg", "png", "mp4", "pdf", "docx"])]
-    )  # Supports images, videos, and documents
-    timestamp = models.DateTimeField(auto_now_add=True)
-    read = models.BooleanField(default=False)
-    sender_name = models.CharField(max_length=255, default='buyer')
-    receiver_name = models.CharField(max_length=255, default='shop')
-    thumbnail = models.ImageField(
-        upload_to="chat_thumbnails/",
-        null=True,
-        blank=True
-    )  
-
-    class Meta:
-        ordering = ['-timestamp']
-        indexes = [
-            models.Index(fields=['receiver', 'read', 'conversation']),
-        ]
-
-    def __str__(self):
-        return f"Message from {self.sender.fullname} to {self.receiver.fullname}"
-
-    def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
-
-@receiver(post_save, sender=Message)
-def notify_unread_messages(sender, instance, created, **kwargs):
-    if created:
-        receiver = instance.receiver
-        cache_key = f"unread_count_{receiver.id}"
-        
-        # Calculate unread count for receiver
-        new_unread_count = Message.objects.filter(
-            receiver=receiver,
-            read=False
-        ).values("conversation_id").distinct().count()
-        
-        logger.info(f"New unread message for user {receiver.id} from sender {instance.sender.id}. New unread count: {new_unread_count}")
-
-        # Update cache
-        cache.set(cache_key, new_unread_count, timeout=300)
-
-        # Send WebSocket notification to receiver's group
-        channel_layer = get_channel_layer()
-        async_to_sync(channel_layer.group_send)(
-            f"user_{receiver.id}_unread_messages",
+{
+  "expo": {
+    "name": "Gogo Market",
+    "slug": "gogo-mobile",
+    "version": "2.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon2.png",
+    "scheme": "gogo-mobile",
+    "userInterfaceStyle": "automatic",
+    "sdkVersion": "53.0.0",
+    "splash": {
+      "image": "./assets/images/icon2.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.timeflies.gogomarket",
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "remote-notification"
+        ],
+        "NSUserNotificationsUsageDescription": "Allow this app to send you notifications about new followers, reviews, posts, and receipts.",
+        "NSLocationWhenInUseUsageDescription": "Allow this app to use your location to find nearby shops.",
+        "NSLocationAlwaysUsageDescription": "This app uses location services to provide a better experience.",
+        "NSLocationUsageDescription": "This app uses location services to provide a better experience.",
+        "NSMotionUsageDescription": "Allow this app to access motion data to estimate small movements.",
+        "NSPhotoLibraryUsageDescription": "This app uses the photo library to provide a better experience.",
+        "NSCameraUsageDescription": "This app uses the camera to provide a better experience.",
+        "NSMicrophoneUsageDescription": "This app uses the microphone to provide a better experience.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon2.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.timeflies.gogomarket",
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.INTERNET",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_PHONE_STATE",
+        "android.permission.ACTIVITY_RECOGNITION",
+        "com.google.android.gms.permission.AD_ID"
+      ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
             {
-                "type": "unread_message_notification",
-                "unread_count": new_unread_count,
+              "scheme": "gogo-mobile",
+              "host": "verification",
+              "pathPrefix": "/"
             }
-        )
-
-
-import logging
-logger = logging.getLogger(__name__)
-"""
-@receiver(post_save, sender=Message)
-def send_message_notification(sender, instance, created, **kwargs):
-    if created:
-        logger.info(f"Notification sent for message ID: {instance.id}, Attachment: {instance.attachment.url if instance.attachment else 'No file'}")
-        channel_layer = get_channel_layer()
-        notification = {
-            'type': 'send_notification',
-            'notification': {
-                'message': instance.content or "Attachment",
-                'attachment': instance.attachment.url if instance.attachment else None,
-                'sender': instance.sender.fullname,
-                'receiver': instance.receiver.fullname,
-                'shop': instance.shop.name,
-                'timestamp': str(instance.timestamp),
-            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
-        async_to_sync(channel_layer.group_send)(f'user_{instance.receiver.id}', notification)
-"""
-
-class Follower(models.Model):
-    shop = models.ForeignKey(Shop, related_name='followers', on_delete=models.CASCADE)
-    user = models.ForeignKey(User, related_name='following_shops', on_delete=models.CASCADE)
-    followed_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        unique_together = ('shop', 'user')
-
-class FollowerHistory(models.Model):
-    """Tracks if a user has ever followed a shop before."""
-    shop = models.ForeignKey(Shop, on_delete=models.CASCADE)
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
-    first_followed_at = models.DateTimeField(auto_now_add=True)
-
-class RecentlyVisitedShop(models.Model):
-    user = models.ForeignKey(User, related_name='buyer', on_delete=models.CASCADE)
-    shop = models.ForeignKey(Shop, related_name='shop', on_delete=models.CASCADE)
-    visited_at = models.DateTimeField(default=timezone.now)
-
-    class Meta:
-        unique_together = ('user', 'shop')
-        ordering = ['-visited_at']
-
-    def __str__(self):
-        return f"{self.user.fullname} visited {self.shop.name}"
-
-class Receipt(models.Model):
-    class StatusChoices(models.TextChoices):
-        PENDING = "pending", _("Pending")
-        ACCEPTED = "accepted", _("Accepted")
-        REJECTED = "rejected", _("Rejected")
-        VOIDED = "voided", _("Voided")
-
-    shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name="receipts")
-    customer = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="receipts")
-    customer_user_id = models.CharField(max_length=8, null=True, blank=True)
-    customer_name = models.CharField(max_length=255)
-    receipt_id = models.CharField(max_length=9, unique=True, editable=False)
-    items = models.JSONField()
-    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
-    status = models.CharField(
-        max_length=10, choices=StatusChoices.choices, default=StatusChoices.PENDING
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    pdf_file = models.FileField(
-        upload_to='receipts/',
-        storage=B2Storage(),
-        null=True,
-        blank=True
-    )  # Store PDF in Backblaze
-    image_urls = models.JSONField(default=list, blank=True)  # Store signed image URLs
-
-    def accept(self):
-        """Mark the receipt as accepted by the customer."""
-        if self.status == self.StatusChoices.PENDING:
-            self.status = self.StatusChoices.ACCEPTED
-            self.save()
-
-    def reject(self):
-        """Mark the receipt as rejected by the customer."""
-        if self.status == self.StatusChoices.PENDING:
-            self.status = self.StatusChoices.REJECTED
-            self.save()
-
-    def void(self):
-        """Allow the seller to void the receipt if it has not been accepted."""
-        if self.status == self.StatusChoices.PENDING:
-            self.status = self.StatusChoices.VOIDED
-            self.save()
-
-    def generate_receipt_id(self):
-        while True:
-            new_id = str(random.randint(10**6, 10**9 - 1))  # Generates a 7 to 9 digit ID
-            if not Receipt.objects.filter(receipt_id=new_id).exists():
-                return new_id
-
-    def save(self, *args, **kwargs):
-        if self.pk:  # Only for updates
-            try:
-                old_instance = Receipt.objects.get(pk=self.pk)
-                self._state_before_update = {'status': old_instance.status}
-                # Delete old PDF if updated
-                if old_instance.pdf_file and self.pdf_file != old_instance.pdf_file:
-                    try:
-                        old_instance.pdf_file.delete()
-                    except Exception as e:
-                        logger.error(f"Failed to delete old PDF {old_instance.pdf_file.name}: {str(e)}")
-            except Receipt.DoesNotExist:
-                self._state_before_update = {}
-        else:
-            self._state_before_update = {}
-        if not self.receipt_id:
-            self.receipt_id = self.generate_receipt_id()
-        if self.customer:
-            self.customer_user_id = self.customer.user_id
-        super().save(*args, **kwargs)
-
-class ReceiptTemplate(models.Model):
-    shop = models.ForeignKey(Shop, on_delete=models.CASCADE, related_name="receipt_templates")
-    name = models.CharField(max_length=255)  # Template name
-    template_file = models.FileField(upload_to="receipts/templates/")  # PDF, PNG, or other formats
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-def clean_and_generate_url(file_obj, path_prefix):
-    """Clean and generate a Backblaze B2 URL for a file object."""
-    if not file_obj or not file_obj.name:
-        return None
-    
-    file_name = file_obj.name
-    # Handle malformed URLs (e.g., stored signed URLs)
-    if file_name.startswith('https://'):
-        match = re.search(rf'(?:{path_prefix}|statuses|statuses/thumbnails)/[^?]+', file_name)
-        file_name = match.group(0) if match else None
-        logger.debug(f"Cleaned file path from URL: {file_name}")
-    
-    # Handle legacy statuses/ or statuses/thumbnails/ paths
-    if file_name and (file_name.startswith('statuses/')):
-        file_extension = file_name.split('.')[-1].lower()
-        status_id = getattr(file_obj, 'status_id', 0) if hasattr(file_obj, 'status_id') else 0
-        prefix = 'post_attachments' if not file_name.startswith('statuses/thumbnails/') else 'post_thumbnails'
-        new_file_name = f"{prefix}/{status_id}/{uuid.uuid4()}.{file_extension}"
-        if default_storage.exists(file_name):
-            with default_storage.open(file_name, 'rb') as source_file:
-                default_storage.save(new_file_name, source_file)
-            file_name = new_file_name
-            logger.info(f"Copied legacy file from {file_name} to {new_file_name}")
-        else:
-            logger.warning(f"Legacy file not found: {file_name}")
-    
-    if file_name:
-        try:
-            url = default_storage.url(file_name)
-            logger.debug(f"Generated URL: {url}")
-            return url
-        except Exception as e:
-            logger.error(f"Failed to generate URL for {file_name}: {str(e)}", exc_info=True)
-    
-    return None
-
-def get_status_upload_path(instance, filename):
-    return f"post_attachments/{instance.id}/{filename}"
-
-def get_thumbnail_upload_path(instance, filename):
-    return f"post_thumbnails/{instance.id}/{filename}"
-
-class Status(models.Model):
-    shop = models.ForeignKey('Shop', on_delete=models.CASCADE, related_name="statuses")
-    media = models.FileField(upload_to=get_status_upload_path, null=True, blank=True)
-    media_type = models.CharField(
-        max_length=10, 
-        choices=[('image', 'Image'), ('video', 'Video'), ('text', 'Text')],
-        default='text'
-    )
-    text = models.TextField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    thumbnail = models.ImageField(upload_to=get_thumbnail_upload_path, null=True, blank=True)
-
-    class Meta:
-        ordering = ["-created_at"]
-
-    def is_expired(self):
-        """Check if the status is older than 24 hours"""
-        return self.created_at < timezone.now() - timedelta(hours=24)
-
-    def delete(self, *args, **kwargs):
-        """Delete media and thumbnail files from storage when the status is deleted"""
-        try:
-            if self.media and self.media.name:
-                if default_storage.exists(self.media.name):
-                    default_storage.delete(self.media.name)
-                    logger.info(f"Deleted media file: {self.media.name}")
-                else:
-                    logger.warning(f"Media file not found: {self.media.name}")
-            
-            if self.thumbnail and self.thumbnail.name:
-                if default_storage.exists(self.thumbnail.name):
-                    default_storage.delete(self.thumbnail.name)
-                    logger.info(f"Deleted thumbnail file: {self.thumbnail.name}")
-                else:
-                    logger.warning(f"Thumbnail file not found: {self.thumbnail.name}")
-        except Exception as e:
-            logger.error(f"Error deleting files for status ID {self.id}: {str(e)}", exc_info=True)
-        
-        logger.debug(f"Calling models.Model.delete for status ID: {self.id}")
-        super().delete(*args, **kwargs)
-
-    def __str__(self):
-        return f"Status from {self.shop.name} at {self.created_at}"
-
-    def get_thumbnail_url(self):
-        if self.thumbnail:
-            return clean_and_generate_url(self.thumbnail, 'post_thumbnails')
-        elif self.media_type == 'image' and self.media:
-            return clean_and_generate_url(self.media, 'post_attachments')
-        return None
-    
-class StatusView(models.Model):
-    status = models.ForeignKey(Status, on_delete=models.CASCADE, related_name="views")
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="status_views")
-    viewed_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        unique_together = ('status', 'user')  # Ensure a user views a status only once
-
-    def __str__(self):
-        return f"{self.user.fullname} viewed {self.status.shop.name}'s status"
-
-class Notification(models.Model):
-    TYPE_CHOICES = [
-        ('shop_follower', 'New Shop Follower'),
-        ('shop_review', 'New Shop Review'),
-        ('shop_post', 'New Shop Post'),
-        ('receipt_created', 'New Receipt Created'),
-        ('receipt_status', 'Receipt Status Update'),
-        ('status_update', 'New Status Update'),
-    ]
-
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="notifications")
-    type = models.CharField(max_length=20, choices=TYPE_CHOICES)
-    message = models.TextField()
-    is_read = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    shop = models.ForeignKey(Shop, on_delete=models.CASCADE, null=True, blank=True)
-    meta_data = models.JSONField(default=dict, blank=True)  # Store count here
-
-    def increment_count(self):
-        """Increase count and update message accordingly."""
-        self.meta_data["count"] = self.meta_data.get("count", 0) + 1
-        self.message = f"You have {self.meta_data['count']} new {self.get_type_display().lower()}(s)."
-        self.is_read = False  # Ensure it's marked as unread
-        self.save()
-
-    def reset_count(self):
-        """Reset count when viewed."""
-        self.meta_data["count"] = 0
-        self.message = f"You have 1 new {self.get_type_display().lower()}."
-        self.is_read = True
-        self.save()
-
-    #class Meta:
-        #unique_together = ('user', 'type', 'shop_id', 'is_read')
-
-class NotificationPreference(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='notification_preferences')
-    shop_follower = models.BooleanField(default=True)
-    shop_review = models.BooleanField(default=True)
-    shop_post = models.BooleanField(default=True)
-    receipt_created = models.BooleanField(default=True)
-    receipt_status = models.BooleanField(default=True)
-    chat_message = models.BooleanField(default=True)
-
-    class Meta:
-        db_table = 'notification_preference'
-
-    def __str__(self):
-        return f"Preferences for {self.user.firstname}"
-
-class UserDevice(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="devices")
-    device_token = models.CharField(max_length=255)  # Removed unique=True
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = "user_device"
-        unique_together = [['user', 'device_token']]  # Ensure uniqueness for user + device_token combination
-
-    def __str__(self):
-        return f"Device for user {self.user.id}: {self.device_token[:20]}..."
-    
-class SubscriptionPlan(models.TextChoices):
-    FREE = 'free', 'Free'
-    REGULAR = 'regular', 'Regular'
-    STANDARD = 'standard', 'Standard'
-    PREMIUM = 'premium', 'Premium'
-
-class Subscription(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="subscription")
-    plan = models.CharField(max_length=10, choices=SubscriptionPlan.choices, default=SubscriptionPlan.FREE)
-    start_date = models.DateTimeField(auto_now_add=True)
-    end_date = models.DateTimeField(null=True, blank=True)
-    last_plan = models.CharField(max_length=10, choices=SubscriptionPlan.choices, null=True, blank=True)  # Store last paid plan
-
-    def is_active(self):
-        """Check if subscription is active, revert to FREE if expired"""
-        if self.plan == SubscriptionPlan.FREE:
-            return True
-        if self.end_date and self.end_date <= timezone.now():
-            self.last_plan = self.plan  # Store the expired plan
-            self.plan = SubscriptionPlan.FREE
-            self.end_date = None
-            self.save()
-            return False
-        return True
-
-    def upgrade_plan(self, new_plan, duration_days=30):
-        """Upgrade user plan and set expiration for paid plans"""
-        if new_plan != SubscriptionPlan.FREE:
-            self.last_plan = self.plan if self.plan != SubscriptionPlan.FREE else self.last_plan  # Store current plan if not FREE
-            self.plan = new_plan
-            self.end_date = timezone.now() + timedelta(days=duration_days)
-        else:
-            self.plan = new_plan
-            self.end_date = None
-        self.save()
-
-    @staticmethod
-    def renew_last_plan(user_id, duration_days=30):
-        """Renew the last paid subscription plan for a user by user_id"""
-        try:
-            user = User.objects.get(user_id=user_id)  # Fetch user by user_id
-            subscription, created = Subscription.objects.get_or_create(user=user)
-            if subscription.last_plan and subscription.last_plan != SubscriptionPlan.FREE:
-                subscription.plan = subscription.last_plan
-                subscription.end_date = timezone.now() + timedelta(days=duration_days)
-                subscription.save()
-                return f"Subscription renewed: {user.firstname} is now on {subscription.plan} plan."
-            return "No previous paid plan to renew."
-        except User.DoesNotExist:
-            return "User not found."
-        except Exception as e:
-            return f"Error: {str(e)}"
-
-    @staticmethod
-    def get_users_by_plan(plan):
-        """Returns a list of User IDs for a given plan"""
-        return list(Subscription.objects.filter(plan=plan).values_list("user_id", flat=True))
-
-    @staticmethod
-    def get_regular_users():
-        """Returns User IDs of users with Regular plan"""
-        return Subscription.get_users_by_plan(SubscriptionPlan.REGULAR)
-
-    @staticmethod
-    def get_standard_users():
-        """Returns User IDs of users with Standard plan"""
-        return Subscription.get_users_by_plan(SubscriptionPlan.STANDARD)
-
-    @staticmethod
-    def set_user_subscription(user_id, new_plan, duration_days=30):
-        """Manually set a user's subscription plan"""
-        try:
-            user = User.objects.get(user_id=user_id)
-            subscription, created = Subscription.objects.get_or_create(user=user)
-            subscription.upgrade_plan(new_plan, duration_days)
-            return f"Subscription updated: {user.firstname} is now on {new_plan} plan."
-        except User.DoesNotExist:
-            return "User not found."
-        except Exception as e:
-            return f"Error: {str(e)}"
-
-    @staticmethod
-    def check_expired_subscriptions():
-        """Check and revert expired subscriptions to FREE"""
-        expired_subscriptions = Subscription.objects.filter(
-            plan__in=[SubscriptionPlan.REGULAR, SubscriptionPlan.STANDARD, SubscriptionPlan.PREMIUM],
-            end_date__lte=timezone.now()
-        )
-        for subscription in expired_subscriptions:
-            subscription.last_plan = subscription.plan
-            subscription.plan = SubscriptionPlan.FREE
-            subscription.end_date = None
-            subscription.save()
-
-# === Signal to Auto Assign Free Subscription ===
-@receiver(post_save, sender=User)
-def create_subscription(sender, instance, created, **kwargs):
-    """Ensure every user has a free subscription by default"""
-    if created:
-        Subscription.objects.create(user=instance, plan=SubscriptionPlan.FREE)
-    else:
-        if not hasattr(instance, 'subscription'):
-            Subscription.objects.create(user=instance, plan=SubscriptionPlan.FREE)
+      ],
+      "edgeToEdgeEnabled": true,
+      "buildProperties": {
+        "android.enableR8.fullMode": true,
+        "android.enableProguardInReleaseBuilds": true
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-dev-client",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow this app to access your photos and videos to share them in chats."
+        }
+      ],
+      [
+        "expo-sqlite",
+        {
+          "enableFTS": true,
+          "android": {
+            "enableFTS": true
+          },
+          "ios": {
+            "customBuildFlags": [
+              "-DSQLITE_ENABLE_FTS5=1 -DSQLITE_ENABLE_DBSTAT_VTAB=1 -DSQLITE_ENABLE_SNAPSHOT=1"
+            ]
+          }
+        }
+      ],
+      "expo-font",
+      "expo-secure-store",
+      "expo-video",
+      "expo-web-browser",
+      [
+        "@react-native-firebase/app"
+      ],
+      [
+        "@react-native-firebase/messaging"
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#ffffff",
+          "androidMode": "default",
+          "androidCollapsedTitle": "#{unread_notifications} new messages",
+          "defaultChannel": "chat_channel",
+          "sounds": [
+            "./assets/sounds/chat_notification.mp3",
+            "./assets/sounds/receipt_notification.mp3"
+          ],
+          "channels": [
+            {
+              "id": "chat_channel",
+              "name": "Chat Notifications",
+              "importance": "high",
+              "sound": "chat_notification",
+              "vibrationPattern": [
+                100,
+                200,
+                300,
+                400
+              ],
+              "enableVibrate": true
+            },
+            {
+              "id": "receipt_channel",
+              "name": "Receipt Notifications",
+              "importance": "high",
+              "sound": "receipt_notification",
+              "vibrationPattern": [
+                100,
+                200,
+                300,
+                400
+              ],
+              "enableVibrate": true
+            }
+          ]
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "buildToolsVersion": "35.0.0",
+            "minSdkVersion": 24,
+            "ndkVersion": "25.2.9519653",
+            "enableHermes": false,
+            "enableProguardInReleaseBuilds": true,
+            "edgeToEdgeEnabled": true
+          },
+          "ios": {
+            "deploymentTarget": "15.1",
+            "useFrameworks": "static",
+            "extraPods": [
+              {
+                "name": "Realm",
+                "version": "~> 10.52.2",
+                "modular_headers": true
+              },
+              {
+                "name": "DojahWidget",
+                "git": "https://github.com/dojah-inc/sdk-swift.git",
+                "branch": "pod-package"
+              }
+            ]
+          }
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location."
+        }
+      ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Allow $(PRODUCT_NAME) to access your device motion"
+        }
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-2360241039001516~8918197768",
+          "iosAppId": "ca-app-pub-2360241039001516~4122191720"
+        }
+      ],
+      "./plugins/firebase-manifest-fix.js",
+      "./plugins/withCustomNotificationChannel",
+      "./plugins/withDependencyFix",
+      "./plugins/withNoCameraPermission",
+      "expo-mail-composer",
+      "dojah-kyc-sdk-react-expo"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "assetBundlePatterns": [
+      "**/*",
+      "assets/sounds/**/*"
+    ],
+    "updates": {
+      "enabled": true,
+      "url": "https://u.expo.dev/11a350ba-590c-4271-9e5a-a2ba71d36ffc",
+      "comment": "Enables OTA updates to push new JavaScript bundles, including updated EXPO_PUBLIC_API_URL for switching API endpoints (e.g., from https://retail-alvinia-goza-f6a0e4f7.koyeb.app to https://api.gogo-digital.com) without rebuilding or resubmitting to app stores."
+    },
+    "runtimeVersion": {
+      "policy": "sdkVersion",
+      "value": "1.0.0"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "64995cb6-43ec-4985-9b65-d4e2401f98e4"
+      }
+    },
+    "owner": "timeflies"
+  }
+}

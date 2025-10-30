@@ -92,7 +92,7 @@ const VerifyEmailScreen = () => {
       <LinearGradient colors={['#F7FAFC', '#E5E7EB']} style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={() => router.push("/RequestToken")}
             style={styles.backButton}
           >
             <MaterialIcons name="arrow-back" size={26} color="white" />

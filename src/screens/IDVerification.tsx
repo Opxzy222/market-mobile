@@ -1,244 +1,548 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   StatusBar,
-  ActivityIndicator,
-  Button,
   Platform,
+  Dimensions,
 } from 'react-native';
-import * as WebBrowser from 'expo-web-browser';
-import * as Linking from 'expo-linking';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Toast from 'react-native-toast-message';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import Animated, { FadeInUp } from 'react-native-reanimated';
-import api from '../api'; // Import axios
+import Animated, {
+  FadeInUp,
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
+import WebView from 'react-native-webview';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Animatable from 'react-native-animatable';
+import api from '../api';
 
-const DOJAH_FLOW_ID = '68ec03dacce96e771fff43bc';
-const REDIRECT_URI = 'gogo-mobile://verification';
-const API_TIMEOUT = 10000; // 10 seconds timeout for API calls
+// Environment
+const DOJAH_FLOW_ID = process.env.EXPO_PUBLIC_DOJAH_FLOW_ID;
+const API_TIMEOUT = 10_000;
+const MAX_API_RETRIES = 2;
+const DOJAH_BASE_URL = 'https://identity.dojah.io';
+const MAX_POLLING_DURATION = 5 * 60 * 1000; // 5 minutes
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-// TypeScript interfaces for type safety
-interface VerificationParams {
-  reference_id?: string;
-  error?: string;
+interface UserData {
+  firstName: string;
+  lastName: string;
+  dob: string;
+  email: string;
 }
 
 interface VerificationResult {
-  message: string;
   is_verified: boolean;
   first_name?: string;
   last_name?: string;
   full_name?: string;
   date_of_birth?: string | null;
   error?: string;
+  details?: string;
+  status_code?: number;
 }
 
 const IDVerificationScreen = () => {
   const router = useRouter();
-  const params = useLocalSearchParams<VerificationParams>();
-  const [verifying, setVerifying] = useState(false);
+  const [initializing, setInitializing] = useState(true);
   const [publicKey, setPublicKey] = useState<string>('');
+  const [userData, setUserData] = useState<UserData | null>(null);
+  const [webViewVisible, setWebViewVisible] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [referenceId, setReferenceId] = useState<string>(''); // App's reference_id
+  const [dojahReferenceId, setDojahReferenceId] = useState<string>(''); // Dojah referenceId
+  const [hasPendingVerification, setHasPendingVerification] = useState(false);
+  const [pollingStartTime, setPollingStartTime] = useState<number | null>(null);
+  const [shouldPoll, setShouldPoll] = useState(false);
+  const [verificationStatus, setVerificationStatus] = useState<'success' | 'failure' | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string>('');
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Clear stale AsyncStorage data on mount
-  useEffect(() => {
-    const initialize = async () => {
-      try {
-        const [storedIsVerified, storedUserName] = await AsyncStorage.multiGet([
-          'user_verified',
-          'user_name',
-        ]);
-        console.log('Stored AsyncStorage:', { storedIsVerified, storedUserName });
-        const verified = storedIsVerified[1] ? JSON.parse(storedIsVerified[1]) : false;
-        // Clear stale data if user_name exists but is_verified is false
-        if (storedUserName[1] && !verified) {
-          console.log('Cleaning stale AsyncStorage data');
-          await AsyncStorage.multiRemove(['user_verified', 'user_name']);
-        }
-      } catch (error) {
-        console.error('Error loading stored data:', error);
-        await AsyncStorage.multiRemove(['user_verified', 'user_name']);
-      }
-    };
-    initialize();
-  }, []);
+  // Animations
+  const scale = useSharedValue(1);
+  const progress = useSharedValue(0);
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+  const progressStyle = useAnimatedStyle(() => ({
+    width: `${progress.value * 100}%`,
+  }));
 
-  // Handle deep links
   useEffect(() => {
-    const handleDeepLink = ({ url }: { url: string }) => {
-      const { queryParams } = Linking.parse(url);
-      console.log('Deep link received:', url, queryParams);
-      if (queryParams.reference_id) {
-        handleVerificationResult({ reference_id: queryParams.reference_id });
-      } else if (queryParams.error) {
-        Toast.show({
-          type: 'error',
-          text1: 'Verification Failed',
-          text2: `Error: ${queryParams.error}. Please try again.`,
-        });
-      }
-    };
-    const subscription = Linking.addEventListener('url', handleDeepLink);
-    Linking.getInitialURL().then((url) => {
-      if (url) handleDeepLink({ url });
-    });
-    return () => subscription.remove();
-  }, []);
-
-  // Handle redirect with reference_id or error
-  useEffect(() => {
-    console.log('Received params:', params);
-    if (params.reference_id) {
-      handleVerificationResult({ reference_id: params.reference_id });
-    } else if (params.error) {
-      Toast.show({
-        type: 'error',
-        text1: 'Verification Failed',
-        text2: `Error: ${params.error}. Please try again.`,
-      });
+    scale.value = withRepeat(withTiming(1.1, { duration: 1000, easing: Easing.inOut(Easing.ease) }), -1, true);
+    if (verifying) {
+      progress.value = withRepeat(withTiming(1, { duration: 2000, easing: Easing.linear }), -1, false);
+    } else {
+      progress.value = 0;
     }
-  }, [params]);
+  }, [scale, progress, verifying]);
 
-  // Fetch public key
-  useEffect(() => {
-    const fetchPublicKey = async () => {
-      try {
-        const sessionToken = await AsyncStorage.getItem('sessionToken');
-        if (!sessionToken) {
-          throw new Error('Session token not found. Please log in again.');
-        }
-        const response = await Promise.race([
-          api.get('/dojah-public-key/', {
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: sessionToken,
-            },
-          }),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error('Request timed out')), API_TIMEOUT)
-          ),
-        ]);
+  const injectedJavaScript = `
+    (function() {
+      const meta = document.createElement('meta');
+      meta.setAttribute('name', 'viewport');
+      meta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+      document.head.appendChild(meta);
 
-        const data = response.data;
-        if (response.status === 200 && data.public_key) {
-          console.log('Fetched public key:', data.public_key);
-          setPublicKey(data.public_key);
-        } else {
-          throw new Error('Failed to load Dojah public key');
-        }
-      } catch (error: any) {
-        console.error('Error fetching public key:', error);
-        Toast.show({
-          type: 'error',
-          text1: 'Error',
-          text2: error.message || 'Failed to connect to server. Please try again.',
+      fetch('https://api.ipify.org')
+        .then(res => res.text())
+        .then(ip => {
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'client_ip',
+            ip: ip
+          }));
+        })
+        .catch(err => {
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'client_ip_error',
+            error: err.message
+          }));
         });
+
+      window.addEventListener('load', () => {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'page_loaded',
+          title: document.title,
+          body: document.body.innerText.substring(0, 500),
+          url: window.location.href,
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight
+        }));
+      });
+
+      window.addEventListener('message', (e) => {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'dojah_message',
+          data: e.data,
+          origin: e.origin
+        }));
+      });
+
+      window.addEventListener('error', (e) => {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'page_error',
+          error: e.message,
+          url: window.location.href
+        }));
+      });
+    })();
+  `;
+
+  useEffect(() => {
+    const init = async () => {
+      try {
+        if (!DOJAH_FLOW_ID) {
+          Toast.show({ type: 'error', text1: 'Config Error', text2: 'Flow ID missing' });
+          setInitializing(false);
+          return;
+        }
+
+        const pendingRef = await AsyncStorage.getItem('pending_reference_id');
+        if (pendingRef) {
+          setHasPendingVerification(true);
+          setReferenceId(pendingRef);
+          setWebViewVisible(true);
+        }
+
+        await fetchUserProfile();
+        await fetchPublicKey();
+        setInitializing(false);
+      } catch (e) {
+        console.error('Init error:', e);
+        Toast.show({ type: 'error', text1: 'Error', text2: 'Initialization failed' });
+        setInitializing(false);
       }
     };
-    fetchPublicKey();
+    init();
+    return () => stopPolling();
   }, []);
 
-  const handleVerificationResult = async (data: { reference_id: string }) => {
+  useEffect(() => {
+    if (shouldPoll && dojahReferenceId && !pollingRef.current) {
+      startPolling(dojahReferenceId);
+    }
+  }, [shouldPoll, dojahReferenceId]);
+
+  const fetchUserProfile = async (retry = 0): Promise<void> => {
     try {
-      setVerifying(true);
-      const sessionToken = await AsyncStorage.getItem('sessionToken');
-      if (!sessionToken) {
-        throw new Error('Session token not found. Please log in again.');
-      }
-      const response = await Promise.race([
-        api.post<VerificationResult>(
-          '/verify-user/',
-          { reference_id: data.reference_id },
-          {
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: sessionToken,
-            },
-          }
-        ),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Verification timed out')), API_TIMEOUT)
-        ),
+      const token = await AsyncStorage.getItem('sessionToken');
+      if (!token) throw new Error('No session token');
+
+      const res = await Promise.race([
+        api.get('/user-profile-dojah/', { headers: { Authorization: token } }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('Timeout')), API_TIMEOUT)),
       ]);
 
-      const result = response.data;
-      if (response.status === 200) {
-        const fullName = result.full_name || `${result.first_name || ''} ${result.last_name || ''}`.trim() || 'User';
+      if (res.status !== 200) throw new Error(`Invalid response: ${res.status}`);
 
-        // Keep the specified AsyncStorage lines unchanged
-        await AsyncStorage.setItem('user_verified', JSON.stringify(result.is_verified));
-        await AsyncStorage.setItem('user_name', result.first_name);
+      const { first_name, last_name, email, dob } = res.data;
+      const profile: UserData = {
+        firstName: first_name || 'John',
+        lastName: last_name || 'Doe',
+        email: email || 'user@example.com',
+        dob: dob && /^\d{4}-\d{2}-\d{2}$/.test(dob) ? dob : '1990-01-01',
+      };
 
-        Toast.show({
-          type: 'success',
-          text1: 'Success',
-          text2: `ID verification successful! Welcome, ${fullName}!`,
-        });
-
-        setTimeout(() => router.replace('/profile'), 1500);
-      } else {
-        throw new Error(result.error || 'Verification failed. Please try again.');
+      setUserData(profile);
+      await AsyncStorage.setItem('user_profile', JSON.stringify(profile));
+      if (__DEV__) console.log('User profile fetched:', profile);
+    } catch (err: any) {
+      if (retry < MAX_API_RETRIES) {
+        await new Promise(r => setTimeout(r, 1000));
+        return fetchUserProfile(retry + 1);
       }
-    } catch (error: any) {
-      console.error('Verification error:', error);
-      const errorMessage = error.message.includes('Network')
-        ? 'Network error. Please check your connection and try again.'
-        : error.message.includes('timed out')
-        ? 'Verification took too long. Please try again.'
-        : error.message || 'An unexpected error occurred. Please try again.';
-      Toast.show({
-        type: 'error',
-        text1: 'Verification Error',
-        text2: errorMessage,
-      });
-    } finally {
-      setVerifying(false);
+      console.warn('Using fallback user profile due to error:', err.message);
+      const fallback: UserData = { firstName: 'John', lastName: 'Doe', dob: '1990-01-01', email: 'user@example.com' };
+      setUserData(fallback);
+      await AsyncStorage.setItem('user_profile', JSON.stringify(fallback));
+    }
+  };
+
+  const fetchPublicKey = async (retry = 0): Promise<void> => {
+    try {
+      const token = await AsyncStorage.getItem('sessionToken');
+      if (!token) throw new Error('No session token');
+
+      const res = await Promise.race([
+        api.get('/dojah-public-key/', { headers: { Authorization: token } }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('Timeout')), API_TIMEOUT)),
+      ]);
+
+      if (res.status !== 200 || !res.data.public_key) throw new Error('Invalid key');
+      setPublicKey(res.data.public_key);
+      if (__DEV__) console.log('Public key fetched:', res.data.public_key.substring(0, 10) + '...');
+    } catch (err: any) {
+      if (retry < MAX_API_RETRIES) {
+        await new Promise(r => setTimeout(r, 1000));
+        return fetchPublicKey(retry + 1);
+      }
+      Toast.show({ type: 'error', text1: 'Error', text2: 'Failed to load verification key' });
     }
   };
 
   const openVerification = async () => {
-    if (!publicKey) {
+    if (hasPendingVerification || !publicKey || !userData) {
       Toast.show({
         type: 'error',
-        text1: 'Error',
-        text2: 'Public key not loaded. Please try again.',
+        text1: 'Cannot Start',
+        text2: hasPendingVerification ? 'Verification already in progress' : 'Missing user data or key',
       });
       return;
     }
-    try {
-      const url = `https://identity.dojah.io/?widget_id=${DOJAH_FLOW_ID}&public_key=${publicKey}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
-      console.log('Opening Dojah widget URL:', url);
-      const result = await WebBrowser.openBrowserAsync(url, {
-        enableDefaultShareMenuItem: false,
-        showTitle: true,
-        browserPackage: Platform.OS === 'android' ? 'com.android.chrome' : undefined,
-      });
-      console.log('Browser result:', result);
-      if (result.type === 'dismiss') {
-        Toast.show({
-          type: 'info',
-          text1: 'Verification Cancelled',
-          text2: 'You closed the browser. Please complete verification to continue.',
-        });
-      }
-    } catch (error: any) {
-      console.error('Failed to open Dojah widget:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: `Failed to open verification: ${error.message}`,
+
+    const ref = `ref_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    setReferenceId(ref);
+    await AsyncStorage.setItem('pending_reference_id', ref);
+    setHasPendingVerification(true);
+    setWebViewVisible(true);
+    setVerificationStatus(null);
+    setDojahReferenceId('');
+    setErrorMessage('');
+
+    if (__DEV__) {
+      console.log('WebView launched:', {
+        referenceId: ref,
+        publicKey: publicKey.substring(0, 10) + '...',
+        userData,
       });
     }
   };
 
+  const startPolling = (dojahRefId: string) => {
+    stopPolling();
+    setVerifying(true);
+    setPollingStartTime(Date.now());
+    pollingRef.current = setInterval(async () => {
+      if (pollingStartTime && Date.now() - pollingStartTime > MAX_POLLING_DURATION) {
+        stopPolling();
+        await AsyncStorage.removeItem('pending_reference_id');
+        setReferenceId('');
+        setDojahReferenceId('');
+        setHasPendingVerification(false);
+        setVerifying(false);
+        setWebViewVisible(false);
+        setShouldPoll(false);
+        setVerificationStatus('failure');
+        setErrorMessage('Verification took too long. Please try again or contact support@dojah.io.');
+        return;
+      }
+
+      try {
+        const token = await AsyncStorage.getItem('sessionToken');
+        if (!token) throw new Error('No session token');
+
+        console.log('Sending polling request with dojah_reference_id:', dojahRefId);
+        const resp = await api.post(
+          '/verify-user/',
+          { reference_id: dojahRefId },
+          { headers: { Authorization: token, 'Content-Type': 'application/json' } },
+        );
+
+        const result = resp.data;
+        if (result.is_verified === true) {
+          await onVerificationSuccess(result);
+          return;
+        } else if (result.is_verified === false || result.error) {
+          await onVerificationFailed(result || { details: result.error || 'Unknown verification error' });
+          return;
+        } else {
+          console.warn('Ambiguous backend response - treating as failure:', result);
+          await onVerificationFailed({ details: 'Verification response unclear. Please retry.' });
+          return;
+        }
+      } catch (e: any) {
+        console.error('Polling error:', {
+          message: e.message,
+          status: e.response?.status,
+          details: e.response?.data?.details,
+        });
+        await onVerificationFailed({
+          details: e.response?.data?.details || 'Network or API error during verification.',
+          status_code: e.response?.status || 500,
+        });
+        return;
+      }
+    }, 6000);
+  };
+
+  const stopPolling = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+    setPollingStartTime(null);
+    setVerifying(false);
+  };
+
+  const onVerificationSuccess = async (result: VerificationResult) => {
+    stopPolling();
+    await AsyncStorage.multiSet([
+      ['user_verified', JSON.stringify(true)],
+      ['user_name', result.first_name || ''],
+      ['pending_reference_id', ''],
+    ]);
+    setReferenceId('');
+    setDojahReferenceId('');
+    setHasPendingVerification(false);
+    setShouldPoll(false);
+    setVerifying(false);
+    setWebViewVisible(false);
+    setVerificationStatus('success');
+  };
+
+  const onVerificationFailed = async (result: any) => {
+    stopPolling();
+    await AsyncStorage.removeItem('pending_reference_id');
+    setReferenceId('');
+    setDojahReferenceId('');
+    setHasPendingVerification(false);
+    setShouldPoll(false);
+    setVerifying(false);
+    setWebViewVisible(false);
+    setVerificationStatus('failure');
+    setErrorMessage(result.details || 'Please try again with a valid ID.');
+  };
+
+  const onWebViewMessage = (e: any) => {
+    try {
+      const data = JSON.parse(e.nativeEvent.data);
+      if (__DEV__) console.log('WebView Message:', JSON.stringify(data, null, 2));
+
+      if (data.type === 'client_ip') {
+        console.log('Client IP:', data.ip);
+      } else if (data.type === 'client_ip_error') {
+        console.error('Client IP fetch error:', data.error);
+      } else if (data.type === 'page_loaded') {
+        console.log('WebView page loaded:', {
+          title: data.title,
+          bodySnippet: data.body,
+          url: data.url,
+          viewportWidth: data.viewportWidth,
+          viewportHeight: data.viewportHeight,
+        });
+        if (data.title === 'Hey' || data.body?.includes('Welcome to APIs Interface')) {
+          console.error('Invalid WebView page loaded:', data.url);
+          Toast.show({
+            type: 'error',
+            text1: 'Error',
+            text2: 'Invalid verification page. Please check configuration.',
+          });
+          setWebViewVisible(false);
+          setShouldPoll(false);
+          setVerificationStatus('failure');
+          setErrorMessage('Invalid verification page. Please contact support@dojah.io.');
+        } else if (data.body?.includes('Your verification has been completed successfully')) {
+          console.log('Detected success message in WebView body');
+          setShouldPoll(true);
+        } else if (data.body?.includes('We could not verify')) {
+          console.error('Verification error in WebView:', data.body);
+          onVerificationFailed({ details: 'Verification failed in widget' });
+        }
+      } else if (data.type === 'dojah_message') {
+        console.log('Dojah widget message:', data.data, 'Origin:', data.origin);
+        const status = data.data?.status;
+        const messageType = data.data?.type;
+        if (['success', 'completed', 'connect.account.success'].includes(status || messageType)) {
+          if (data.data?.response?.referenceId) {
+            setDojahReferenceId(data.data.response.referenceId);
+          }
+          setShouldPoll(true);
+        } else if (status === 'failed' || data.data?.error) {
+          onVerificationFailed({ details: data.data?.message || 'Verification failed in widget' });
+        } else if (status === 'closed' || data.data?.type === 'close') {
+          setWebViewVisible(false);
+          setShouldPoll(false);
+        }
+      } else if (data.type === 'page_error') {
+        console.error('WebView page error:', data.error, data.url);
+        Toast.show({
+          type: 'error',
+          text1: 'Error',
+          text2: 'Verification page failed to load. Please try again.',
+        });
+        setWebViewVisible(false);
+        setShouldPoll(false);
+        setVerificationStatus('failure');
+        setErrorMessage('Failed to load verification page. Please check your connection.');
+      }
+    } catch (err) {
+      console.error('WebView message parsing error:', err);
+    }
+  };
+
+  const onWebViewError = (e: any) => {
+    console.error('WebView error:', e.nativeEvent);
+    Toast.show({
+      type: 'error',
+      text1: 'Error',
+      text2: 'Failed to load verification page. Please check your connection.',
+    });
+    stopPolling();
+    setWebViewVisible(false);
+    setShouldPoll(false);
+    setVerificationStatus('failure');
+    setErrorMessage('Failed to load verification page. Please check your connection.');
+  };
+
+  if (initializing) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <StatusBar barStyle="light-content" backgroundColor="#1E3A8A" />
+        <View style={styles.loadingContainer}>
+          <Animatable.View animation="pulse" iterationCount="infinite" style={styles.iconContainer}>
+            <MaterialIcons name="hourglass-empty" size={60} color="#4B5563" />
+          </Animatable.View>
+          <Text style={styles.loadingText}>Preparing your verification...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (verificationStatus === 'success') {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        {/*<StatusBar barStyle="light-content" backgroundColor="#1E3A8A" /> */}
+        <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <MaterialIcons name="arrow-back" size={26} color="white" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>ID Verification</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+        <Animated.View entering={FadeInUp.duration(800)} style={styles.resultContainer}>
+          <Animatable.View animation="zoomIn" duration={1000} style={styles.iconContainer}>
+            <MaterialIcons name="check-circle" size={80} color="#22C55E" />
+          </Animatable.View>
+          <Text style={styles.resultTitle}>Verification Complete!</Text>
+          <Text style={styles.resultMessage}>
+            Your identity has been successfully verified. You're ready to explore all features!
+          </Text>
+          <LinearGradient
+            colors={['#22C55E', '#16A34A']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.resultButton}
+          >
+            <TouchableOpacity
+              onPress={() => router.replace("(tabs)/profile")}
+              style={styles.resultButtonTouchable}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.resultButtonText}>Go to Profile</Text>
+            </TouchableOpacity>
+          </LinearGradient>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.secondaryButton}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.secondaryButtonText}>Return Home</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      </SafeAreaView>
+    );
+  }
+
+  if (verificationStatus === 'failure') {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <StatusBar barStyle="light-content" backgroundColor="#1E3A8A" />
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <MaterialIcons name="arrow-back" size={26} color="white" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>ID Verification</Text>
+          <View style={styles.headerSpacer} />
+        </View>
+        <Animated.View entering={FadeInUp.duration(800)} style={styles.resultContainer}>
+          <Animatable.View animation="shake" duration={1000} style={styles.iconContainer}>
+            <MaterialIcons name="error-outline" size={80} color="#EF4444" />
+          </Animatable.View>
+          <Text style={styles.resultTitle}>Verification Failed</Text>
+          <Text style={styles.resultMessage}>{errorMessage}</Text>
+          <LinearGradient
+            colors={['#3A7BD5', '#2563EB']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.resultButton}
+          >
+            <TouchableOpacity
+              onPress={() => {
+                setVerificationStatus(null);
+                openVerification();
+              }}
+              style={styles.resultButtonTouchable}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.resultButtonText}>Try Again</Text>
+            </TouchableOpacity>
+          </LinearGradient>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.secondaryButton}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.secondaryButtonText}>Return Home</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="light-content" backgroundColor={styles.header.backgroundColor} />
+      <StatusBar barStyle="light-content" backgroundColor="#1E3A8A" />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <MaterialIcons name="arrow-back" size={26} color="white" />
@@ -246,27 +550,120 @@ const IDVerificationScreen = () => {
         <Text style={styles.headerTitle}>ID Verification</Text>
         <View style={styles.headerSpacer} />
       </View>
+
       <Animated.View style={styles.contentContainer} entering={FadeInUp.duration(500)}>
-        {publicKey ? (
-          verifying ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={styles.buttonContainer.color} />
-              <Text style={styles.loadingText}>Verifying your ID...</Text>
-            </View>
-          ) : (
-            <View style={styles.buttonContainer}>
-              <Button
-                title="Start Verification"
-                onPress={openVerification}
-                color={styles.buttonContainer.color}
-              />
-              <Text style={styles.infoText}>Please complete ID verification.</Text>
-            </View>
-          )
+        {!DOJAH_FLOW_ID ? (
+          <View style={styles.errorContainer}>
+            <Animatable.View animation="shake" duration={1000} style={styles.iconContainer}>
+              <MaterialIcons name="error-outline" size={60} color="#EF4444" />
+            </Animatable.View>
+            <Text style={styles.errorText}>Configuration Error</Text>
+            <Text style={styles.infoText}>Flow ID missing. Contact support.</Text>
+          </View>
+        ) : webViewVisible ? (
+          <View style={styles.webViewContainer}>
+            {verifying && (
+              <Animated.View entering={FadeInUp.duration(400)} style={styles.verifyingOverlay}>
+                <LinearGradient
+                  colors={['rgba(30, 58, 138, 0.95)', 'rgba(59, 130, 246, 0.95)']}
+                  style={styles.verifyingGradient}
+                >
+                  <View style={styles.verifyingContent}>
+                    <Animatable.View
+                      animation="rotate"
+                      iterationCount="infinite"
+                      duration={2000}
+                      style={styles.iconContainer}
+                    >
+                      <MaterialIcons name="verified-user" size={60} color="#FFF" />
+                    </Animatable.View>
+                    <Text style={styles.verifyingTitle}>Securing Your Identity</Text>
+                    <Text style={styles.verifyingSubtitle}>
+                      We're validating your details with advanced checks...
+                    </Text>
+                    <View style={styles.progressContainer}>
+                      <Animated.View style={[styles.progressBar, progressStyle]} />
+                      <View style={styles.progressShimmer} />
+                    </View>
+                    <View style={styles.verifyingTips}>
+                      <View style={styles.tipItem}>
+                        <MaterialIcons name="security" size={20} color="#22C55E" />
+                        <Text style={styles.tipText}>Secure & Private</Text>
+                      </View>
+                      <View style={styles.tipItem}>
+                        <MaterialIcons name="flash-on" size={20} color="#F59E0B" />
+                        <Text style={styles.tipText}>Fast Processing</Text>
+                      </View>
+                      <View style={styles.tipItem}>
+                        <MaterialIcons name="verified-user" size={20} color="#3B82F6" />
+                        <Text style={styles.tipText}>Real-Time Validation</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.verifyingFooter}>Stay with us – almost there! ⏳</Text>
+                  </View>
+                </LinearGradient>
+              </Animated.View>
+            )}
+            <WebView
+              source={{
+                uri: `${DOJAH_BASE_URL}?widget_id=${DOJAH_FLOW_ID}&public_key=${encodeURIComponent(
+                  publicKey
+                )}&user_data[first_name]=${encodeURIComponent(
+                  userData!.firstName
+                )}&user_data[last_name]=${encodeURIComponent(
+                  userData!.lastName
+                )}&user_data[dob]=${encodeURIComponent(
+                  userData!.dob
+                )}&user_data[email]=${encodeURIComponent(
+                  userData!.email
+                )}&metadata[user_id]=${referenceId}&metadata[source]=gogo-mobile&metadata[platform]=${Platform.OS}`,
+              }}
+              javaScriptEnabled
+              domStorageEnabled
+              injectedJavaScript={injectedJavaScript}
+              onMessage={onWebViewMessage}
+              onError={onWebViewError}
+              scalesPageToFit
+              allowsInlineMediaPlayback
+              mediaPlaybackRequiresUserAction={false}
+              onPermissionRequest={(event) => {
+                const permissions = event.nativeEvent.requestedPermissions;
+                if (permissions.some((p: string) => p.includes('camera'))) {
+                  event.grant();
+                } else {
+                  event.deny();
+                }
+              }}
+              style={styles.webView}
+            />
+          </View>
         ) : (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={styles.buttonContainer.color} />
-            <Text style={styles.loadingText}>Loading verification...</Text>
+          <View style={styles.buttonContainer}>
+            <LinearGradient
+              colors={['#3A7BD5', '#2563EB']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[styles.verifyButton, { opacity: publicKey ? 1 : 0.5 }]}
+            >
+              <TouchableOpacity
+                onPress={openVerification}
+                disabled={!publicKey || hasPendingVerification}
+                style={styles.buttonTouchable}
+                activeOpacity={0.7}
+              >
+                <View style={styles.buttonContent}>
+                  <MaterialIcons name="verified-user" size={24} color="white" />
+                  <Text style={styles.verifyButtonText}>
+                    {hasPendingVerification ? 'Verification in Progress...' : 'Start Verification'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            </LinearGradient>
+            <Text style={styles.infoText}>
+              {hasPendingVerification
+                ? 'Please complete the verification process to proceed.'
+                : 'Verify your ID to unlock all features and secure your account.'}
+            </Text>
           </View>
         )}
       </Animated.View>
@@ -275,66 +672,255 @@ const IDVerificationScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
+  container: { flex: 1, backgroundColor: '#F9FAFB' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 16,
-    paddingHorizontal: 12,
-    backgroundColor: '#2563EB',
-    borderBottomLeftRadius: 35,
-    borderBottomRightRadius: 35,
+    paddingHorizontal: 16,
+    backgroundColor: "#3A7BD5",
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 6,
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
   },
   backButton: {
-    padding: 8,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    padding: 12,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: '#FFF',
     flex: 1,
     textAlign: 'center',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
   },
-  headerSpacer: {
-    width: 42,
-  },
-  contentContainer: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 32,
-  },
+  headerSpacer: { width: 48 },
+  contentContainer: { flex: 1, paddingHorizontal: 24, paddingTop: 20 },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#F9FAFB',
   },
-  loadingText: {
+  iconContainer: {
+    marginBottom: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resultContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  resultTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 12,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+    textAlign: 'center',
+  },
+  resultMessage: {
     fontSize: 16,
     color: '#6B7280',
-    marginTop: 12,
     textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 24,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+  },
+  resultButton: {
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: SCREEN_WIDTH - 48,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  resultButtonTouchable: {
+    width: '100%',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  resultButtonText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '600',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+  },
+  secondaryButton: {
+    marginTop: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#3A7BD5',
+  },
+  secondaryButtonText: {
+    color: '#3A7BD5',
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 18,
+    color: '#4B5563',
+    fontWeight: '500',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+  },
+  errorText: {
+    marginTop: 16,
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#EF4444',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
   },
   buttonContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    color: '#3A7BD5',
+    paddingHorizontal: 20,
+  },
+  verifyButton: {
+    paddingVertical: 18,
+    paddingHorizontal: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: SCREEN_WIDTH - 48,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonTouchable: {
+    width: '100%',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  verifyButtonText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '600',
+    marginLeft: 12,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
   },
   infoText: {
+    marginTop: 24,
     fontSize: 16,
     color: '#6B7280',
-    marginTop: 20,
     textAlign: 'center',
+    lineHeight: 24,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+  },
+  webViewContainer: { flex: 1, position: 'relative', backgroundColor: '#FFF' },
+  webView: { flex: 1 },
+  verifyingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  verifyingGradient: {
+    width: '90%',
+    maxWidth: 400,
+    borderRadius: 24,
+    padding: 32,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 15,
+  },
+  verifyingContent: {
+    alignItems: 'center',
+    gap: 16,
+  },
+  verifyingTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#FFF',
+    textAlign: 'center',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+  },
+  verifyingSubtitle: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.9)',
+    textAlign: 'center',
+    lineHeight: 22,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+  },
+  progressContainer: {
+    width: '100%',
+    height: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    borderRadius: 2,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: '#FFF',
+    borderRadius: 2,
+  },
+  progressShimmer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'transparent',
+  },
+  verifyingTips: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+    marginTop: 8,
+  },
+  tipItem: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  tipText: {
+    fontSize: 12,
+    color: '#FFF',
+    textAlign: 'center',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+  },
+  verifyingFooter: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontStyle: 'italic',
+    marginTop: 8,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
   },
 });
 

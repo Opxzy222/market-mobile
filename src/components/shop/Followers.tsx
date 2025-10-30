@@ -1,10 +1,23 @@
 import React from 'react';
-import { View, Text, StyleSheet, FlatList, Image } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Image, Platform } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
-const Followers = ({ followers = [] }) => {
-  const getColorForAlphabet = (alphabet) => {
+interface Follower {
+  user_id?: string; // Optional, as it may be missing
+  id?: number; // Fallback unique identifier
+  email?: string; // Fallback unique identifier
+  username: string;
+  image?: string;
+  is_verified: boolean;
+}
+
+interface FollowersProps {
+  followers?: Follower[] | null;
+}
+
+const Followers = ({ followers = [] }: FollowersProps) => {
+  const getColorForAlphabet = (alphabet: string) => {
     const colors = {
       A: '#FFD700', B: '#FF6347', C: '#4682B4', D: '#32CD32', E: '#FF69B4',
       F: '#8A2BE2', G: '#FF4500', H: '#DA70D6', I: '#20B2AA', J: '#B22222',
@@ -16,7 +29,21 @@ const Followers = ({ followers = [] }) => {
     return colors[alphabet.toUpperCase()] || '#FFD700';
   };
 
-  const renderFollower = ({ item }) => (
+  // Log followers to diagnose key issues
+  if (__DEV__) {
+    console.log('Followers data:', followers);
+  }
+
+  const keyExtractor = (item: Follower, index: number) => {
+    // Use user_id if available, else fallback to id or email, then index
+    const key = item.user_id || item.id?.toString() || item.email || `index_${index}`;
+    if (__DEV__ && !item.user_id && !item.id && !item.email) {
+      console.warn(`Follower at index ${index} lacks unique identifier:`, item);
+    }
+    return key;
+  };
+
+  const renderFollower = ({ item }: { item: Follower }) => (
     <View style={styles.followerItem}>
       {item.image ? (
         <Image source={{ uri: item.image }} style={styles.followerAvatar} />
@@ -50,17 +77,15 @@ const Followers = ({ followers = [] }) => {
 
   return (
     <View style={styles.container}>
-      {followers.length > 0 ? (
-        <View style={styles.followersContainer}>
-          <FlatList
-            data={followers}
-            keyExtractor={(item) => item.username}
-            renderItem={renderFollower}
-            contentContainerStyle={styles.followerList}
-            scrollEnabled={false}
-            initialNumToRender={10}
-          />
-        </View>
+      {Array.isArray(followers) && followers.length > 0 ? (
+        <FlatList
+          data={followers}
+          keyExtractor={keyExtractor}
+          renderItem={renderFollower}
+          contentContainerStyle={styles.followerList}
+          scrollEnabled={false} // Disable internal scrolling to avoid nesting issues
+          initialNumToRender={10}
+        />
       ) : (
         <Text style={styles.noFollowersText}>No followers yet.</Text>
       )}
@@ -72,13 +97,9 @@ export default Followers;
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    padding: 0, // Adjusted to fit tabContent padding
-    backgroundColor: '#FFFFFF', // Match tabContent
-  },
-  followersContainer: {
-    minHeight: 200, // Ensure visibility
-    maxHeight: 400, // Limit height to prevent overflow
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#F9FAFB',
   },
   followerList: {
     paddingVertical: 10,
@@ -86,27 +107,31 @@ const styles = StyleSheet.create({
   followerItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 15,
+    marginBottom: 12,
     backgroundColor: '#FFF',
-    padding: 10,
-    borderRadius: 10,
+    padding: 12,
+    borderRadius: 12,
     shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3,
+    shadowRadius: 6,
+    elevation: 4,
   },
   followerAvatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 15,
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
   },
   avatarText: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 20,
+    fontWeight: '600',
     color: '#FFF',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
   },
   followerInfo: {
     flexDirection: 'row',
@@ -116,23 +141,25 @@ const styles = StyleSheet.create({
   followerUsername: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#333',
+    color: '#1F2937',
     marginRight: 8,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
   },
   verifiedIconContainer: {
     borderRadius: 12,
     padding: 4,
     shadowColor: '#10B981',
-    shadowOffset: { width: 0, height: 0 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
-    elevation: 2,
+    elevation: 3,
   },
   noFollowersText: {
     fontSize: 16,
     fontStyle: 'italic',
-    color: '#888',
+    color: '#6B7280',
     textAlign: 'center',
-    marginTop: 20,
+    marginTop: 24,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
   },
 });

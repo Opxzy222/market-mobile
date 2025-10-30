@@ -63,7 +63,7 @@ const FollowedShops = ({ shops }) => {
   const renderEmpty = () => (
     <View style={styles.emptyContainer}>
       <Ionicons name="heart-outline" size={48} color="#9CA3AF" style={styles.emptyIcon} />
-      <Text style={styles.emptyTitle}>No Shops Followed Yet</Text>
+      <Text style={styles.emptyTitle}>No Space Followed Yet</Text>
       <Text style={styles.emptySubtitle}>
         Follow your favorite shops to stay updated!
       </Text>

@@ -7,6 +7,11 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "node": "20.19.4",
+      "env": {
+        "EXPO_USE_COMMUNITY_AUTOLINKING": "0",
+        "JAVA_HOME": "/usr/lib/jvm/java-17-openjdk-amd64"
+      },
       "android": {
         "buildType": "apk"
       },
@@ -20,19 +25,13 @@
       "distribution": "internal"
     },
     "production": {
-      "node": "20.18.1",
+      "node": "20.19.4",
       "autoIncrement": true,
+      "environment": "production",
       "android": {
         "buildType": "app-bundle",
         "credentialsSource": "remote",
         "prebuildCommand": "apt-get update && apt-get install -y cmake && export CMAKE_VERBOSE=1"
-      },
-      "env": {
-        "EXPO_USE_COMMUNITY_AUTOLINKING": "0",
-        "JAVA_HOME": "/usr/lib/jvm/java-17-openjdk-amd64",
-        "EXPO_PUBLIC_API_URL": "https://retail-alvinia-goza-f6a0e4f7.koyeb.app",
-        "EXPO_PUBLIC_HOW_TO_SELL": "Bj8cHbYaASc",
-        "EXPO_PUBLIC_HOW_TO_BUY": "Bj8cHbYaASc"
       }
     }
   },

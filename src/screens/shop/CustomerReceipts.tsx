@@ -609,7 +609,7 @@ const CustomerReceipts = () => {
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity onPress={() => router.navigate("(tabs)/account")} style={styles.backButton}>
             <MaterialIcons name="arrow-back" size={24} color="#FFF" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Customer Receipts</Text>

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Gogo Market",
     "slug": "gogo-mobile",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon2.png",
     "scheme": "gogo-mobile",
@@ -19,7 +19,6 @@
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "UIBackgroundModes": [
-          "remote-notification",
           "remote-notification"
         ],
         "NSUserNotificationsUsageDescription": "Allow this app to send you notifications about new followers, reviews, posts, and receipts.",
@@ -42,15 +41,33 @@
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.INTERNET",
+        "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.RECORD_AUDIO",
         "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.READ_PHONE_STATE",
-        "android.permission.CAMERA",
-        "android.permission.ACTIVITY_RECOGNITION"
+        "android.permission.ACTIVITY_RECOGNITION",
+        "com.google.android.gms.permission.AD_ID"
       ],
-      "edgeToEdgeEnabled": true
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "gogo-mobile",
+              "host": "verification",
+              "pathPrefix": "/"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ],
+      "edgeToEdgeEnabled": true,
+      "buildProperties": {
+        "android.enableR8.fullMode": true,
+        "android.enableProguardInReleaseBuilds": true
+      }
     },
     "web": {
       "bundler": "metro",
@@ -60,12 +77,11 @@
     "plugins": [
       "expo-router",
       "expo-dev-client",
+      "expo-updates",
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow this app to access your photos and videos to share them in chats.",
-          "cameraPermission": "Allow this app to access your camera for capturing videos.",
-          "microphonePermission": "Allow this app to access your microphone for video recording."
+          "photosPermission": "Allow this app to access your photos and videos to share them in chats."
         }
       ],
       [
@@ -86,12 +102,8 @@
       "expo-secure-store",
       "expo-video",
       "expo-web-browser",
-      [
-        "@react-native-firebase/app"
-      ],
-      [
-        "@react-native-firebase/messaging"
-      ],
+      ["@react-native-firebase/app"],
+      ["@react-native-firebase/messaging"],
       [
         "expo-notifications",
         {
@@ -110,12 +122,7 @@
               "name": "Chat Notifications",
               "importance": "high",
               "sound": "chat_notification",
-              "vibrationPattern": [
-                100,
-                200,
-                300,
-                400
-              ],
+              "vibrationPattern": [100, 200, 300, 400],
               "enableVibrate": true
             },
             {
@@ -123,12 +130,7 @@
               "name": "Receipt Notifications",
               "importance": "high",
               "sound": "receipt_notification",
-              "vibrationPattern": [
-                100,
-                200,
-                300,
-                400
-              ],
+              "vibrationPattern": [100, 200, 300, 400],
               "enableVibrate": true
             }
           ]
@@ -144,6 +146,7 @@
             "minSdkVersion": 24,
             "ndkVersion": "25.2.9519653",
             "enableHermes": false,
+            "enableProguardInReleaseBuilds": true,
             "edgeToEdgeEnabled": true
           },
           "ios": {
@@ -173,7 +176,9 @@
       ],
       "./plugins/firebase-manifest-fix.js",
       "./plugins/withCustomNotificationChannel",
-      "./plugins/withDependencyFix"
+      "./plugins/withDependencyFix",
+      "./plugins/withNoCameraPermission",
+      "expo-mail-composer"
     ],
     "experiments": {
       "typedRoutes": true
@@ -182,12 +187,17 @@
       "**/*",
       "assets/sounds/**/*"
     ],
+    "updates": {
+      "enabled": true,
+      "url": "https://u.expo.dev/031ec283-a253-419e-b6ed-0b7fc20dc68a"
+    },
+    "runtimeVersion": "2.0.0",
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "11a350ba-590c-4271-9e5a-a2ba71d36ffc"
+        "projectId": "031ec283-a253-419e-b6ed-0b7fc20dc68a"
       }
     },
-    "owner": "opxzy"
+    "owner": "time_flies"
   }
 }

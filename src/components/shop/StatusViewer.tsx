@@ -13,6 +13,7 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import * as FileSystem from "expo-file-system";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { LinearGradient } from "expo-linear-gradient"; // Only added import
 
 const IMAGE_TEXT_DURATION = 6000;
 const VIDEO_MAX_DURATION = 30000;
@@ -771,12 +772,14 @@ const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusVi
           ) : (
             <View style={styles.plainTextContainer}>
               <Text style={styles.plainText}>{isText && statusText ? statusText : "No content available"}</Text>
-              {currentStatus.shop?.image && (
-                <Image
-                  source={{ uri: currentStatus.shop.image }}
-                  style={styles.textBackground}
-                />
-              )}
+
+              {/* Advanced Gradient Background */}
+              <LinearGradient
+                colors={['#1a1a2e', '#16213e', '#0f3460']}
+                style={styles.textBackground}
+              >
+                <View style={styles.patternOverlay} />
+              </LinearGradient>
             </View>
           )}
         </TouchableOpacity>
@@ -800,7 +803,7 @@ const StatusViewer = ({ visible, statuses, initialIndex = 0, onClose, onStatusVi
           }}
           activeOpacity={0.8}
         >
-          <Text style={styles.closeText}>✕</Text>
+          <Text style={styles.closeText}>X</Text>
         </TouchableOpacity>
       </View>
     </Modal>
@@ -885,10 +888,10 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   textBackground: {
-    position: "absolute",
-    width: "100%",
-    height: "100%",
-    opacity: 0.3,
+    
+  },
+  patternOverlay: {
+    
   },
   leftExpanded: {
     position: "absolute",

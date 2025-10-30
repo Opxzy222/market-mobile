@@ -1,4 +1,9 @@
-import React, { useState, useCallback } from "react";
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useContext,
+} from "react";
 import {
   View,
   Text,
@@ -10,11 +15,13 @@ import {
   Dimensions,
   Platform,
   KeyboardAvoidingView,
-  ScrollView,
+  Pressable,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import api from '../api';
+import api from "../api";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -23,358 +30,364 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   withTiming,
-  Easing,
 } from "react-native-reanimated";
 import { Image } from "expo-image";
+import { AppResetContext } from "@/context/AppResetContext";
 
-const { width } = Dimensions.get("window");
-
+const { width, height } = Dimensions.get("window");
 const API_URL = "/login/";
 
-// Constants for consistent theming (aligned with Homepage)
+// ────────────────────── THEMING (LIGHT MODE) ──────────────────────
 const COLORS = {
-  primary: "#1E3A8A",
+  primary: "#1E40AF",
   accent: "#FCD34D",
   background: "#f7f8fc",
   cardBackground: "#FFFFFF",
   textPrimary: "#111827",
   textSecondary: "#6B7280",
   white: "#FFFFFF",
-  gradientStart: "#4B6CB7",
+  gradientStart: "#3B82F6",
   gradientEnd: "#8B5CF6",
   error: "#EF4444",
   border: "#E5E7EB",
-  inputBackground: "#F3F4F6",
-  darkTextPrimary: "#F9FAFB",
-  darkTextSecondary: "#D1D5DB",
+  inputBg: "#F9FAFB",
+  glow: "#60A5FA",
+  ctaRegister: ["#10B981", "#34D399"],
+  ctaForgot: ["#F59E0B", "#FBBF24"],
 };
 
-const SPACING = {
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 24,
-  xxl: 32,
-};
+const SPACING = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 };
 
+// ────────────────────── LOGIN API ──────────────────────
 async function login(email: string, password: string) {
-  try {
-    const formData = new URLSearchParams();
-    formData.append("email", email);
-    formData.append("password", password);
+  const formData = new URLSearchParams();
+  formData.append("email", email);
+  formData.append("password", password);
 
-    const response = await api.post(API_URL, formData.toString(), {
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-      },
-    });
+  const response = await api.post(API_URL, formData.toString(), {
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+    },
+  });
 
-    if (response.data.message === "login successful") {
-      const { user_id, session_id, user_name, userId, userVerified, phoneVerified, plan, is_active, start_date, end_date } = response.data;
-      console.log("Login response user_id:", user_id);
-      // Store user-related data
-      await AsyncStorage.setItem("sessionToken", session_id);
-      await AsyncStorage.setItem("user_id", user_id.toString());
-      await AsyncStorage.setItem("userId", userId);
-      await AsyncStorage.setItem("user_name", user_name);
-      await AsyncStorage.setItem("email", email);
-      console.log(email, 'email');
-      await AsyncStorage.setItem("user_verified", JSON.stringify(userVerified));
-      await AsyncStorage.setItem("phone_verified", JSON.stringify(phoneVerified));
-      console.log("userVerified:", userVerified);
-      // Store subscription data
-      const subscriptionData = { plan, is_active, start_date, end_date };
-      await AsyncStorage.setItem("subscription_cache", JSON.stringify(subscriptionData));
-      console.log("Stored subscription data:", subscriptionData);
-      return { id: user_id, name: user_name };
-    }
-    throw new Error(response.data.message || "Login failed");
-  } catch (error) {
-    console.error("Login API error:", error.response?.data?.error || error.message);
-    if (error.isAxiosError && !error.response) {
-      throw new Error("Network error, please check your connection and try again");
-    }
-    throw new Error(error.response?.data?.error || "Invalid credentials");
+  if (response.data.message === "login successful") {
+    const {
+      user_id,
+      session_id,
+      user_name,
+      userId,
+      userVerified,
+      phoneVerified,
+      plan,
+      is_active,
+      start_date,
+      end_date,
+    } = response.data;
+
+    await AsyncStorage.multiSet([
+      ["sessionToken", session_id],
+      ["user_id", user_id.toString()],
+      ["userId", userId],
+      ["user_name", user_name],
+      ["email", email],
+      ["user_verified", JSON.stringify(userVerified)],
+      ["phone_verified", JSON.stringify(phoneVerified)],
+      ["subscription_cache", JSON.stringify({
+        plan,
+        is_active,
+        start_date,
+        end_date,
+      })],
+    ]);
+
+    return { id: user_id, name: user_name };
   }
+  throw new Error(response.data.message || "Login failed");
 }
 
+// ────────────────────── SIGN-IN COMPONENT ──────────────────────
 const SignIn = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [secureText, setSecureText] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+
   const router = useRouter();
+  const { resetAppState } = useContext(AppResetContext);
 
-  // Animation values
-  const buttonScale = useSharedValue(1);
-  const inputScale = useSharedValue(1);
+  // Shared focus state for all inputs
+  const inputFocus = useSharedValue(0);
+
+  // ────── Animations ──────
+  const logoY = useSharedValue(-20);
   const logoOpacity = useSharedValue(0);
-  const logoTranslateY = useSharedValue(20);
+  const btnScale = useSharedValue(1);
+  const rippleOpacity = useSharedValue(0);
+  const rippleScale = useSharedValue(0);
 
-  // Animation styles
-  const buttonAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: buttonScale.value }],
-  }));
-
-  const inputAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: inputScale.value }],
-  }));
-
-  const logoAnimatedStyle = useAnimatedStyle(() => ({
+  const logoAnim = useAnimatedStyle(() => ({
     opacity: logoOpacity.value,
-    transform: [{ translateY: logoTranslateY.value }],
+    transform: [{ translateY: logoY.value }],
+  }));
+  const btnAnim = useAnimatedStyle(() => ({
+    transform: [{ scale: btnScale.value }],
+  }));
+  const rippleAnim = useAnimatedStyle(() => ({
+    opacity: rippleOpacity.value,
+    transform: [{ scale: rippleScale.value }],
+  }));
+  const inputAnim = useAnimatedStyle(() => ({
+    borderColor: withTiming(inputFocus.value ? COLORS.glow : COLORS.border, { duration: 250 }),
+    shadowOpacity: withTiming(inputFocus.value ? 0.25 : 0.1),
+    shadowRadius: withTiming(inputFocus.value ? 12 : 6),
   }));
 
-  // Trigger logo animation on mount
-  React.useEffect(() => {
-    logoOpacity.value = withTiming(1, { duration: 800, easing: Easing.out(Easing.exp) });
-    logoTranslateY.value = withTiming(0, { duration: 800, easing: Easing.out(Easing.exp) });
+  useEffect(() => {
+    logoOpacity.value = withTiming(1, { duration: 800 });
+    logoY.value = withTiming(0, { duration: 800 });
   }, []);
 
+  // ────── Ripple Effect ──────
+  const startRipple = () => {
+    rippleScale.value = withSpring(4);
+    rippleOpacity.value = withTiming(0.5, { duration: 150 });
+    btnScale.value = withSpring(0.96);
+  };
+  const endRipple = () => {
+    rippleOpacity.value = withTiming(0, { duration: 400 });
+    btnScale.value = withSpring(1);
+  };
+
+  // ────── Dismiss on Outside Tap ──────
+  const dismissKeyboard = () => {
+    Keyboard.dismiss();
+    inputFocus.value = 0; // Remove glow from all inputs
+  };
+
+  // ────── Login Handler ──────
   const handleSignIn = useCallback(async () => {
-    console.log("handleSignIn started");
     if (!email || !password) {
       setErrorMessage("Please enter both email and password");
       return;
     }
+
     setLoading(true);
     setErrorMessage("");
+
     try {
-      console.log("Calling login with:", { email, password });
       const user = await login(email, password);
-      console.log("Login successful:", user);
       await AsyncStorage.setItem("userSession", JSON.stringify(user));
+
       Alert.alert("Welcome", `Logged in as ${user.name}`);
-      console.log("Navigating to homepage");
+
       router.replace("homepage");
-    } catch (error) {
-      console.error("Login error:", error.message);
-      setErrorMessage(error.message);
+      setTimeout(() => resetAppState(), 300);
+    } catch (err: any) {
+      setErrorMessage(err.message);
     } finally {
       setLoading(false);
     }
-  }, [email, password, router]);
+  }, [email, password, router, resetAppState]);
 
-  const handleButtonPressIn = () => {
-    buttonScale.value = withSpring(0.95, { stiffness: 400, damping: 20 });
-  };
-
-  const handleButtonPressOut = () => {
-    buttonScale.value = withSpring(1, { stiffness: 400, damping: 20 });
-  };
-
-  const handleInputFocus = () => {
-    inputScale.value = withTiming(1.02, { duration: 200, easing: Easing.out(Easing.ease) });
-  };
-
-  const handleInputBlur = () => {
-    inputScale.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.ease) });
-  };
+  // ────── CTA Button ──────
+  const CTAButton = ({ title, onPress, gradient }: { title: string; onPress: () => void; gradient: string[] }) => (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.ctaPressable, pressed && { opacity: 0.8 }]}>
+      <LinearGradient colors={gradient} style={styles.ctaGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+        <Text style={styles.ctaText}>{title}</Text>
+      </LinearGradient>
+    </Pressable>
+  );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
+    <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
-        <ScrollView
-          contentContainerStyle={styles.container}
-          keyboardShouldPersistTaps="handled"
-        >
-          <Animated.View style={[styles.logoContainer, logoAnimatedStyle]}>
-            <Image
-              source={require("../../assets/images/icon1.png")}
-              style={styles.image}
-              contentFit="contain"
-              accessibilityLabel="Gogo Marketplace Logo"
-            />
-            <Text style={styles.title}>Welcome Back</Text>
-            <Text style={styles.subtitle}>Sign in to explore local businesses</Text>
-          </Animated.View>
-
-          {errorMessage ? (
-            <View style={styles.errorContainer}>
-              <Ionicons name="alert-circle-outline" size={20} color={COLORS.error} />
-              <Text style={styles.errorText}>{errorMessage}</Text>
-            </View>
-          ) : null}
-
-          <Animated.View style={[styles.inputContainer, inputAnimatedStyle]}>
-            <TextInput
-              placeholder="Email"
-              onChangeText={setEmail}
-              value={email}
-              style={styles.input}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              placeholderTextColor={COLORS.textSecondary}
-              onFocus={handleInputFocus}
-              onBlur={handleInputBlur}
-              accessibilityLabel="Email input"
-            />
-          </Animated.View>
-
-          <Animated.View style={[styles.inputContainer, inputAnimatedStyle]}>
-            <View style={styles.passwordContainer}>
-              <TextInput
-                placeholder="Password"
-                onChangeText={setPassword}
-                value={password}
-                secureTextEntry={secureText}
-                style={styles.passwordInput}
-                placeholderTextColor={COLORS.textSecondary}
-                onFocus={handleInputFocus}
-                onBlur={handleInputBlur}
-                accessibilityLabel="Password input"
+        {/* ────── TAP OUTSIDE TO DISMISS ────── */}
+        <TouchableWithoutFeedback onPress={dismissKeyboard}>
+          <View style={styles.container}>
+            {/* ────── LOGO & TITLE ────── */}
+            <Animated.View style={[styles.logoWrapper, logoAnim]}>
+              <Image
+                source={require("../../assets/images/icon1.png")}
+                style={styles.logoImage}
+                contentFit="contain"
               />
-              <TouchableOpacity
-                onPress={() => {
-                  console.log("Toggle secure text");
-                  setSecureText(!secureText);
-                }}
-                hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                activeOpacity={0.7}
-                style={styles.iconButton}
-                accessibilityLabel={secureText ? "Show password" : "Hide password"}
-              >
-                <Ionicons
-                  name={secureText ? "eye-off" : "eye"}
-                  size={24}
-                  color={COLORS.textSecondary}
+              <Text style={styles.title}>Welcome Back</Text>
+              <Text style={styles.subtitle}>Sign in to explore local businesses</Text>
+            </Animated.View>
+
+            {/* ────── ERROR ────── */}
+            {errorMessage ? (
+              <View style={styles.errorBox}>
+                <Ionicons name="alert-circle-outline" size={18} color={COLORS.error} />
+                <Text style={styles.errorText}>{errorMessage}</Text>
+              </View>
+            ) : null}
+
+            {/* ────── INPUTS (Shared Focus) ────── */}
+            <Animated.View style={[styles.inputWrapper, inputAnim]}>
+              <TextInput
+                placeholder="Email"
+                placeholderTextColor={COLORS.textSecondary}
+                value={email}
+                onChangeText={setEmail}
+                style={styles.input}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                onFocus={() => (inputFocus.value = 1)}
+                onBlur={() => (inputFocus.value = 0)}
+              />
+            </Animated.View>
+
+            <Animated.View style={[styles.inputWrapper, inputAnim]}>
+              <View style={styles.passwordRow}>
+                <TextInput
+                  placeholder="Password"
+                  placeholderTextColor={COLORS.textSecondary}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={secureText}
+                  style={styles.passwordInput}
+                  onFocus={() => (inputFocus.value = 1)}
+                  onBlur={() => (inputFocus.value = 0)}
                 />
-              </TouchableOpacity>
-            </View>
-          </Animated.View>
+                <TouchableOpacity onPress={() => setSecureText(s => !s)} style={styles.eyeBtn}>
+                  <Ionicons name={secureText ? "eye-off" : "eye"} size={22} color={COLORS.textSecondary} />
+                </TouchableOpacity>
+              </View>
+            </Animated.View>
 
-          <Animated.View style={[styles.buttonContainer, buttonAnimatedStyle]}>
-            <TouchableOpacity
-              onPress={handleSignIn}
-              onPressIn={handleButtonPressIn}
-              onPressOut={handleButtonPressOut}
-              disabled={loading}
-              style={styles.button}
-              activeOpacity={0.9}
-              accessibilityLabel="Sign in button"
-            >
-              <LinearGradient
-                colors={[COLORS.gradientStart, COLORS.gradientEnd]}
-                style={styles.buttonGradient}
+            {/* ────── SIGN IN BUTTON ────── */}
+            <Animated.View style={[styles.btnWrapper, btnAnim]}>
+              <TouchableOpacity
+                onPressIn={startRipple}
+                onPressOut={endRipple}
+                onPress={handleSignIn}
+                disabled={loading}
+                activeOpacity={1}
+                style={styles.btnTouch}
               >
-                {loading ? (
-                  <ActivityIndicator color={COLORS.white} />
-                ) : (
-                  <Text style={styles.buttonText}>Sign In</Text>
-                )}
-              </LinearGradient>
-            </TouchableOpacity>
-          </Animated.View>
+                <LinearGradient
+                  colors={[COLORS.gradientStart, COLORS.gradientEnd]}
+                  style={styles.btnGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                >
+                  {loading ? (
+                    <ActivityIndicator color={COLORS.white} />
+                  ) : (
+                    <Text style={styles.btnText}>Sign In</Text>
+                  )}
+                  <Animated.View style={[styles.ripple, rippleAnim]} />
+                </LinearGradient>
+              </TouchableOpacity>
+            </Animated.View>
 
-          <View style={styles.linksContainer}>
-            <TouchableOpacity
-              onPress={() => {
-                console.log("Navigating to RequestToken");
-                router.push("/RequestToken");
-              }}
-              hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-              activeOpacity={0.7}
-              accessibilityLabel="Register link"
-            >
-              <Text style={styles.linkText}>Don't have an account? Register</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => {
-                console.log("Navigating to ForgotPassword");
-                router.push("/ForgotPassword");
-              }}
-              hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-              activeOpacity={0.7}
-              accessibilityLabel="Forgot password link"
-            >
-              <Text style={styles.linkText}>Forgot Password?</Text>
-            </TouchableOpacity>
+            {/* ────── CTA BUTTONS (Always visible) ────── */}
+            <View style={styles.ctaContainer}>
+              <CTAButton
+                title="Register Now"
+                onPress={() => router.push("/RequestToken")}
+                gradient={COLORS.ctaRegister}
+              />
+              <CTAButton
+                title="Forgot Password?"
+                onPress={() => router.push("/ForgotPassword")}
+                gradient={COLORS.ctaForgot}
+              />
+            </View>
           </View>
-        </ScrollView>
+        </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
 
+// ────────────────────── STYLES (Unchanged) ──────────────────────
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: COLORS.background,
   },
   container: {
-    flexGrow: 1,
+    flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: SPACING.xl,
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.lg,
+    minHeight: height * 0.9,
   },
-  logoContainer: {
+
+  // LOGO
+  logoWrapper: {
     alignItems: "center",
-    marginBottom: SPACING.xxl,
+    marginBottom: SPACING.xl,
   },
-  image: {
-    width: width * 0.3,
-    height: 100,
-    marginBottom: SPACING.lg,
+  logoImage: {
+    width: width * 0.28,
+    height: 90,
+    marginBottom: SPACING.md,
   },
   title: {
-    fontSize: 32,
-    fontWeight: "700",
+    fontSize: 30,
+    fontWeight: "800",
     color: COLORS.textPrimary,
-    marginBottom: SPACING.sm,
     letterSpacing: -0.5,
-    textAlign: "center",
+    marginBottom: SPACING.xs,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15,
     color: COLORS.textSecondary,
     textAlign: "center",
-    lineHeight: 22,
     maxWidth: "80%",
   },
-  errorContainer: {
+
+  // ERROR
+  errorBox: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FEE2E2",
-    padding: SPACING.md,
+    padding: SPACING.sm,
     borderRadius: SPACING.sm,
     marginBottom: SPACING.lg,
     width: "100%",
+    borderWidth: 1,
+    borderColor: COLORS.error,
   },
   errorText: {
-    fontSize: 14,
+    fontSize: 13,
     color: COLORS.error,
-    marginLeft: SPACING.sm,
+    marginLeft: SPACING.xs,
+    flex: 1,
   },
-  inputContainer: {
+
+  // INPUTS
+  inputWrapper: {
     width: "100%",
-    marginBottom: SPACING.lg,
+    marginBottom: SPACING.md,
+    backgroundColor: COLORS.inputBg,
     borderRadius: SPACING.md,
-    backgroundColor: COLORS.inputBackground,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    borderWidth: 1.5,
+    overflow: "hidden",
+    elevation: 6,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
   },
   input: {
     padding: SPACING.md,
     fontSize: 16,
     color: COLORS.textPrimary,
-    borderRadius: SPACING.md,
   },
-  passwordContainer: {
+  passwordRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingRight: SPACING.sm,
   },
   passwordInput: {
     flex: 1,
@@ -382,37 +395,58 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.textPrimary,
   },
-  iconButton: {
+  eyeBtn: {
     padding: SPACING.sm,
   },
-  buttonContainer: {
+
+  // SIGN IN BUTTON
+  btnWrapper: {
     width: "100%",
     marginTop: SPACING.md,
-  },
-  button: {
+    marginBottom: SPACING.xl,
     borderRadius: SPACING.md,
     overflow: "hidden",
-    elevation: 4,
   },
-  buttonGradient: {
-    paddingVertical: SPACING.lg,
+  btnTouch: {
+    position: "relative",
+  },
+  btnGradient: {
+    paddingVertical: 16,
     alignItems: "center",
+    justifyContent: "center",
   },
-  buttonText: {
-    fontSize: 18,
-    fontWeight: "600",
+  btnText: {
+    fontSize: 17,
+    fontWeight: "700",
     color: COLORS.white,
     letterSpacing: 0.5,
   },
-  linksContainer: {
-    marginTop: SPACING.xl,
+  ripple: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255,255,255,0.4)",
+    borderRadius: SPACING.md,
+  },
+
+  // CTA BUTTONS
+  ctaContainer: {
+    width: "100%",
+    gap: SPACING.sm,
+  },
+  ctaPressable: {
+    borderRadius: 999,
+    overflow: "hidden",
+    elevation: 5,
+    shadowColor: "#000",
+  },
+  ctaGradient: {
+    paddingVertical: 14,
     alignItems: "center",
   },
-  linkText: {
-    fontSize: 16,
-    color: COLORS.primary,
-    marginVertical: SPACING.sm,
-    fontWeight: "500",
+  ctaText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: COLORS.white,
+    letterSpacing: 0.3,
   },
 });
 

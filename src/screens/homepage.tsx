@@ -13,7 +13,7 @@ import {
   Platform,
   Dimensions,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
   useSharedValue,
@@ -23,6 +23,7 @@ import Animated, {
   withRepeat,
   withSequence,
   Easing,
+  FadeInUp,
 } from "react-native-reanimated";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
@@ -64,6 +65,7 @@ const SPACING = {
 
 const { width } = Dimensions.get("window");
 
+// FeatureCard component (unchanged)
 const FeatureCard = memo(({ icon, title, description }) => {
   const scale = useSharedValue(1);
   const shadowOpacity = useSharedValue(0.1);
@@ -104,7 +106,8 @@ const FeatureCard = memo(({ icon, title, description }) => {
   );
 });
 
-const VideoCard = memo(({ title, videoId, onPlay }) => {
+// Updated VideoCard component for advanced look
+const VideoCard = memo(({ title, videoId, index, onPlay }) => {
   const scale = useSharedValue(1);
   const shadowOpacity = useSharedValue(0.1);
 
@@ -129,24 +132,40 @@ const VideoCard = memo(({ title, videoId, onPlay }) => {
   }
 
   return (
-    <TouchableOpacity
-      onPress={() => onPlay(videoId)}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      activeOpacity={0.9}
-      accessibilityLabel={`Play ${title} video`}
+    <Animated.View
+      entering={FadeInUp.duration(500).delay(index * 100)}
+      style={[styles.videoCard, animatedStyle]}
     >
-      <Animated.View style={[styles.featureCard, animatedStyle]}>
+      <TouchableOpacity
+        onPress={() => onPlay(videoId)}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        activeOpacity={0.9}
+        accessibilityLabel={`Play ${title} video`}
+      >
         <LinearGradient
-          colors={[COLORS.gradientStart, COLORS.accent]}
-          style={styles.featureIconContainer}
+          colors={["rgba(255,255,255,0.8)", "rgba(245,245,245,0.9)"]}
+          style={styles.videoCardGradient}
         >
-          <MaterialIcons name="play-arrow" size={28} color={COLORS.youtubeRed} />
+          <View style={styles.thumbnailContainer}>
+            <Image
+              source={{ uri: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` }}
+              style={styles.thumbnail}
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              accessibilityLabel={`${title} thumbnail`}
+            />
+            <View style={styles.playButtonOverlay}>
+              <MaterialIcons name="play-circle-filled" size={40} color={COLORS.youtubeRed} />
+            </View>
+          </View>
+          <View style={styles.videoCardContent}>
+            <Text style={styles.videoTitle}>{title}</Text>
+            <Text style={styles.videoDescription}>Tap to watch tutorial</Text>
+          </View>
         </LinearGradient>
-        <Text style={styles.featureTitle}>{title}</Text>
-        <Text style={styles.featureDescription}>Watch the tutorial</Text>
-      </Animated.View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+    </Animated.View>
   );
 });
 
@@ -156,7 +175,7 @@ const Homepage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [videoVisible, setVideoVisible] = useState(false);
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
-  const [isVideoLoading, setIsVideoLoading] = useState(false); // New state for video loading
+  const [isVideoLoading, setIsVideoLoading] = useState(false);
   const colorScheme = useColorScheme();
   const isDarkMode = colorScheme === "dark";
 
@@ -164,26 +183,41 @@ const Homepage = () => {
   const fabScale = useSharedValue(1);
   const heroImageScale = useSharedValue(1.05);
   const pulseScale = useSharedValue(1);
+  const arrowPulse = useSharedValue(1); // For sliding cue animation
+
+  // Check session when the screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      const checkSession = async () => {
+        try {
+          const token = await AsyncStorage.getItem("sessionToken");
+          console.log("Session token checked:", token);
+          setSessionToken(token);
+        } catch (error) {
+          console.error("Session check error:", error);
+          Alert.alert("Error", "Unable to verify session. Please try again.");
+        } finally {
+          setIsLoading(false);
+        }
+      };
+
+      checkSession();
+
+      return () => {
+        // Optional cleanup if needed
+      };
+    }, [])
+  );
 
   useEffect(() => {
-    const checkSession = async () => {
-      try {
-        await SplashScreen.preventAutoHideAsync();
-        const token = await AsyncStorage.getItem("sessionToken");
-        setSessionToken(token);
-      } catch (error) {
-        console.error("Session check error:", error);
-        Alert.alert("Error", "Unable to verify session. Please try again.");
-      } finally {
-        setIsLoading(false);
-        await SplashScreen.hideAsync();
-      }
+    const initialize = async () => {
+      await SplashScreen.preventAutoHideAsync();
+      console.log("EXPO_PUBLIC_HOW_TO_SELL:", process.env.EXPO_PUBLIC_HOW_TO_SELL);
+      console.log("EXPO_PUBLIC_HOW_TO_BUY:", process.env.EXPO_PUBLIC_HOW_TO_BUY);
+      await SplashScreen.hideAsync();
     };
 
-    console.log("EXPO_PUBLIC_HOW_TO_SELL:", process.env.EXPO_PUBLIC_HOW_TO_SELL);
-    console.log("EXPO_PUBLIC_HOW_TO_BUY:", process.env.EXPO_PUBLIC_HOW_TO_BUY);
-
-    checkSession();
+    initialize();
 
     heroImageScale.value = withTiming(1, {
       duration: 1000,
@@ -198,6 +232,16 @@ const Homepage = () => {
       -1,
       true
     );
+
+    // Animation for sliding cue arrow
+    arrowPulse.value = withRepeat(
+      withSequence(
+        withTiming(1.2, { duration: 600, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1, { duration: 600, easing: Easing.inOut(Easing.ease) })
+      ),
+      -1,
+      true
+    );
   }, []);
 
   const handlePlayVideo = useCallback(async (videoId: string) => {
@@ -208,7 +252,7 @@ const Homepage = () => {
 
     try {
       setCurrentVideoId(videoId);
-      setIsVideoLoading(true); // Set loading state to true
+      setIsVideoLoading(true);
       setVideoVisible(true);
     } catch (error) {
       console.error("Video load error:", error);
@@ -226,17 +270,21 @@ const Homepage = () => {
 
   const handleExplorePress = useCallback(() => {
     if (!sessionToken) {
+      console.log("No session token, redirecting to login");
       router.replace("/login");
       return;
     }
+    console.log("Session token found, navigating to shop");
     router.replace("/(tabs)/shop");
   }, [sessionToken, router]);
 
   const handleGetStarted = useCallback(() => {
     if (!sessionToken) {
+      console.log("No session token, redirecting to RequestToken");
       router.push("/RequestToken");
       return;
     }
+    console.log("Session token found, navigating to shop");
     router.push("/(tabs)/shop");
   }, [sessionToken, router]);
 
@@ -272,6 +320,10 @@ const Homepage = () => {
     transform: [{ scale: pulseScale.value }],
   }));
 
+  const arrowAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: arrowPulse.value }],
+  }));
+
   const features = [
     { icon: "location-on", title: "Nearby Businesses", description: "Discover local shops." },
     { icon: "store", title: "Trusted Listings", description: "Verified businesses." },
@@ -280,11 +332,11 @@ const Homepage = () => {
 
   const videoTutorials = [
     {
-      title: "How to Create Business Space",
+      title: "How to Set up Business Space",
       videoId: process.env.EXPO_PUBLIC_HOW_TO_BUY || "Bj8cHbYaASc",
     },
     {
-      title: "How to Find Seller",
+      title: "How to Find Seller on Gogo",
       videoId: process.env.EXPO_PUBLIC_HOW_TO_SELL || "Bj8cHbYaASc",
     },
   ].filter(item => item.videoId && typeof item.videoId === "string");
@@ -356,16 +408,50 @@ const Homepage = () => {
           </View>
         </View>
 
-        <View style={styles.videoSection}>
+        {/* Separate "How to Use Gogo" Section */}
+        <View style={styles.howToSection}>
           <Text style={styles.sectionTitle}>How to Use Gogo</Text>
-          {videoTutorials.length > 0 ? (
+          <View style={styles.carouselContainer}>
             <FlatList
               data={videoTutorials}
-              renderItem={({ item }) => (
+              renderItem={({ item, index }) => (
                 <VideoCard
                   title={item.title}
                   videoId={item.videoId}
+                  index={index}
                   onPlay={handlePlayVideo}
+                />
+              )}
+              keyExtractor={(item) => item.title}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.videoList}
+              snapToAlignment="center"
+              snapToInterval={200 + SPACING.md}
+              decelerationRate="fast"
+              initialNumToRender={2}
+              style={styles.videoFlatList}
+            />
+          </View>
+          {videoTutorials.length > 1 && (
+            <Animated.View style={[styles.swipeCue, arrowAnimatedStyle]}>
+              <Text style={styles.swipeCueText}>Swipe to explore</Text>
+              <MaterialIcons name="arrow-forward" size={20} color={COLORS.textSecondary} />
+            </Animated.View>
+          )}
+        </View>
+
+        {/* Separate "Why Choose Gogo?" Section */}
+        <View style={styles.whyChooseSection}>
+          <Text style={styles.sectionTitle}>Why Choose Gogo?</Text>
+          <View style={styles.carouselContainer}>
+            <FlatList
+              data={features}
+              renderItem={({ item }) => (
+                <FeatureCard
+                  icon={item.icon}
+                  title={item.title}
+                  description={item.description}
                 />
               )}
               keyExtractor={(item) => item.title}
@@ -375,35 +461,16 @@ const Homepage = () => {
               snapToAlignment="center"
               snapToInterval={200 + SPACING.md}
               decelerationRate="fast"
-              initialNumToRender={2}
+              initialNumToRender={3}
               style={styles.featureFlatList}
             />
-          ) : (
-            <Text style={styles.featureDescription}>No tutorials available</Text>
+          </View>
+          {features.length > 1 && (
+            <Animated.View style={[styles.swipeCue, arrowAnimatedStyle]}>
+              <Text style={styles.swipeCueText}>Swipe to explore</Text>
+              <MaterialIcons name="arrow-forward" size={20} color={COLORS.textSecondary} />
+            </Animated.View>
           )}
-        </View>
-
-        <View style={styles.featuresSection}>
-          <Text style={styles.sectionTitle}>Why Choose Gogo?</Text>
-          <FlatList
-            data={features}
-            renderItem={({ item }) => (
-              <FeatureCard
-                icon={item.icon}
-                title={item.title}
-                description={item.description}
-              />
-            )}
-            keyExtractor={(item) => item.title}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.featureList}
-            snapToAlignment="center"
-            snapToInterval={200 + SPACING.md}
-            decelerationRate="fast"
-            initialNumToRender={3}
-            style={styles.featureFlatList}
-          />
         </View>
 
         <LinearGradient
@@ -443,10 +510,10 @@ const Homepage = () => {
           )}
           <YoutubePlayer
             height={300}
-            width={width}
+            width={width * 0.9}
             play={videoVisible}
             videoId={currentVideoId}
-            onReady={() => setIsVideoLoading(false)} // Set loading to false when video is ready
+            onReady={() => setIsVideoLoading(false)}
             onChangeState={(event) => {
               if (event === "ended" || event === "paused") {
                 setVideoVisible(false);
@@ -620,10 +687,101 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     letterSpacing: 1,
   },
-  videoSection: {
+  howToSection: {
     paddingHorizontal: SPACING.xl,
-    paddingVertical: SPACING.lg,
+    paddingVertical: SPACING.xxl,
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: SPACING.xl,
+    marginHorizontal: SPACING.sm,
     marginBottom: SPACING.lg,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  whyChooseSection: {
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.xxl,
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: SPACING.xl,
+    marginHorizontal: SPACING.sm,
+    marginBottom: SPACING.lg,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  carouselContainer: {
+    marginBottom: SPACING.lg,
+  },
+  videoList: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.sm,
+  },
+  videoFlatList: {
+    height: 220,
+  },
+  videoCard: {
+    width: 180,
+    marginRight: SPACING.lg,
+    borderRadius: SPACING.lg,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  videoCardGradient: {
+    padding: SPACING.md,
+  },
+  thumbnailContainer: {
+    position: "relative",
+    width: "100%",
+    height: 100,
+    borderRadius: SPACING.md,
+    overflow: "hidden",
+  },
+  thumbnail: {
+    width: "100%",
+    height: "100%",
+  },
+  playButtonOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
+  },
+  videoCardContent: {
+    padding: SPACING.sm,
+  },
+  videoTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.xs,
+  },
+  videoDescription: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    lineHeight: 16,
+  },
+  swipeCue: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: SPACING.sm,
+  },
+  swipeCueText: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    marginRight: SPACING.xs,
   },
   featuresSection: {
     paddingHorizontal: SPACING.xl,
@@ -755,13 +913,13 @@ const styles = StyleSheet.create({
     top: Platform.OS === "ios" ? 50 : 20,
     right: 20,
     padding: 10,
-    zIndex: 1100, // Ensure close button is above loading indicator
+    zIndex: 1100,
   },
   videoLoadingContainer: {
     position: "absolute",
     justifyContent: "center",
     alignItems: "center",
-    zIndex: 1050, // Above video player but below close button
+    zIndex: 1050,
   },
   videoLoadingText: {
     color: COLORS.white,

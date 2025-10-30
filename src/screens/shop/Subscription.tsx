@@ -197,7 +197,7 @@ const Subscription = () => {
         <View style={styles.header}>
           <TouchableOpacity
             accessibilityLabel="Go back"
-            onPress={() => router.back()}
+            onPress={() => router.navigate("(tabs)/account")}
             style={styles.backButton}
           >
             <MaterialIcons name="arrow-back" size={28} color="#FFFFFF" />
@@ -392,30 +392,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 16,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     backgroundColor: '#3A7BD5',
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
+    borderBottomLeftRadius: 35,
+    borderBottomRightRadius: 35,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 6,
   },
   backButton: {
-    padding: 10,
+    padding: 5,
     borderRadius: 12,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: 'bold',
     color: '#FFFFFF',
     flex: 1,
     textAlign: 'center',
   },
   headerSpacer: {
-    width: 48,
+    width: 42,
   },
   scrollContent: {
     paddingHorizontal: 16,

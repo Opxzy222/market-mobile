@@ -1,44 +1,45 @@
-const { getDefaultConfig } = require('expo/metro-config');
+const { getDefaultConfig } = require('@expo/metro-config');
+const path = require('path');
 
-module.exports = (async () => {
-  const config = await getDefaultConfig(__dirname);
-  return {
-    ...config,
-    resolver: {
-      ...config.resolver,
-      sourceExts: [...config.resolver.sourceExts, 'ts', 'tsx', 'native.ts'],
-      assetExts: config.resolver.assetExts.filter(ext => ext !== 'wasm'),
-      extraNodeModules: {
-        '../storage/storage': './src/storage/storage.ts',
-        '../storage/sqliteStorage.native': './src/storage/sqliteStorage.native.ts',
-        '../src/storage/storage': './src/storage/storage.ts',
-      },
-      resolveRequest: (context, moduleName, platform) => {
-        if (moduleName === '../storage/storage' || moduleName === '../src/storage/storage') {
-          console.log('Metro resolving storage module:', moduleName);
-          return {
-            filePath: require.resolve('./src/storage/storage.ts'),
-            type: 'sourceFile',
-          };
-        }
-        return context.resolveRequest(context, moduleName, platform);
-      },
+const config = getDefaultConfig(__dirname);
+
+// Add Dojah-specific Metro configurations
+config.resolver.blockList = [
+  ...Array.from(config.resolver.blockList ?? []),
+  new RegExp(path.resolve('..', 'node_modules', 'react')),
+  new RegExp(path.resolve('..', 'node_modules', 'react-native')),
+];
+
+config.resolver.nodeModulesPaths = [
+  path.resolve(__dirname, './node_modules'),
+  path.resolve(__dirname, '../node_modules'),
+];
+
+config.watchFolders = [path.resolve(__dirname, '..')];
+
+// Retain your existing transformer and resolver settings
+config.transformer = {
+  ...config.transformer,
+  babelTransformerPath: require.resolve('react-native-svg-transformer'),
+  getTransformOptions: async () => ({
+    transform: {
+      experimentalImportSupport: false,
+      inlineRequires: true,
     },
-    transformer: {
-      ...config.transformer,
-      getTransformOptions: async () => ({
-        transform: {
-          experimentalImportSupport: false,
-          inlineRequires: true,
-        },
-      }),
-    },
-    server: {
-      ...config.server,
-      enhanceMiddleware: (middleware) => (req, res, next) => {
-        console.log(`[Metro] Request received: ${req.method} ${req.url} from ${req.headers['user-agent']}`);
-        return middleware(req, res, next);
-      },
-    },
-  };
-})();
+  }),
+};
+
+config.resolver = {
+  ...config.resolver,
+  sourceExts: [...config.resolver.sourceExts, 'ts', 'tsx', 'svg'],
+  alias: {
+    '@/screens': './src/screens',
+    '@/components': './src/components',
+    '@/assets': './src/assets',
+    '../storage/storage': './src/storage/storage.ts',
+    '../storage/sqliteStorage.native': './src/storage/sqliteStorage.native.ts',
+    '../src/storage/storage': './src/storage/storage.ts',
+  },
+};
+
+module.exports = config;

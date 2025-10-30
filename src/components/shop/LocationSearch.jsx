@@ -149,7 +149,7 @@ const LocationSearch = ({ onSearch, onFocusChange, onSuggestionsStateChange }) =
         const shops = Array.isArray(response.data) ? response.data : response.data.shops || [];
         if (shops.length === 0) {
           console.log('No shops found for query:', trimmedQuery, 'locationId:', locationId);
-          Alert.alert('No Results', 'No shops found for your search.');
+          Alert.alert('No Results', 'No space found for your search.');
           setLoading(false);
           return;
         }

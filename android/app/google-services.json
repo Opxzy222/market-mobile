@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "172284510811",
-    "project_id": "gogo-b6ceb",
-    "storage_bucket": "gogo-b6ceb.firebasestorage.app"
+    "project_number": "174125777805",
+    "project_id": "market-59c2d",
+    "storage_bucket": "market-59c2d.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:172284510811:android:ccc90a2cde76299937f57e",
+        "mobilesdk_app_id": "1:174125777805:android:e910d7885dd0bb99aa33c4",
         "android_client_info": {
           "package_name": "com.timeflies.gogomarket"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyCNZswFgLt1LALWcm-I2zmGpzqcdZFbAIA"
+          "current_key": "AIzaSyAX1I3CsFjqDnE7djaEizjD4Jn2AioZEn4"
         }
       ],
       "services": {

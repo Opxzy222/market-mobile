@@ -26,45 +26,13 @@ const Account = () => {
   const API_BASE_URL = '';
 
   useEffect(() => {
-    const loadCachedData = async () => {
-      try {
-        const cachedBalance = await AsyncStorage.getItem('balance');
-        const cachedAccountNumber = await AsyncStorage.getItem('dva_account_number');
-        const cachedBankName = await AsyncStorage.getItem('dva_bank_name');
-        const cachedAccountName = await AsyncStorage.getItem('dva_account_name');
-        const cachedPlan = await AsyncStorage.getItem('subscription_plan');
-        const cachedEndDate = await AsyncStorage.getItem('subscription_end_date');
-
-        if (cachedBalance) {
-          setBalance(parseFloat(cachedBalance));
-        }
-        if (cachedAccountNumber && cachedBankName && cachedAccountName) {
-          setVirtualAccount({
-            account_number: cachedAccountNumber,
-            bank_name: cachedBankName,
-            account_name: cachedAccountName,
-          });
-        }
-        if (cachedPlan || cachedEndDate) {
-          setSubscription({
-            plan: cachedPlan,
-            end_date: cachedEndDate,
-          });
-        }
-      } catch (error) {
-        console.error('Error loading cached data:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     const fetchUserData = async () => {
+      setLoading(true);
       try {
         const userIdString = await AsyncStorage.getItem('user_id');
         const token = await AsyncStorage.getItem('sessionToken');
         if (userIdString && token) {
           setUserId(parseInt(userIdString, 10));
-          setLoading(true);
           const response = await api.get(`/payments/balance/`, {
             headers: { Authorization: token },
           });
@@ -85,14 +53,14 @@ const Account = () => {
         }
       } catch (error) {
         console.error('Error fetching balance:', error);
-        Alert.alert('Error', 'Failed to load account details. Showing cached data.');
+        Alert.alert('Error', 'Failed to load account details. Please try again.');
       } finally {
         setLoading(false);
       }
     };
 
-    loadCachedData().then(fetchUserData);
-  }, []);
+    fetchUserData();
+  }, []); // Always refetch on mount
 
   return (
     <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.container}>

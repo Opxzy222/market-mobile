@@ -75,7 +75,7 @@ android {
     }
     packagingOptions {
         jniLibs {
-            useLegacyPackaging (findProperty('expo.useLegacyPackaging')?.toBoolean() ?: false)
+            useLegacyPackaging true   // ONLY CHANGE: HARDCODED TO TRUE
         }
     }
     androidResources {

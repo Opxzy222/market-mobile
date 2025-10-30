@@ -26,6 +26,7 @@ import { clearNonSuggestionData } from '../../storage/storage';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import SubscriptionProvider, { SubscriptionContext } from '../../components/SubscriptionProvider';
 import { LinearGradient } from 'expo-linear-gradient';
+import axios from 'axios'; // Ensure axios is imported for error handling
 
 const ShopHomePage = () => {
   const { subscriptionStatus, loading: subscriptionLoading } = useContext(SubscriptionContext);
@@ -71,19 +72,18 @@ const ShopHomePage = () => {
         return false;
       }
       const cachedData = await AsyncStorage.getItem('shopDashboardData');
-      if (cachedData) {
+      const cacheTimestamp = await AsyncStorage.getItem('shopDashboardDataTimestamp');
+      const isCacheFresh = cacheTimestamp && (Date.now() - parseInt(cacheTimestamp) < 5 * 60 * 1000); // 5 minutes
+      if (cachedData && isCacheFresh) {
         const parsedData = JSON.parse(cachedData);
         if (isValidCache(parsedData)) {
           setData(parsedData);
-          setIsLoading(false); // Display cached data immediately
-          console.log('Loaded valid cached dashboard data:', parsedData);
+          setIsLoading(false);
+          console.log('Loaded fresh cached dashboard data:', parsedData);
           return true;
-        } else {
-          console.log('Invalid or empty cached data, keeping loading state');
-          return false;
         }
       }
-      console.log('No cached data found');
+      console.log('No fresh cached data found');
       return false;
     } catch (error) {
       console.error('Error loading cached data:', error);
@@ -107,20 +107,27 @@ const ShopHomePage = () => {
         return;
       }
 
-      const response = await api.get(
-        '/shop-dashboard-overview/',
-        {
-          headers: {
-            Authorization: sessionTokenRef.current,
-          },
-        }
-      );
+      const response = await api.get('/shop-dashboard-overview/', {
+        headers: {
+          Authorization: sessionTokenRef.current,
+        },
+      });
       const newData = response.data;
+      const plan = newData.plan;
+      const is_active = newData.is_active;
+      const start_date = newData.start_date;
+      const end_date = newData.end_date;
+
       setData(newData); // Update state with backend data
       await AsyncStorage.setItem('shopDashboardData', JSON.stringify(newData));
+      await AsyncStorage.setItem('shopDashboardDataTimestamp', Date.now().toString()); // Save timestamp
       await AsyncStorage.setItem('user_verified', JSON.stringify(newData.user_verified));
       await AsyncStorage.setItem('phone_verified', JSON.stringify(newData.phone_verified));
-      await AsyncStorage.setItem("user_name", newData.user_name);
+
+      const subscriptionData = { plan, is_active, start_date, end_date };
+      await AsyncStorage.setItem('subscription_cache', JSON.stringify(subscriptionData));
+      console.log('Stored subscription data:', subscriptionData);
+
       console.log('Fetched and updated dashboard data:', newData);
       hasFetchedOnceRef.current = true;
     } catch (error) {
@@ -151,8 +158,9 @@ const ShopHomePage = () => {
       console.log('Screen focused, initializing data');
       const initializeData = async () => {
         const hasValidCache = await loadCachedData();
-        // Always fetch fresh data in the background, even if cache is valid
-        fetchData();
+        if (!hasValidCache) {
+          fetchData(); // Only fetch if cache is invalid or stale
+        }
       };
       initializeData();
     }, [])

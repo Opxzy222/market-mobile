@@ -1,4 +1,3 @@
-// components/NotificationSettings.tsx
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform, StatusBar } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -8,6 +7,7 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import CheckmarkModal from '@/components/shop/ModalComponent';
 import Toast from 'react-native-toast-message';
+import api from '../../api';
 
 const NotificationSettings = () => {
   const router = useRouter();
@@ -29,18 +29,13 @@ const NotificationSettings = () => {
           Toast.show({ type: 'error', text1: 'Not authenticated' });
           return;
         }
-        const response = await fetch('/api/notification-preferences/', {
-          headers: { Authorization: authToken }, // Fixed header
+        const response = await api.get('/api/notification-preferences/', {
+          headers: { Authorization: authToken },
         });
-        const data = await response.json();
-        if (response.ok) {
-          setPreferences(data);
-        } else {
-          Toast.show({ type: 'error', text1: data.error || 'Failed to fetch preferences' });
-        }
+        setPreferences(response.data);
       } catch (error) {
         console.error('Error fetching preferences:', error);
-        Toast.show({ type: 'error', text1: 'Network error' });
+        Toast.show({ type: 'error', text1: error.response?.data?.error || 'Network error' });
       } finally {
         setLoading(false);
       }
@@ -59,24 +54,17 @@ const NotificationSettings = () => {
         Toast.show({ type: 'error', text1: 'Not authenticated' });
         return;
       }
-      const response = await fetch('/api/notification-preferences/', {
-        method: 'POST',
+      const response = await api.post('/api/notification-preferences/', preferences, {
         headers: {
           'Content-Type': 'application/json',
           Authorization: authToken,
         },
-        body: JSON.stringify(preferences),
       });
-      const data = await response.json();
-      if (response.ok) {
-        setShowSuccessModal(true);
-        setTimeout(() => setShowSuccessModal(false), 2000);
-      } else {
-        Toast.show({ type: 'error', text1: data.error || 'Failed to save preferences' });
-      }
+      setShowSuccessModal(true);
+      setTimeout(() => setShowSuccessModal(false), 2000);
     } catch (error) {
       console.error('Error saving preferences:', error);
-      Toast.show({ type: 'error', text1: 'Network error' });
+      Toast.show({ type: 'error', text1: error.response?.data?.error || 'Network error' });
     }
   };
 
@@ -103,7 +91,7 @@ const NotificationSettings = () => {
       <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
       <ScrollView>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <TouchableOpacity onPress={() => router.navigate("(tabs)/profile")} style={styles.backButton}>
             <MaterialIcons name="arrow-back" size={26} color="white" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Notification Settings</Text>
@@ -112,9 +100,9 @@ const NotificationSettings = () => {
         <Provider>
           <ScrollView contentContainerStyle={styles.container}>
             {[
-              { key: 'shop_follower', label: 'New Shop Follower' },
-              { key: 'shop_review', label: 'New Shop Review' },
-              { key: 'shop_post', label: 'New Shop Post' },
+              { key: 'shop_follower', label: 'New Space Follower' },
+              { key: 'shop_review', label: 'New Space Review' },
+              { key: 'shop_post', label: 'New Space Post' },
               { key: 'receipt_created', label: 'New Receipt Created' },
               { key: 'receipt_status', label: 'Receipt Status Update' },
             ].map(({ key, label }) => (

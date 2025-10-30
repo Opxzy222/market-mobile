@@ -146,7 +146,7 @@ const SubcategoryList = () => {
       // Extract shops directly from response.data
       const shops = Array.isArray(response.data) ? response.data.slice(0, 50) : []; // Limit to 50 shops
       if (shops.length === 0) {
-        Alert.alert('No Results', 'No shops found for this subcategory.');
+        Alert.alert('No Results', 'No space found for this subcategory.');
         setIsFetchingResults(false);
         return;
       }

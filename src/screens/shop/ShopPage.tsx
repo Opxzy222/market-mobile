@@ -6,7 +6,6 @@ import {
   Image,
   TouchableOpacity,
   ScrollView,
-  ActivityIndicator,
   Alert,
   Clipboard,
   ToastAndroid,
@@ -15,6 +14,7 @@ import {
   Animated,
   Modal,
 } from 'react-native';
+import * as Animatable from 'react-native-animatable';
 import api from '../../api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -32,6 +32,37 @@ import AdMobManager from '../../components/AdMobManager';
 import { SubscriptionContext } from '../../components/SubscriptionProvider';
 import { getFullUrl } from '../../utils/imageUtils';
 import { format, parseISO } from 'date-fns';
+
+// Constants (aligned with Homepage.tsx for consistency)
+const COLORS = {
+  primary: "#1E3A8A",
+  accent: "#FCD34D",
+  background: "#F9FAFB",
+  cardBackground: "#FFFFFF",
+  textPrimary: "#111827",
+  textSecondary: "#6B7280",
+  white: "#FFFFFF",
+  gradientStart: "#4B6CB7",
+  gradientEnd: "#8B5CF6",
+  goldAccent: "#D4A017",
+  statusBar: "#4B6CB7",
+  headerBg: "#3A7BD5",
+  fabBg: "#4A5ABA",
+  darkBackground: "#1F2937",
+  darkCardBackground: "#374151",
+  darkTextPrimary: "#F9FAFB",
+  darkTextSecondary: "#D1D5DB",
+  youtubeRed: "#FF0000",
+};
+
+const SPACING = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 24,
+  xxl: 32,
+};
 
 const ShopPage = () => {
   const { subscriptionStatus, loading } = useContext(SubscriptionContext);
@@ -162,9 +193,9 @@ const ShopPage = () => {
       Clipboard.setString(shop.shop_id);
       setCopied(true);
       if (Platform.OS === 'android') {
-        ToastAndroid.show('Profile ID copied!', ToastAndroid.SHORT);
+        ToastAndroid.show('Space ID copied!', ToastAndroid.SHORT);
       } else {
-        Alert.alert('Copied', 'Profile ID copied to clipboard!');
+        Alert.alert('Copied', 'Space ID copied to clipboard!');
       }
       setTimeout(() => setCopied(false), 2000);
     }
@@ -221,20 +252,50 @@ const ShopPage = () => {
 
   if (loading || !shop || sessionId === null) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#F7FAFC' }}>
-        <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#f39c12" />
-          <Text style={styles.loadingText}>Loading space data...</Text>
-        </View>
+      <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }}>
+        <StatusBar barStyle="light-content" backgroundColor={COLORS.statusBar} />
+        <LinearGradient
+          colors={[COLORS.gradientStart, COLORS.gradientEnd]}
+          style={styles.loadingContainer}
+        >
+          <Animatable.View
+            animation={{
+              0: { scale: 1, opacity: 1 },
+              0.5: { scale: 1.2, opacity: 0.7 },
+              1: { scale: 1, opacity: 1 },
+            }}
+            iterationCount="infinite"
+            duration={1500}
+            style={styles.loadingLogoContainer}
+          >
+            <Image
+              source={require('../../../assets/images/icon1.png')}
+              style={styles.loadingLogo}
+              contentFit="contain"
+              accessibilityLabel="Gogo Marketplace Loading Logo"
+            />
+          </Animatable.View>
+          <Animatable.Text
+            animation={{
+              0: { opacity: 0.4 },
+              0.5: { opacity: 1 },
+              1: { opacity: 0.4 },
+            }}
+            iterationCount="infinite"
+            duration={1500}
+            style={styles.loadingText}
+          >
+            Loading business space...
+          </Animatable.Text>
+        </LinearGradient>
       </SafeAreaView>
     );
   }
 
   if (error) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#F7FAFC' }}>
-        <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+      <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }}>
+        <StatusBar barStyle="light-content" backgroundColor={COLORS.statusBar} />
         <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.errorContainer}>
           <MaterialIcons name="error-outline" size={48} color="#EF4444" />
           <Text style={styles.errorText}>{error}</Text>
@@ -269,7 +330,7 @@ const ShopPage = () => {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.headerBg} />
       <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.container}>
         <View style={styles.header}>
           <View style={styles.backContainer}>
@@ -431,7 +492,6 @@ const ShopPage = () => {
             animationType="fade"
             onRequestClose={closeImageModal}
           >
-            {console.log('Modal rendering, visible:', isImageModalVisible)}
             <SafeAreaView style={styles.fullScreenContainer}>
               <View style={styles.fullScreenImageContainer}>
                 <Image
@@ -628,14 +688,14 @@ const ShopPage = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f4f4f4',
+    backgroundColor: COLORS.background,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 16,
-    backgroundColor: '#2563EB',
+    padding: SPACING.lg,
+    backgroundColor: COLORS.headerBg,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -643,12 +703,12 @@ const styles = StyleSheet.create({
     elevation: 3,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
-    marginBottom: 10,
+    marginBottom: SPACING.sm,
   },
   backContainer: {},
   backButton: {
-    padding: 5,
-    borderRadius: 12,
+    padding: SPACING.sm,
+    borderRadius: SPACING.md,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
   shopIdContainer: {
@@ -657,35 +717,35 @@ const styles = StyleSheet.create({
   },
   shopIdLabel: {
     fontSize: 16,
-    color: '#FFFFFF',
-    marginRight: 8,
+    color: COLORS.white,
+    marginRight: SPACING.sm,
     fontWeight: '700',
   },
   shopId: {
     fontSize: 16,
-    color: '#FFFFFF',
-    marginRight: 1,
+    color: COLORS.white,
+    marginRight: SPACING.xs,
   },
   copyButton: {
-    padding: 6,
-    borderRadius: 8,
+    padding: SPACING.sm,
+    borderRadius: SPACING.sm,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
   content: {
-    paddingHorizontal: 8,
-    paddingVertical: 10,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.md,
     marginTop: -14,
   },
   shopHeader: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: SPACING.md,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 3,
-    marginBottom: 12,
+    marginBottom: SPACING.md,
     marginHorizontal: -4,
   },
   shopImageContainer: {
@@ -703,8 +763,8 @@ const styles = StyleSheet.create({
     height: '100%',
     resizeMode: 'cover',
     opacity: 0.1,
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
+    borderTopLeftRadius: SPACING.md,
+    borderTopRightRadius: SPACING.md,
   },
   backgroundOverlay: {
     position: 'absolute',
@@ -712,8 +772,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
+    borderTopLeftRadius: SPACING.md,
+    borderTopRightRadius: SPACING.md,
   },
   imageTouchable: {
     width: '100%',
@@ -723,10 +783,10 @@ const styles = StyleSheet.create({
   shopImage: {
     width: '100%',
     height: '100%',
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
+    borderTopLeftRadius: SPACING.md,
+    borderTopRightRadius: SPACING.md,
     resizeMode: 'contain',
-    padding: 6,
+    padding: SPACING.sm,
   },
   imageGlow: {
     position: 'absolute',
@@ -734,8 +794,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    borderRadius: 12,
-    shadowColor: '#2563EB',
+    borderRadius: SPACING.md,
+    shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.2,
     shadowRadius: 12,
@@ -747,21 +807,21 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: '40%',
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
+    borderTopLeftRadius: SPACING.md,
+    borderTopRightRadius: SPACING.md,
   },
   ratingBadgeContainer: {
     position: 'absolute',
-    top: 8,
-    left: 8,
+    top: SPACING.sm,
+    left: SPACING.sm,
     flexDirection: 'row',
     alignItems: 'center',
     zIndex: 10,
   },
   verifiedContainer: {
     position: 'absolute',
-    top: 8,
-    right: 8,
+    top: SPACING.sm,
+    right: SPACING.sm,
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
@@ -771,29 +831,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#222',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 16,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: SPACING.lg,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 5,
-    marginRight: 4,
+    marginRight: SPACING.xs,
   },
   ratingText: {
     fontSize: 12,
     fontWeight: 'bold',
-    color: '#FFD700',
-    marginLeft: 4,
+    color: COLORS.goldAccent,
+    marginLeft: SPACING.xs,
   },
   ownerVerifiedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#E3FCEF',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: SPACING.md,
     borderWidth: 1,
     borderColor: '#0FA958',
     shadowColor: '#000',
@@ -801,7 +861,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 3,
-    marginRight: 4,
+    marginRight: SPACING.xs,
   },
   verifiedIconOverlay: {
     position: 'relative',
@@ -813,14 +873,14 @@ const styles = StyleSheet.create({
   },
   shopStatusOverlay: {
     position: 'absolute',
-    bottom: 8,
-    right: 8,
+    bottom: SPACING.sm,
+    right: SPACING.sm,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 16,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    borderRadius: SPACING.lg,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
@@ -831,47 +891,47 @@ const styles = StyleSheet.create({
   shopStatusText: {
     fontSize: 13,
     fontWeight: '700',
-    marginLeft: 5,
-    color: '#1F2937',
+    marginLeft: SPACING.xs,
+    color: COLORS.textPrimary,
   },
   shopInfo: {
-    padding: 12,
+    padding: SPACING.md,
   },
   shopName: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#1E40AF',
+    color: COLORS.primary,
     letterSpacing: 0.3,
     fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
-    marginBottom: 6,
+    marginBottom: SPACING.sm,
     marginLeft: 0,
   },
   addressContainer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginBottom: 8,
+    marginBottom: SPACING.sm,
     flexWrap: 'wrap',
     marginLeft: 0,
   },
   icon: {
-    marginTop: 2,
-    marginRight: 6,
+    marginTop: SPACING.xs,
+    marginRight: SPACING.sm,
   },
   shopAddress: {
     fontSize: 14,
-    color: '#374151',
+    color: COLORS.textPrimary,
     flex: 1,
     lineHeight: 20,
   },
   mapContainer: {
     alignItems: 'flex-start',
-    marginBottom: 8,
+    marginBottom: SPACING.sm,
     marginLeft: 0,
   },
   followerCount: {
     fontSize: 13,
-    color: '#6B7280',
-    marginBottom: 8,
+    color: COLORS.textSecondary,
+    marginBottom: SPACING.sm,
     textAlign: 'left',
     marginLeft: 0,
   },
@@ -879,11 +939,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-start',
-    gap: 10,
+    gap: SPACING.md,
     marginLeft: 0,
   },
   messageButton: {
-    borderRadius: 20,
+    borderRadius: SPACING.lg,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -895,29 +955,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.lg,
+    borderRadius: SPACING.lg,
     minWidth: 100,
-    gap: 6,
+    gap: SPACING.sm,
   },
   buttonText: {
-    color: '#FFF',
+    color: COLORS.white,
     fontWeight: '700',
     fontSize: 14,
     fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
   },
   buttonIcon: {
-    marginRight: 6,
+    marginRight: SPACING.sm,
   },
   details: {
-    marginVertical: 15,
+    marginVertical: SPACING.lg,
   },
   descriptionCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: SPACING.lg,
+    padding: SPACING.xl,
+    marginBottom: SPACING.lg,
     shadowColor: '#000',
     shadowOffset: { width: 4, height: 4 },
     shadowOpacity: 0.1,
@@ -925,7 +985,7 @@ const styles = StyleSheet.create({
     elevation: 5,
     borderWidth: 1,
     borderColor: 'rgba(0, 0, 0, 0.05)',
-    shadowColor: '#FFFFFF',
+    shadowColor: COLORS.white,
     shadowOffset: { width: -4, height: -4 },
     shadowOpacity: 0.5,
     shadowRadius: 8,
@@ -933,79 +993,79 @@ const styles = StyleSheet.create({
   descriptionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
-    gap: 8,
+    marginBottom: SPACING.md,
+    gap: SPACING.sm,
   },
   descriptionTitle: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#1F2937',
+    color: COLORS.textPrimary,
     fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'Roboto',
   },
   descriptionText: {
     fontSize: 16,
-    color: '#4B5563',
+    color: COLORS.textSecondary,
     lineHeight: 24,
     fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'Roboto',
   },
   createdAtContainer: {
-    marginTop: 12,
+    marginTop: SPACING.md,
     alignItems: 'flex-start',
   },
   createdAtBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 12,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: SPACING.md,
     backgroundColor: '#E5E7EB',
   },
   createdAtText: {
     fontSize: 14,
-    color: '#4B5563',
+    color: COLORS.textSecondary,
     fontWeight: '600',
-    marginLeft: 6,
+    marginLeft: SPACING.sm,
     fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'Roboto',
   },
   readMoreButton: {
-    marginTop: 12,
-    borderRadius: 12,
+    marginTop: SPACING.md,
+    borderRadius: SPACING.md,
     overflow: 'hidden',
     alignSelf: 'flex-start',
   },
   readMoreGradient: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 12,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    borderRadius: SPACING.md,
   },
   readMoreText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#fff',
+    color: COLORS.white,
     fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'Roboto',
   },
   categoriesContainer: {
-    marginBottom: 16,
+    marginBottom: SPACING.lg,
   },
   categoriesHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
-    gap: 8,
+    marginBottom: SPACING.md,
+    gap: SPACING.sm,
   },
   categoriesTitle: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#1F2937',
+    color: COLORS.textPrimary,
     fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'Roboto',
   },
   categoriesWrapper: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: SPACING.md,
   },
   categoryBadge: {
-    borderRadius: 20,
+    borderRadius: SPACING.lg,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -1014,34 +1074,34 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   categoryBadgeGradient: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 20,
+    borderRadius: SPACING.lg,
   },
   noCategoryBadge: {
     backgroundColor: '#E5E7EB',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.lg,
+    borderRadius: SPACING.lg,
   },
   categoryBadgeText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#fff',
+    color: COLORS.white,
     textAlign: 'center',
     fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'Roboto',
   },
   noCategoryBadgeText: {
-    color: '#6B7280',
+    color: COLORS.textSecondary,
     fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'Roboto',
   },
   categoryTooltip: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 12,
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: SPACING.md,
+    padding: SPACING.lg,
+    marginTop: SPACING.md,
     borderWidth: 1,
     borderColor: 'rgba(0, 0, 0, 0.05)',
     shadowColor: '#000',
@@ -1052,50 +1112,50 @@ const styles = StyleSheet.create({
   },
   categoryTooltipText: {
     fontSize: 14,
-    color: '#1F2937',
+    color: COLORS.textPrimary,
     lineHeight: 20,
-    marginBottom: 8,
+    marginBottom: SPACING.sm,
     fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'Roboto',
   },
   closeTooltipButton: {
     alignSelf: 'flex-end',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
     backgroundColor: '#3B82F6',
-    borderRadius: 8,
+    borderRadius: SPACING.sm,
   },
   closeTooltipText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#fff',
+    color: COLORS.white,
     fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'Roboto',
   },
   nav: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginVertical: 10,
-    paddingVertical: 8,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    marginVertical: SPACING.md,
+    paddingVertical: SPACING.sm,
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: SPACING.md,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
-    paddingHorizontal: 8,
+    paddingHorizontal: SPACING.sm,
   },
   navTab: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingVertical: SPACING.md,
+    borderRadius: SPACING.sm,
   },
   activeTab: {
     backgroundColor: 'rgba(59, 130, 246, 0.1)',
   },
   navTabText: {
     fontSize: 16,
-    color: '#4B5563',
+    color: COLORS.textSecondary,
     fontWeight: '600',
     fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'Roboto',
   },
@@ -1108,31 +1168,23 @@ const styles = StyleSheet.create({
     height: 3,
     backgroundColor: '#3B82F6',
     borderRadius: 2,
-    marginTop: 4,
+    marginTop: SPACING.xs,
   },
   tabContent: {
-    padding: 15,
-    backgroundColor: '#ffffff',
-    borderRadius: 10,
+    padding: SPACING.lg,
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: SPACING.md,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 3,
-    marginTop: 8,
+    marginTop: SPACING.sm,
   },
   noPostsText: {
     fontSize: 16,
-    color: '#7f8c8d',
+    color: COLORS.textSecondary,
     textAlign: 'center',
-  },
-  errorText: {
-    fontSize: 18,
-    color: '#EF4444',
-    textAlign: 'center',
-    marginTop: 10,
-    marginBottom: 20,
-    fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'Roboto',
   },
   postsContainer: {},
   reviewsContainer: {
@@ -1142,67 +1194,98 @@ const styles = StyleSheet.create({
   adContainer: {
     width: '100%',
     alignItems: 'center',
-    marginTop: 10,
-    marginBottom: 20,
+    marginTop: SPACING.md,
+    marginBottom: SPACING.xl,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#F7FAFC',
+    padding: SPACING.xl,
+    backgroundColor: COLORS.cardBackground,
+    borderRadius: SPACING.xl,
+    margin: SPACING.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.05)',
+    shadowColor: COLORS.white,
+    shadowOffset: { width: -4, height: -4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+  },
+  loadingLogoContainer: {
+    marginBottom: SPACING.lg,
+  },
+  loadingLogo: {
+    width: 80,
+    height: 80,
   },
   loadingText: {
-    fontSize: 16,
-    color: '#111827',
+    fontSize: 18,
+    color: COLORS.white,
     textAlign: 'center',
-    marginTop: 15,
+    fontWeight: '600',
+    fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'Roboto',
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#F7FAFC',
+    padding: SPACING.xl,
+    backgroundColor: COLORS.cardBackground,
+  },
+  errorText: {
+    fontSize: 18,
+    color: '#EF4444',
+    textAlign: 'center',
+    marginTop: SPACING.md,
+    marginBottom: SPACING.xl,
+    fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'Roboto',
   },
   reloadButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 12,
+    borderRadius: SPACING.md,
     overflow: 'hidden',
   },
   reloadButtonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 12,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    borderRadius: SPACING.md,
   },
   reloadButtonText: {
-    color: '#FFF',
+    color: COLORS.white,
     fontSize: 16,
     fontWeight: '600',
-    marginLeft: 8,
+    marginLeft: SPACING.sm,
+    fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'Roboto',
   },
   backButtonError: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 12,
+    borderRadius: SPACING.md,
     overflow: 'hidden',
-    marginTop: 20,
+    marginTop: SPACING.xl,
   },
   backButtonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 12,
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    borderRadius: SPACING.md,
   },
   backButtonText: {
-    color: '#FFF',
+    color: COLORS.white,
     fontSize: 16,
     fontWeight: '600',
-    marginLeft: 8,
+    marginLeft: SPACING.sm,
+    fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'Roboto',
   },
   fullScreenContainer: {
     flex: 1,
@@ -1221,11 +1304,11 @@ const styles = StyleSheet.create({
   },
   closeModalButton: {
     position: 'absolute',
-    top: 40,
-    right: 20,
-    padding: 10,
+    top: SPACING.xl,
+    right: SPACING.lg,
+    padding: SPACING.md,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    borderRadius: 20,
+    borderRadius: SPACING.lg,
     zIndex: 20,
   },
 });

@@ -19,7 +19,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import ShopReview from "../../components/shop/ShopReview";
 import Followers from "../../components/shop/Followers";
-import ShopProduct from "../../components/shop/ShopProduct";
+import ShopProduct from "../../components/shop/AdminShopProduct";
 import ShopPostForm from "../../components/shop/ShopPostForm";
 import AdminShopPosts from "../../components/shop/AdminShopPost";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
