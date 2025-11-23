@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Image,
@@ -13,13 +13,28 @@ import { Ionicons } from '@expo/vector-icons';
 import api from '../../api';
 import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-export default function ChatImage({ uri, messageId, sessionId }) {
+export default function ChatImage({ uri, messageId }) {
   const [isVisible, setIsVisible] = useState(false);
   const [currentUri, setCurrentUri] = useState(uri);
   const [saving, setSaving] = useState(false);
+  const [sessionId, setSessionId] = useState(null);
+
+  useEffect(() => {
+      const fetchSessionId = async () => {
+        try {
+          const sessionIdString = await AsyncStorage.getItem("sessionToken");
+          setSessionId(sessionIdString);
+        } catch (err) {
+          console.error("Error fetching session ID:", err);
+        }
+      };
+      fetchSessionId();
+    }, []);
+  
 
   const handleImagePress = () => {
     if (currentUri) {

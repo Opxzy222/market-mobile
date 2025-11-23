@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator,
   TouchableOpacity, TextInput, Button, KeyboardAvoidingView, FlatList,
-  Platform, Modal, TouchableWithoutFeedback, Alert, Keyboard, StatusBar
+  Platform, Modal, TouchableWithoutFeedback, Alert, Keyboard, StatusBar, Image
 } from 'react-native';
 import api from '../../api';
 import { Checkbox } from 'expo-checkbox';
@@ -11,7 +11,7 @@ import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialIcons from "react-native-vector-icons/MaterialIcons";
 import debounce from 'lodash/debounce';
-
+import ProductImageManager from '@/components/shop/ProductImageManager';
 
 const UpdateShopProducts = () => {
   const [groupedProductSuggestions, setGroupedProductSuggestions] = useState({});
@@ -20,7 +20,7 @@ const UpdateShopProducts = () => {
   const [customProductName, setCustomProductName] = useState('');
   const [customProductCategory, setCustomProductCategory] = useState('');
   const [customProductSubcategory, setCustomProductSubcategory] = useState('');
-  const [editingIndex, setEditingIndex] = useState(null); // Track which product is being edited
+  const [editingIndex, setEditingIndex] = useState(null);
   const [activeDropdown, setActiveDropdown] = useState(null);
   const [selectedItems, setSelectedItems] = useState({});
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
@@ -28,71 +28,69 @@ const UpdateShopProducts = () => {
   const [isSubcategoryDropdownOpen, setIsSubcategoryDropdownOpen] = useState(false);
   const [subcategorySearchQuery, setSubcategorySearchQuery] = useState("");
   const customNameInputRef = useRef(null);
-  const [isFetching, setIsFetching] = useState(true); // New state for fetch loading
+  const [isFetching, setIsFetching] = useState(true);
 
-  // To control the modal's visibility
   const [priceModalVisible, setPriceModalVisible] = useState(false);
   const [categoryResetTrigger, setCategoryResetTrigger] = useState(0);
   const [subcategoryTouched, setSubcategoryTouched] = useState(false);
   const [subcategoryResetTrigger, setSubcategoryResetTrigger] = useState(0);
 
-// To store the current context: which product, in which section (custom or suggested)
-  const [activePriceContext, setActivePriceContext] = useState(null); // null or an object like: { type: 'custom' | 'suggested', index or category/subcategory/id }
-
-// To store the temporary value in the modal input before saving
+  const [activePriceContext, setActivePriceContext] = useState(null);
   const [tempPrice, setTempPrice] = useState('');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [pendingDeleteInfo, setPendingDeleteInfo] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [modalValue, setModalValue] = useState('');
-  const [modalTargetInfo, setModalTargetInfo] = useState(null); // category, subcategory, productId
-  const [dropdownState, setDropdownState] = useState({}); // { [dropdownKey]: { isOpen: boolean, searchQuery: string, filteredItems: array } }
+  const [modalTargetInfo, setModalTargetInfo] = useState(null);
+  const [dropdownState, setDropdownState] = useState({});
   const [expandedCategories, setExpandedCategories] = useState({});
   const [loading, setLoading] = useState(false);
-
+  const [pendingImages, setPendingImages] = useState<Record<string, any>>({});
 
   const params = useLocalSearchParams();
   const { shop_id } = params;
   const router = useRouter(); 
   const contentData = useMemo(() => [{ key: "content" }], []);
 
-// Helper function to generate a unique key for each dropdown
-const getDropdownKey = (category, subcategory) => `${category}-${subcategory}`;
+  const getDropdownKey = (category, subcategory) => `${category}-${subcategory}`;
+  const getImageKey = (type: 'suggestion' | 'custom', id: string | number, item?: any) =>
+  type === 'suggestion'
+    ? `suggestion_${id}`
+    : `custom_${item?.serverIndex !== undefined ? item.serverIndex : id}`;
 
   const openPriceModal = (context, initialPrice) => {
-  setActivePriceContext(context);  // e.g. { type: 'custom', index: 0 } or { type: 'suggested', category, subcategory, productId }
-  setTempPrice(initialPrice || '');
-  setPriceModalVisible(true);
-};
+    setActivePriceContext(context);
+    setTempPrice(initialPrice || '');
+    setPriceModalVisible(true);
+  };
 
   function formatWithCommas(number) {
-  if (!number && number !== 0) return '';
-  return parseInt(number, 10).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-}
-
-const savePriceFromModal = () => {
-  if (!activePriceContext) return;
-
-  if (activePriceContext.type === 'custom') {
-    handleCustomProductPriceChange(activePriceContext.index, tempPrice);
-  } else if (activePriceContext.type === 'suggested') {
-    handleProductPriceChange(
-      activePriceContext.category,
-      activePriceContext.subcategory,
-      activePriceContext.productId,
-      tempPrice
-    );
+    if (!number && number !== 0) return '';
+    return parseInt(number, 10).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   }
 
-  setPriceModalVisible(false);
-  setActivePriceContext(null);
-  setTempPrice('');
-};
+  const savePriceFromModal = () => {
+    if (!activePriceContext) return;
 
+    if (activePriceContext.type === 'custom') {
+      handleCustomProductPriceChange(activePriceContext.index, tempPrice);
+    } else if (activePriceContext.type === 'suggested') {
+      handleProductPriceChange(
+        activePriceContext.category,
+        activePriceContext.subcategory,
+        activePriceContext.productId,
+        tempPrice
+      );
+    }
+
+    setPriceModalVisible(false);
+    setActivePriceContext(null);
+    setTempPrice('');
+  };
 
   useEffect(() => {
   const fetchProductSuggestions = async () => {
-    setIsFetching(true); // Start loading
+    setIsFetching(true);
     try {
       const response = await api.post(
         '/product-suggestion/',
@@ -104,20 +102,19 @@ const savePriceFromModal = () => {
         }
       );
 
-      console.log('Fetch Success:', response.data);
-
-      // Destructure the response
       const { product_suggestions, selected_products } = response.data;
 
       if (product_suggestions && selected_products) {
         setGroupedProductSuggestions(product_suggestions);
 
+        // ────────────────────────────── SUGGESTED PRODUCTS ──────────────────────────────
         const preselectedProducts = selected_products
           .filter(product => !product.custom_name)
           .reduce((acc, product) => {
             const suggestion = Object.values(product_suggestions)
               .flatMap(subcats => Object.values(subcats).flat())
               .find(s => s.id === product.product_suggestion_id);
+
             if (suggestion) {
               const category = Object.keys(product_suggestions).find(key =>
                 Object.values(product_suggestions[key]).flat().some(s => s.id === product.product_suggestion_id)
@@ -139,6 +136,7 @@ const savePriceFromModal = () => {
                     subcategory_id: suggestion.subcategory_id,
                     category_name: category,
                     subcategory_name: subcategory,
+                    image: product.image || null, // ← Preserved from server
                   });
                 }
               }
@@ -148,44 +146,41 @@ const savePriceFromModal = () => {
 
         setSelectedProducts(preselectedProducts);
 
+        // ────────────────────────────── CUSTOM PRODUCTS ──────────────────────────────
         const customProductsList = selected_products
           .filter(product => product.custom_name)
-          .map(product => {
+          .map((product, index) => {
             const category = Object.keys(product_suggestions).find(key => key === product.category_name);
-            const subcategory = category ? Object.keys(product_suggestions[category]).find(subcat => subcat === product.subcategory_name) : undefined;
+            const subcategory = category 
+              ? Object.keys(product_suggestions[category]).find(subcat => subcat === product.subcategory_name)
+              : undefined;
 
             return {
               name: product.custom_name,
-              category: category,
-              subcategory: subcategory,
+              category: category || '',
+              subcategory: subcategory || '',
               is_available: product.is_available,
               price: product.price || '',
-              category_id: product.category_id,
-              subcategory_id: product.subcategory_id,
-              category_name: category,
-              subcategory_name: subcategory,
+              category_id: product.category_id || '',
+              subcategory_id: product.subcategory_id || '',
+              category_name: product.category_name || '',
+              subcategory_name: product.subcategory_name || '',
+              image: product.image || null,        // ← NOW SAVED FOR CUSTOM TOO!
+              serverIndex: index,                  // ← Stable index from server order
             };
           });
 
         setCustomProducts(customProductsList);
-      } else {
-        console.error('Error: Missing product suggestions or selected products in the response.');
       }
     } catch (error) {
       console.error('Error fetching product suggestions:', error);
     } finally {
-      setIsFetching(false); // Stop loading
+      setIsFetching(false);
     }
   };
 
   fetchProductSuggestions();
 }, [shop_id]);
-
-  const openPriceModalForCustomCreate = () => {
-    setModalTargetInfo({ type: "custom", phase: "create" });
-    setModalValue("");
-    setShowModal(true);
-};
 
   const handleAddCustomProduct = () => {
     if (!customProductName) {
@@ -224,13 +219,6 @@ const savePriceFromModal = () => {
     setSubcategoryTouched(false);
   };
 
-  const resetCategoryAndSubcategory = () => {
-  setCustomProductCategory('');
-  setCustomProductSubcategory('');
-  setCategoryResetTrigger(prev => prev + 1); // see below
-};
-
-
   const handleRemoveCustomProduct = index => {
     setCustomProducts(customProducts.filter((_, i) => i !== index));
   };
@@ -250,9 +238,9 @@ const savePriceFromModal = () => {
             }))
         }
     }));
-};
+  };
 
-const handleCheckboxChange = (category, subcategory, productId) => {
+  const handleCheckboxChange = (category, subcategory, productId) => {
     setSelectedProducts(prevState => ({
         ...prevState,
         [category]: {
@@ -264,70 +252,68 @@ const handleCheckboxChange = (category, subcategory, productId) => {
             )
         }
     }));
-};
-  
-// Memoized handleSelection function to avoid re-creation
-const handleSelection = useCallback((category, subcategory, itemId, isSelected, selectedValues, products, productsMap, selectedProducts) => {
-  const newSelectedValues = isSelected
-    ? selectedValues.filter((id) => id !== itemId)
-    : [...selectedValues, itemId];
+  };
 
-  const selectedOptions = newSelectedValues
-    .map((id) => {
-      const product = productsMap[`${category}_${subcategory}_${id}`];
-      if (!product) {
-        console.warn(`Product with ID ${id} not found in products array`);
-        return null;
-      }
-      const existingProduct = selectedProducts[category]?.[subcategory]?.find(
-        (p) => p.value === id
-      );
-      return {
-        value: product.id,
-        label: product.name,
-        is_available: existingProduct ? existingProduct.is_available : true,
-        price: existingProduct?.price ?? null,
-      };
-    })
-    .filter((option) => option !== null);
+  const handleSelection = useCallback((category, subcategory, itemId, isSelected, selectedValues, products, productsMap, selectedProducts) => {
+    const newSelectedValues = isSelected
+      ? selectedValues.filter((id) => id !== itemId)
+      : [...selectedValues, itemId];
 
-  handleProductChange(category, subcategory, selectedOptions);
-}, [handleProductChange, productsMap]);
+    const selectedOptions = newSelectedValues
+      .map((id) => {
+        const product = productsMap[`${category}_${subcategory}_${id}`];
+        if (!product) {
+          console.warn(`Product with ID ${id} not found in products array`);
+          return null;
+        }
+        const existingProduct = selectedProducts[category]?.[subcategory]?.find(
+          (p) => p.value === id
+        );
+        return {
+          value: product.id,
+          label: product.name,
+          is_available: existingProduct ? existingProduct.is_available : true,
+          price: existingProduct?.price ?? null,
+        };
+      })
+      .filter((option) => option !== null);
 
-// Memoized ProductItem component to avoid re-creation
-const ProductItem = React.memo(({ item, isSelected, onSelect }) => {
-  return (
-    <TouchableOpacity
-      onPress={onSelect}
-      style={{
-        flexDirection: "row",
-        alignItems: "center",
-        padding: 10,
-        backgroundColor: isSelected ? "#f0f0f0" : "#fff",
-      }}
-    >
-      <MaterialCommunityIcons
-        name={isSelected ? "checkbox-marked" : "checkbox-blank-outline"}
-        size={20}
-        color={isSelected ? "#4682B4" : "#CCC"}
-        style={{ marginRight: 10 }}
-      />
-      <Text
+    handleProductChange(category, subcategory, selectedOptions);
+  }, [handleProductChange]);
+
+  const ProductItem = React.memo(({ item, isSelected, onSelect }) => {
+    return (
+      <TouchableOpacity
+        onPress={onSelect}
         style={{
-          fontSize: 14,
-          color: "#000",
-          flex: 1,
+          flexDirection: "row",
+          alignItems: "center",
+          padding: 10,
+          backgroundColor: isSelected ? "#f0f0f0" : "#fff",
         }}
-        numberOfLines={1}
-        ellipsizeMode="tail"
       >
-        {item.name}
-      </Text>
-    </TouchableOpacity>
-  );
-});
+        <MaterialCommunityIcons
+          name={isSelected ? "checkbox-marked" : "checkbox-blank-outline"}
+          size={20}
+          color={isSelected ? "#4682B4" : "#CCC"}
+          style={{ marginRight: 10 }}
+        />
+        <Text
+          style={{
+            fontSize: 14,
+            color: "#000",
+            flex: 1,
+          }}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
+          {item.name}
+        </Text>
+      </TouchableOpacity>
+    );
+  });
 
-const handleProductPriceChange = (category, subcategory, productId, value) => {
+  const handleProductPriceChange = (category, subcategory, productId, value) => {
     setSelectedProducts(prevState => ({
         ...prevState,
         [category]: {
@@ -339,9 +325,9 @@ const handleProductPriceChange = (category, subcategory, productId, value) => {
             )
         }
     }));
-};
+  };
 
-const handleCustomProductCheckboxChange = (index) => {
+  const handleCustomProductCheckboxChange = (index) => {
     setCustomProducts(prevState => {
         const newProducts = [...prevState];
         newProducts[index] = {
@@ -350,190 +336,205 @@ const handleCustomProductCheckboxChange = (index) => {
         };
         return newProducts;
     });
-};
+  };
 
-const handleCustomProductPriceChange = (index, value) => {
+  const handleCustomProductPriceChange = (index, value) => {
     setCustomProducts(prevState => {
         const newProducts = [...prevState];
         newProducts[index].price = value;
         return newProducts;
     });
-};
+  };
 
-const handleCustomProductNameChange = (index, value) => {
-  const updatedProducts = [...customProducts];
-  updatedProducts[index].name = value.trim();
-  setCustomProducts(updatedProducts);
-};
+  const handleCustomProductNameChange = (index, value) => {
+    const updatedProducts = [...customProducts];
+    updatedProducts[index].name = value.trim();
+    setCustomProducts(updatedProducts);
+  };
 
+  const handleRemoveProduct = (category, subcategory, productId) => {
+    setSelectedProducts(prevState => ({
+        ...prevState,
+        [category]: {
+            ...prevState[category],
+            [subcategory]: prevState[category][subcategory].filter(product => product.value !== productId),
+        }
+    }));
+  };
 
-const handleRemoveProduct = (category, subcategory, productId) => {
-  setSelectedProducts(prevState => ({
-      ...prevState,
-      [category]: {
-          ...prevState[category],
-          [subcategory]: prevState[category][subcategory].filter(product => product.value !== productId),
-      }
-  }));
-};
+  const handleSubmitProducts = async () => {
+  try {
+    const formData = new FormData();
+    formData.append('shop_id', shop_id);
+    setLoading(true);
 
-const handleSubmitProducts = async () => {
-    try {
-        const formData = new FormData();
-        formData.append('shop_id', shop_id);
-        setLoading(true);
+    const allProducts = [];
+    const seenProductIds = new Set();
 
-       // Deduplicate products and filter out invalid entries
-const allProducts = [];
-const seenProductIds = new Set();
-
-Object.entries(selectedProducts).forEach(([category, subcategories]) => {
-  Object.values(subcategories).flat().forEach(product => {
-    if (!seenProductIds.has(product.value)) {
-      seenProductIds.add(product.value);
-      allProducts.push(product);
-    }
-  });
-});
-
-// Construct formData
-allProducts.forEach(product => {
-  // Append the product suggestion ID
-  formData.append('product_suggestions[]', product.value);
-
-  // Append is_available in the format is_available_${product_suggestion_id}
-  formData.append(`is_available_${product.value}`, product.is_available ? 'true' : 'false');
-
-  // Append price in the format price_${product_suggestion_id}
-  // If price is null or undefined, send an empty string (backend will handle it as None)
-  formData.append(`price_${product.value}`, product.price ? product.price.toString() : '');
-
-  // Log for debugging
-  console.log(`Appending product ${product.value}:`, {
-    product_suggestion: product.value,
-    is_available: `is_available_${product.value}: ${product.is_available ? 'true' : 'false'}`,
-    price: `price_${product.value}: ${product.price ? product.price.toString() : ''}`,
-  });
-
-  // Note: category_id and subcategory_id are not needed for product suggestions
-  // (They are used for custom products, which we're not handling in this loop)
-});
-
-        customProducts.forEach((customProduct, index) => {
-            formData.append('custom_products[]', customProduct.name);
-            formData.append(`is_available_custom_${index}`, customProduct.is_available);
-            formData.append(`price_custom_${index}`, customProduct.price);
-            formData.append(`category_custom_${index}`, customProduct.category_id || ''); // Allow empty category_id
-            formData.append(`subcategory_custom_${index}`, customProduct.subcategory_id || ''); 
-        });
-
-        const response = await api.post('/update-shop-products/', formData, {
-            headers: {
-                'Content-Type': 'multipart/form-data',
-            },
-        });
-        console.log('Products updated:', response.data);
-        router.push({pathname: 'shop/ShopProduct', params: { shopId: shop_id }, });
-    } catch (error) {
-        console.error('Error updating products:', error);
-        Alert.alert('Error', 'Failed to update products. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-};
-  
-  // Compute productsMap and selectedValuesMap at the top level
-const productsMap = useMemo(() => {
-  const map = {};
-  Object.entries(groupedProductSuggestions).forEach(([category, subcategories]) => {
-    Object.entries(subcategories).forEach(([subcategory, products]) => {
-      products.forEach(product => {
-        map[`${category}_${subcategory}_${product.id}`] = product;
-      });
-    });
-  });
-  return map;
-}, [groupedProductSuggestions]);
-  
-const sortedSubcategories = useMemo(() => {
-  return Object.entries(groupedProductSuggestions).reduce((acc, [category, subcategories]) => {
-    const sorted = Object.keys(subcategories).sort((a, b) => {
-      const aHasProducts = selectedProducts[category]?.[a]?.length > 0;
-      const bHasProducts = selectedProducts[category]?.[b]?.length > 0;
-      if (aHasProducts && !bHasProducts) return -1; // Populated first
-      if (!aHasProducts && bHasProducts) return 1;  // Unpopulated last
-      return a.localeCompare(b); // Alphabetical for equal status
-    });
-    acc[category] = sorted;
-    return acc;
-  }, {});
-}, [groupedProductSuggestions, selectedProducts]);
-
-const selectedValuesMap = useMemo(() => {
-  const map = {};
-  Object.entries(selectedProducts).forEach(([category, subcategories]) => {
-    Object.entries(subcategories).forEach(([subcategory, products]) => {
-      const selectedValues = products
-        .map(p => p.value)
-        .filter(id => id !== undefined) || [];
-      map[`${category}_${subcategory}`] = new Set(selectedValues);
-    });
-  });
-  return map;
-}, [selectedProducts]);
-  
-useEffect(() => {
-  const initialExpanded = Object.keys(groupedProductSuggestions).reduce((acc, category) => {
-    acc[category] = true; // Default to expanded
-    return acc;
-  }, {});
-  setExpandedCategories(initialExpanded);
-}, [groupedProductSuggestions]);
-
-const toggleCategory = (category) => {
-  setExpandedCategories((prev) => ({
-    ...prev,
-    [category]: !prev[category],
-  }));
-};
-
-useEffect(() => {
-  const initializedSelectedProducts = {};
-  Object.entries(groupedProductSuggestions).forEach(
-    ([category, subcategories]) => {
-      initializedSelectedProducts[category] = {};
-      Object.keys(subcategories).forEach((subcategory) => {
-        if (!initializedSelectedProducts[category][subcategory]) {
-          initializedSelectedProducts[category][subcategory] =
-            selectedProducts[category]?.[subcategory] || [];
+    // Collect all selected suggested products
+    Object.entries(selectedProducts).forEach(([category, subcategories]) => {
+      Object.values(subcategories).flat().forEach(product => {
+        if (!seenProductIds.has(product.value)) {
+          seenProductIds.add(product.value);
+          allProducts.push(product);
         }
       });
-    }
-  );
-  setSelectedProducts(initializedSelectedProducts);
-}, [groupedProductSuggestions]);
-  
-const debouncedSetDropdownState = useCallback(
-  debounce((dropdownKey, dropdownData, text, products) => {
-    const filtered = products
-      .filter((product) => product.name.toLowerCase().includes(text.toLowerCase()))
-      .map((product) => ({
-        id: product.id,
-        name: product.name,
-      }));
-    setDropdownState((prev) => ({
-      ...prev,
-      [dropdownKey]: {
-        ...dropdownData,
-        searchQuery: text,
-        filteredItems: filtered,
-      },
-    }));
-  }, 300),
-  []
-);
+    });
 
-return (
+    // SUGGESTED PRODUCTS
+    allProducts.forEach(product => {
+      const productId = product.value;
+
+      formData.append('product_suggestions[]', productId);
+      formData.append(`is_available_${productId}`, product.is_available ? 'true' : 'false');
+      formData.append(`price_${productId}`, product.price ? product.price.toString() : '');
+
+      const imgKey = getImageKey('suggestion', productId);
+
+      if (pendingImages[imgKey]) {
+        // User uploaded a NEW image → replace
+        formData.append(`image_suggestion_${productId}`, pendingImages[imgKey]);
+      } else if (product.image) {
+        // Image exists on server + user did nothing → tell backend to KEEP it
+        formData.append(`keep_image_suggestion_${productId}`, 'true');
+      }
+      // If neither → user removed image → backend will delete it
+    });
+
+    // CUSTOM PRODUCTS
+    customProducts.forEach((customProduct, index) => {
+      formData.append('custom_products[]', customProduct.name);
+      formData.append(`is_available_custom_${index}`, customProduct.is_available ? 'true' : 'false');
+      formData.append(`price_custom_${index}`, customProduct.price || '');
+      formData.append(`category_custom_${index}`, customProduct.category_id || '');
+      formData.append(`subcategory_custom_${index}`, customProduct.subcategory_id || '');
+
+      const imgKey = getImageKey('custom', index);
+
+      if (pendingImages[imgKey]) {
+        // User uploaded a new image
+        formData.append(`image_custom_${index}`, pendingImages[imgKey]);
+      } else if (customProduct.image) {
+        // Custom product has a saved image (once you add image support in API)
+        formData.append(`keep_image_custom_${index}`, 'true');
+      }
+      // If neither → user removed image
+    });
+
+    const response = await api.post('/update-shop-products/', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+
+    console.log('Products updated successfully:', response.data);
+    Alert.alert('Success', 'Products updated successfully!');
+
+    router.push({
+      pathname: 'shop/ShopProduct',
+      params: { shopId: shop_id },
+    });
+
+  } catch (error: any) {
+    console.error('Error updating products:', error);
+    const msg = error.response?.data?.error || 'Failed to update products. Please try again.';
+    Alert.alert('Error', msg);
+  } finally {
+    setLoading(false);
+  }
+};
+
+  const productsMap = useMemo(() => {
+    const map = {};
+    Object.entries(groupedProductSuggestions).forEach(([category, subcategories]) => {
+      Object.entries(subcategories).forEach(([subcategory, products]) => {
+        products.forEach(product => {
+          map[`${category}_${subcategory}_${product.id}`] = product;
+        });
+      });
+    });
+    return map;
+  }, [groupedProductSuggestions]);
+  
+  const sortedSubcategories = useMemo(() => {
+    return Object.entries(groupedProductSuggestions).reduce((acc, [category, subcategories]) => {
+      const sorted = Object.keys(subcategories).sort((a, b) => {
+        const aHasProducts = selectedProducts[category]?.[a]?.length > 0;
+        const bHasProducts = selectedProducts[category]?.[b]?.length > 0;
+        if (aHasProducts && !bHasProducts) return -1;
+        if (!aHasProducts && bHasProducts) return 1;
+        return a.localeCompare(b);
+      });
+      acc[category] = sorted;
+      return acc;
+    }, {});
+  }, [groupedProductSuggestions, selectedProducts]);
+
+  const selectedValuesMap = useMemo(() => {
+    const map = {};
+    Object.entries(selectedProducts).forEach(([category, subcategories]) => {
+      Object.entries(subcategories).forEach(([subcategory, products]) => {
+        const selectedValues = products
+          .map(p => p.value)
+          .filter(id => id !== undefined) || [];
+        map[`${category}_${subcategory}`] = new Set(selectedValues);
+      });
+    });
+    return map;
+  }, [selectedProducts]);
+  
+  useEffect(() => {
+    const initialExpanded = Object.keys(groupedProductSuggestions).reduce((acc, category) => {
+      acc[category] = true;
+      return acc;
+    }, {});
+    setExpandedCategories(initialExpanded);
+  }, [groupedProductSuggestions]);
+
+  const toggleCategory = (category) => {
+    setExpandedCategories((prev) => ({
+      ...prev,
+      [category]: !prev[category],
+    }));
+  };
+
+  useEffect(() => {
+    const initializedSelectedProducts = {};
+    Object.entries(groupedProductSuggestions).forEach(
+      ([category, subcategories]) => {
+        initializedSelectedProducts[category] = {};
+        Object.keys(subcategories).forEach((subcategory) => {
+          if (!initializedSelectedProducts[category][subcategory]) {
+            initializedSelectedProducts[category][subcategory] =
+              selectedProducts[category]?.[subcategory] || [];
+          }
+        });
+      }
+    );
+    setSelectedProducts(initializedSelectedProducts);
+  }, [groupedProductSuggestions]);
+  
+  const debouncedSetDropdownState = useCallback(
+    debounce((dropdownKey, dropdownData, text, products) => {
+      const filtered = products
+        .filter((product) => product.name.toLowerCase().includes(text.toLowerCase()))
+        .map((product) => ({
+          id: product.id,
+          name: product.name,
+        }));
+      setDropdownState((prev) => ({
+        ...prev,
+        [dropdownKey]: {
+          ...dropdownData,
+          searchQuery: text,
+          filteredItems: filtered,
+        },
+      }));
+    }, 300),
+    []
+  );
+
+  return (
   <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
     <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
     <View style={styles.header}>
@@ -569,8 +570,8 @@ return (
                     <Text style={styles.customTableTitle}>Create Your Own Listing</Text>
                     <Table borderStyle={{ borderWidth: 1, borderColor: "#ddd" }}>
                       <Row
-                        data={["Item Name", "Category", "Subcategory", "Available", "Price", "Action"]}
-                        flexArr={[2.5, 1.2, 1.5, 0.8, 1.2, 0.8]}
+                        data={["Item Name", "Category", "Subcategory", "Available", "Price", "Img", "Action"]}
+                        flexArr={[2.5, 1.2, 1.5, 0.8, 1.2, 0.8, 0.8]}
                         style={styles.tableHeader}
                         textStyle={styles.tableHeaderText}
                       />
@@ -584,8 +585,8 @@ return (
                                   style={styles.customNameInput}
                                   value={product.name}
                                   onChangeText={(text) => handleCustomProductNameChange(index, text)}
-                                  onBlur={() => setEditingIndex(null)} // Temporarily replace handleSaveProductName
-                                  onSubmitEditing={() => setEditingIndex(null)} // Temporarily replace handleSaveProductName
+                                  onBlur={() => setEditingIndex(null)}
+                                  onSubmitEditing={() => setEditingIndex(null)}
                                   placeholder="Enter listing name"
                                   placeholderTextColor="#5A5A5A"
                                   autoFocus
@@ -622,6 +623,15 @@ return (
                                   {product.price ? `₦${Number(product.price).toLocaleString()}` : "Set Price"}
                                 </Text>
                               </TouchableOpacity>,
+                              <ProductImageManager
+  productKey={getImageKey('custom', index, product)}  // ← Pass `product` for serverIndex
+  currentImageUrl={product.image ?? null}            // ← NOW SHOWS SAVED IMAGE
+  onImageSelect={(key, file) => setPendingImages(p => ({ ...p, [key]: file }))}
+  onImageRemove={(key) => setPendingImages(p => {
+    const { [key]: _, ...rest } = p;
+    return rest;
+  })}
+/>,
                               <TouchableOpacity
                                 onPress={() => handleRemoveCustomProduct(index)}
                                 style={styles.removeButton}
@@ -630,7 +640,7 @@ return (
                               </TouchableOpacity>,
                             ],
                           ]}
-                          flexArr={[2.5, 1.2, 1.5, 0.8, 1.2, 0.8]}
+                          flexArr={[2.5, 1.2, 1.5, 0.8, 1.2, 0.8, 0.8]}
                           textStyle={styles.tableText}
                         />
                       ))}
@@ -651,7 +661,6 @@ return (
                     blurOnSubmit={true}
                   />
                   <View style={styles.customCard}>
-                    {/* Custom Category Dropdown */}
                     <TouchableOpacity
                       style={styles.dropdownBox}
                       onPress={() => {
@@ -667,7 +676,6 @@ return (
                       <MaterialCommunityIcons name="chevron-down" size={20} color="#666" />
                     </TouchableOpacity>
 
-                    {/* Category Dropdown Modal */}
                     <Modal
                       visible={isCategoryDropdownOpen}
                       animationType="slide"
@@ -726,7 +734,6 @@ return (
                       </TouchableWithoutFeedback>
                     </Modal>
 
-                    {/* Custom Subcategory Dropdown */}
                     <TouchableOpacity
                       style={[styles.dropdownBox, { opacity: customProductCategory ? 1 : 0.5 }]}
                       onPress={() => {
@@ -744,7 +751,6 @@ return (
                       <MaterialCommunityIcons name="chevron-down" size={20} color="#666" />
                     </TouchableOpacity>
 
-                    {/* Subcategory Dropdown Modal */}
                     <Modal
                       visible={isSubcategoryDropdownOpen}
                       animationType="slide"
@@ -882,35 +888,10 @@ return (
                                   }));
                                 }}
                               >
-                                <View
-                                  style={{
-                                    flex: 1,
-                                    backgroundColor: "rgba(0,0,0,0.5)",
-                                    justifyContent: "center",
-                                    alignItems: "center",
-                                  }}
-                                >
-                                  <View
-                                    style={{
-                                      backgroundColor: "#fff",
-                                      borderRadius: 8,
-                                      width: "90%",
-                                      maxHeight: "80%",
-                                      shadowColor: "#000",
-                                      shadowOffset: { width: 0, height: 2 },
-                                      shadowOpacity: 0.1,
-                                      shadowRadius: 4,
-                                      elevation: 3,
-                                    }}
-                                  >
+                                <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" }}>
+                                  <View style={{ backgroundColor: "#fff", borderRadius: 8, width: "90%", maxHeight: "80%", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 }}>
                                     <TextInput
-                                      style={{
-                                        padding: 10,
-                                        borderBottomWidth: 1,
-                                        borderBottomColor: "#ddd",
-                                        fontSize: 16,
-                                        color: "#000",
-                                      }}
+                                      style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: "#ddd", fontSize: 16, color: "#000" }}
                                       placeholder="Search Products..."
                                       placeholderTextColor="#5A5A5A"
                                       value={dropdownData.searchQuery}
@@ -954,13 +935,7 @@ return (
                                       keyboardShouldPersistTaps="handled"
                                     />
                                     <TouchableOpacity
-                                      style={{
-                                        padding: 10,
-                                        backgroundColor: "#4682B4",
-                                        borderRadius: 4,
-                                        margin: 10,
-                                        alignItems: "center",
-                                      }}
+                                      style={{ padding: 10, backgroundColor: "#4682B4", borderRadius: 4, margin: 10, alignItems: "center" }}
                                       onPress={() => {
                                         setDropdownState((prev) => ({
                                           ...prev,
@@ -986,8 +961,8 @@ return (
                                 <View style={styles.tableWrapper}>
                                   <Table borderStyle={{ borderWidth: 1, borderColor: "#ddd" }}>
                                     <Row
-                                      data={["Listing Name", "Available", "Price", "Delete"]}
-                                      flexArr={[2.7, 0.8, 1.3, 1]}
+                                      data={["Listing Name", "Available", "Price", "Img", "Delete"]}
+                                      flexArr={[2.7, 0.8, 1.3, 0.8, 1]}
                                       style={styles.tableHeader}
                                       textStyle={styles.tableHeaderText}
                                     />
@@ -1025,6 +1000,15 @@ return (
                                                 </Text>
                                               </TouchableOpacity>
                                             </View>,
+                                            <ProductImageManager
+  productKey={getImageKey('suggestion', product.value)}
+  currentImageUrl={product.image ?? null}
+  onImageSelect={(key, file) => setPendingImages(p => ({ ...p, [key]: file }))}
+  onImageRemove={(key) => setPendingImages(p => {
+    const { [key]: _, ...rest } = p;
+    return rest;
+  })}
+/>,
                                             <View style={{ paddingVertical: 10 }}>
                                               <TouchableOpacity
                                                 onPress={() => {
@@ -1038,7 +1022,7 @@ return (
                                             </View>,
                                           ],
                                         ]}
-                                        flexArr={[2.7, 0.8, 1.3, 1]}
+                                        flexArr={[2.7, 0.8, 1.3, 0.8, 1]}
                                         textStyle={styles.tableText}
                                       />
                                     ))}
@@ -1164,7 +1148,7 @@ return (
     )}
   </SafeAreaView>
 );
-}
+};
 
 const styles = StyleSheet.create({
   scrollContainer: {
@@ -1201,25 +1185,8 @@ const styles = StyleSheet.create({
   headerSpacer: {
     width: 42,
   },
-  shopManagerContainer: {
-    flex: 1,
-    backgroundColor: "red",
-    borderRadius: 12,
-    padding: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
   shopManagerContent: {
     flex: 1,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#212529",
-    marginBottom: 16,
   },
   customProductContainer: {
     marginBottom: 24,
@@ -1248,18 +1215,12 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     textAlign: "center",
   },
-   tableRow: {
-    paddingVertical: 10, // Adds spacing above and below the row content
-    alignItems: "center", // Ensures content is vertically centered within the row
-   
-  },
   tableText: {
     fontSize: 14,
     color: "#495057",
     textAlign: "flex-start",
     marginLeft: 5,
   },
-  
   customProductInputs: {
     backgroundColor: '#fff',
     padding: 16,
@@ -1284,23 +1245,22 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   customCard: {
-    flexDirection: 'column', // Stack vertically
-    gap: 12, // Space between category and subcategory
+    flexDirection: 'column',
+    gap: 12,
   },
   checkBox: {
     alignSelf: "center",
   },
   priceInput: {
-  borderWidth: 1,
-  borderColor: '#ccc',
-  borderRadius: 5,
-  paddingHorizontal: 10,
-  paddingVertical: 10, // Increase vertical padding
-  height: 50, // Explicit height for better tap area
-  fontSize: 16,
-  color: '#333',
-},
-  
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    height: 50,
+    fontSize: 16,
+    color: '#333',
+  },
   removeButtonText: {
     color: "red",
     fontSize: 17,
@@ -1355,43 +1315,41 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   categoryContainer: {
-  marginBottom: 32,
-  paddingVertical: 8,
-  paddingHorizontal: 12,
-  backgroundColor: '#f1f3f5', // soft highlight to make it feel like a section
-  borderRadius: 10,
-},
+    marginBottom: 32,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#f1f3f5',
+    borderRadius: 10,
+  },
   categoryTitle: {
-  fontSize: 18,
-  fontWeight: 'bold',
-  color: '#212529',
-  marginBottom: 10,
-},
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#212529',
+    marginBottom: 10,
+  },
   subcategoryContainer: {
-  marginBottom: 20,
-  paddingLeft: 12, // slight indent to signal nesting
-  borderLeftWidth: 3,
-  borderLeftColor: '#adb5bd',
-  paddingVertical: 8,
-},
-
-subcategoryTitle: {
-  fontSize: 15,
-  fontWeight: '600',
-  color: '#495057',
-  marginBottom: 6,
-},
-  
+    marginBottom: 20,
+    paddingLeft: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: '#adb5bd',
+    paddingVertical: 8,
+  },
+  subcategoryTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#495057',
+    marginBottom: 6,
+  },
   submitButton: {
-    backgroundColor: "#4CAF50", // A refined green color
+    backgroundColor: "#4CAF50",
     paddingVertical: 12,
     paddingHorizontal: 24,
-    borderRadius: 30, // Rounded edges for an elegant look
+    borderRadius: 30,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
-    elevation: 3, // Elevation for Android shadow
+    elevation: 3,
     alignItems: "center",
     marginTop: 0,
     marginBottom: 20
@@ -1402,104 +1360,96 @@ subcategoryTitle: {
   submitButtonText: {
     color: "#fff",
     fontSize: 16,
-    fontWeight: "700", // Bold text
-    textTransform: "uppercase", // Makes the text look sharp
-    letterSpacing: 1.2, // Adds spacing between letters for elegance
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
   },
   modalOverlay: {
-  flex: 1,
-  backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  justifyContent: 'center',
-  alignItems: 'center',
-},
-
-modalContent: {
-  width: '80%',
-  backgroundColor: '#fff',
-  borderRadius: 20,
-  padding: 20,
-  alignItems: 'center',
-  shadowColor: '#000',
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.25,
-  shadowRadius: 4,
-  elevation: 5,
-},
-
-modalTitle: {
-  fontSize: 18,
-  fontWeight: 'bold',
-  marginBottom: 10,
-  color: '#333',
-},
-
-modalText: {
-  fontSize: 16,
-  marginBottom: 20,
-  textAlign: 'center',
-  color: '#666',
-},
-
-modalButtonRow: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  width: '100%',
-},
-
-modalConfirmButton: {
-  flex: 1,
-  backgroundColor: '#d9534f',
-  padding: 10,
-  borderRadius: 10,
-  marginRight: 5,
-  alignItems: 'center',
-},
-
-modalCancelButton: {
-  flex: 1,
-  backgroundColor: '#5bc0de',
-  padding: 9,
-  borderRadius: 10,
-  marginLeft: 5,
-  alignItems: 'center',
-  paddingHorizontal: 17
-},
-
-modalConfirmButtonText: {
-  color: '#fff',
-  fontWeight: 'bold',
-},
-
-modalCancelButtonText: {
-  color: '#fff',
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '80%',
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: '#333',
+  },
+  modalText: {
+    fontSize: 16,
+    marginBottom: 20,
+    textAlign: 'center',
+    color: '#666',
+  },
+  modalButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  modalConfirmButton: {
+    flex: 1,
+    backgroundColor: '#d9534f',
+    padding: 10,
+    borderRadius: 10,
+    marginRight: 5,
+    alignItems: 'center',
+  },
+  modalCancelButton: {
+    flex: 1,
+    backgroundColor: '#5bc0de',
+    padding: 9,
+    borderRadius: 10,
+    marginLeft: 5,
+    alignItems: 'center',
+    paddingHorizontal: 17
+  },
+  modalConfirmButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  modalCancelButtonText: {
+    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
-},
-searchInput: {
-  padding: 10,
-  borderBottomWidth: 1,
-  borderBottomColor: "#ddd",
-  fontSize: 16,
-  color: "#000",
-  marginBottom: 10,
-},
-dropdownItem: {
-  padding: 10,
-  borderBottomWidth: 1,
-  borderBottomColor: "#eee",
-},
-dropdownItemText: {
-  fontSize: 16,
-  color: "#000",
-},
-categoryHeader: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  paddingVertical: 10,
-  paddingHorizontal: 15,
   },
-loadingContainer: {
+  searchInput: {
+    padding: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#ddd",
+    fontSize: 16,
+    color: "#000",
+    marginBottom: 10,
+  },
+  dropdownItem: {
+    padding: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  dropdownItemText: {
+    fontSize: 16,
+    color: "#000",
+  },
+  categoryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+  },
+  loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
@@ -1511,9 +1461,6 @@ loadingContainer: {
     color: '#495057',
     fontWeight: '500',
   },
-
 });
 
-
 export default UpdateShopProducts;
-

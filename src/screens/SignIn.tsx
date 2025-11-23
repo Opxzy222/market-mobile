@@ -30,6 +30,8 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   withTiming,
+  withSequence,
+  withDelay,
 } from "react-native-reanimated";
 import { Image } from "expo-image";
 import { AppResetContext } from "@/context/AppResetContext";
@@ -37,7 +39,7 @@ import { AppResetContext } from "@/context/AppResetContext";
 const { width, height } = Dimensions.get("window");
 const API_URL = "/login/";
 
-// ────────────────────── THEMING (LIGHT MODE) ──────────────────────
+// ────────────────────── THEMING ──────────────────────
 const COLORS = {
   primary: "#1E40AF",
   accent: "#FCD34D",
@@ -49,6 +51,8 @@ const COLORS = {
   gradientStart: "#3B82F6",
   gradientEnd: "#8B5CF6",
   error: "#EF4444",
+  warning: "#F59E0B",
+  info: "#3B82F6",
   border: "#E5E7EB",
   inputBg: "#F9FAFB",
   glow: "#60A5FA",
@@ -58,7 +62,7 @@ const COLORS = {
 
 const SPACING = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 };
 
-// ────────────────────── LOGIN API ──────────────────────
+// ────────────────────── LOGIN API (UNCHANGED) ──────────────────────
 async function login(email: string, password: string) {
   const formData = new URLSearchParams();
   formData.append("email", email);
@@ -103,24 +107,62 @@ async function login(email: string, password: string) {
 
     return { id: user_id, name: user_name };
   }
-  throw new Error(response.data.message || "Login failed");
+  throw new Error(response.data.error || response.data.message || "Login failed");
 }
 
-// ────────────────────── SIGN-IN COMPONENT ──────────────────────
+// ────────────────────── MODERN ANIMATED ERROR TOAST ──────────────────────
+const ErrorToast = ({ message, type = "error" }: { message: string; type?: "error" | "warning" | "info" }) => {
+  const translateY = useSharedValue(-120);
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    translateY.value = withSequence(
+      withTiming(20, { duration: 400 }),
+      withDelay(4500, withTiming(-120, { duration: 400 }))
+    );
+    opacity.value = withTiming(1, { duration: 400 });
+  }, []);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+    opacity: opacity.value,
+  }));
+
+  const config = {
+    error: { icon: "alert-circle-outline", color: COLORS.error },
+    warning: { icon: "warning-outline", color: COLORS.warning },
+    info: { icon: "information-circle-outline", color: COLORS.info },
+  }[type];
+
+  return (
+    <Animated.View style={[styles.errorToast, animatedStyle]}>
+      <View style={[styles.toastContainer, { backgroundColor: config.color + "18", borderColor: config.color }]}>
+        <Ionicons name={config.icon as any} size={24} color={config.color} />
+        <Text style={[styles.toastMessage, { color: config.color + "E0" }]}>{message}</Text>
+        <TouchableOpacity onPress={() => {
+          translateY.value = withTiming(-120, { duration: 300 });
+          opacity.value = withTiming(0);
+        }}>
+          <Ionicons name="close" size={22} color={config.color} />
+        </TouchableOpacity>
+      </View>
+    </Animated.View>
+  );
+};
+
+// ────────────────────── MAIN SIGN-IN COMPONENT ──────────────────────
 const SignIn = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [secureText, setSecureText] = useState(true);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [error, setError] = useState<{ msg: string; type: "error" | "warning" | "info" } | null>(null);
 
   const router = useRouter();
   const { resetAppState } = useContext(AppResetContext);
 
-  // Shared focus state for all inputs
+  // Animations
   const inputFocus = useSharedValue(0);
-
-  // ────── Animations ──────
   const logoY = useSharedValue(-20);
   const logoOpacity = useSharedValue(0);
   const btnScale = useSharedValue(1);
@@ -131,9 +173,7 @@ const SignIn = () => {
     opacity: logoOpacity.value,
     transform: [{ translateY: logoY.value }],
   }));
-  const btnAnim = useAnimatedStyle(() => ({
-    transform: [{ scale: btnScale.value }],
-  }));
+  const btnAnim = useAnimatedStyle(() => ({ transform: [{ scale: btnScale.value }] }));
   const rippleAnim = useAnimatedStyle(() => ({
     opacity: rippleOpacity.value,
     transform: [{ scale: rippleScale.value }],
@@ -149,7 +189,6 @@ const SignIn = () => {
     logoY.value = withTiming(0, { duration: 800 });
   }, []);
 
-  // ────── Ripple Effect ──────
   const startRipple = () => {
     rippleScale.value = withSpring(4);
     rippleOpacity.value = withTiming(0.5, { duration: 150 });
@@ -160,38 +199,66 @@ const SignIn = () => {
     btnScale.value = withSpring(1);
   };
 
-  // ────── Dismiss on Outside Tap ──────
   const dismissKeyboard = () => {
     Keyboard.dismiss();
-    inputFocus.value = 0; // Remove glow from all inputs
+    inputFocus.value = 0;
   };
 
-  // ────── Login Handler ──────
+  // ────── SMART LOGIN HANDLER ──────
   const handleSignIn = useCallback(async () => {
     if (!email || !password) {
-      setErrorMessage("Please enter both email and password");
+      setError({ msg: "Please enter both email and password", type: "warning" });
+      return;
+    }
+    if (!email.includes("@") || !email.includes(".")) {
+      setError({ msg: "Please enter a valid email address", type: "warning" });
       return;
     }
 
     setLoading(true);
-    setErrorMessage("");
+    setError(null);
 
     try {
-      const user = await login(email, password);
+      const user = await login(email.trim().toLowerCase(), password);
       await AsyncStorage.setItem("userSession", JSON.stringify(user));
 
+      // Success! (Alert kept as requested)
       Alert.alert("Welcome", `Logged in as ${user.name}`);
 
       router.replace("homepage");
       setTimeout(() => resetAppState(), 300);
     } catch (err: any) {
-      setErrorMessage(err.message);
+      console.log("Login error:", err.message);
+
+      let msg = "Something went wrong. Please try again.";
+      let type: "error" | "warning" | "info" = "error";
+
+      const errorText = (err.message || "").toLowerCase();
+
+      if (errorText.includes("invalid credentials") || errorText.includes("incorrect")) {
+        msg = "Incorrect email or password. Please try again.";
+        type = "warning";
+      } else if (errorText.includes("inactive")) {
+        msg = "Your account is inactive. Please contact support.";
+        type = "error";
+      } else if (errorText.includes("network") || errorText.includes("failed to fetch")) {
+        msg = "No internet connection. Check your network and try again.";
+        type = "warning";
+      } else if (errorText.includes("server") || errorText.includes("500")) {
+        msg = "Server is temporarily down. Please try again later.";
+        type = "error";
+      } else if (errorText.includes("json") || errorText.includes("400")) {
+        msg = "Invalid request. Please check your input.";
+        type = "warning";
+      }
+
+      setError({ msg, type });
     } finally {
       setLoading(false);
     }
   }, [email, password, router, resetAppState]);
 
-  // ────── CTA Button ──────
+  // ────── CTA BUTTON ──────
   const CTAButton = ({ title, onPress, gradient }: { title: string; onPress: () => void; gradient: string[] }) => (
     <Pressable onPress={onPress} style={({ pressed }) => [styles.ctaPressable, pressed && { opacity: 0.8 }]}>
       <LinearGradient colors={gradient} style={styles.ctaGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
@@ -207,10 +274,13 @@ const SignIn = () => {
         style={{ flex: 1 }}
         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
-        {/* ────── TAP OUTSIDE TO DISMISS ────── */}
         <TouchableWithoutFeedback onPress={dismissKeyboard}>
           <View style={styles.container}>
-            {/* ────── LOGO & TITLE ────── */}
+
+            {/* Modern Animated Error Toast */}
+            {error && <ErrorToast message={error.msg} type={error.type} />}
+
+            {/* Logo & Title */}
             <Animated.View style={[styles.logoWrapper, logoAnim]}>
               <Image
                 source={require("../../assets/images/icon1.png")}
@@ -221,15 +291,7 @@ const SignIn = () => {
               <Text style={styles.subtitle}>Sign in to explore local businesses</Text>
             </Animated.View>
 
-            {/* ────── ERROR ────── */}
-            {errorMessage ? (
-              <View style={styles.errorBox}>
-                <Ionicons name="alert-circle-outline" size={18} color={COLORS.error} />
-                <Text style={styles.errorText}>{errorMessage}</Text>
-              </View>
-            ) : null}
-
-            {/* ────── INPUTS (Shared Focus) ────── */}
+            {/* Email Input */}
             <Animated.View style={[styles.inputWrapper, inputAnim]}>
               <TextInput
                 placeholder="Email"
@@ -244,6 +306,7 @@ const SignIn = () => {
               />
             </Animated.View>
 
+            {/* Password Input */}
             <Animated.View style={[styles.inputWrapper, inputAnim]}>
               <View style={styles.passwordRow}>
                 <TextInput
@@ -262,7 +325,7 @@ const SignIn = () => {
               </View>
             </Animated.View>
 
-            {/* ────── SIGN IN BUTTON ────── */}
+            {/* Sign In Button */}
             <Animated.View style={[styles.btnWrapper, btnAnim]}>
               <TouchableOpacity
                 onPressIn={startRipple}
@@ -288,18 +351,10 @@ const SignIn = () => {
               </TouchableOpacity>
             </Animated.View>
 
-            {/* ────── CTA BUTTONS (Always visible) ────── */}
+            {/* CTA Buttons */}
             <View style={styles.ctaContainer}>
-              <CTAButton
-                title="Register Now"
-                onPress={() => router.push("/RequestToken")}
-                gradient={COLORS.ctaRegister}
-              />
-              <CTAButton
-                title="Forgot Password?"
-                onPress={() => router.push("/ForgotPassword")}
-                gradient={COLORS.ctaForgot}
-              />
+              <CTAButton title="Register Now" onPress={() => router.push("/RequestToken")} gradient={COLORS.ctaRegister} />
+              <CTAButton title="Forgot Password?" onPress={() => router.push("/ForgotPassword")} gradient={COLORS.ctaForgot} />
             </View>
           </View>
         </TouchableWithoutFeedback>
@@ -308,65 +363,36 @@ const SignIn = () => {
   );
 };
 
-// ────────────────────── STYLES (Unchanged) ──────────────────────
+// ────────────────────── STYLES ──────────────────────
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  container: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: SPACING.xl,
-    paddingVertical: SPACING.lg,
-    minHeight: height * 0.9,
-  },
+  safeArea: { flex: 1, backgroundColor: COLORS.background },
+  container: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: SPACING.xl, paddingVertical: SPACING.lg },
 
-  // LOGO
-  logoWrapper: {
-    alignItems: "center",
-    marginBottom: SPACING.xl,
-  },
-  logoImage: {
-    width: width * 0.28,
-    height: 90,
-    marginBottom: SPACING.md,
-  },
-  title: {
-    fontSize: 30,
-    fontWeight: "800",
-    color: COLORS.textPrimary,
-    letterSpacing: -0.5,
-    marginBottom: SPACING.xs,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: COLORS.textSecondary,
-    textAlign: "center",
-    maxWidth: "80%",
-  },
-
-  // ERROR
-  errorBox: {
+  // Toast
+  errorToast: { position: "absolute", top: 60, left: 20, right: 20, zIndex: 9999 },
+  toastContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FEE2E2",
-    padding: SPACING.sm,
-    borderRadius: SPACING.sm,
-    marginBottom: SPACING.lg,
-    width: "100%",
-    borderWidth: 1,
-    borderColor: COLORS.error,
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
+    elevation: 14,
+    gap: 12,
   },
-  errorText: {
-    fontSize: 13,
-    color: COLORS.error,
-    marginLeft: SPACING.xs,
-    flex: 1,
-  },
+  toastMessage: { flex: 1, fontSize: 14.5, fontWeight: "600", lineHeight: 21 },
 
-  // INPUTS
+  // Logo
+  logoWrapper: { alignItems: "center", marginBottom: SPACING.xl },
+  logoImage: { width: width * 0.28, height: 90, marginBottom: SPACING.md },
+  title: { fontSize: 30, fontWeight: "800", color: COLORS.textPrimary, letterSpacing: -0.5, marginBottom: SPACING.xs },
+  subtitle: { fontSize: 15, color: COLORS.textSecondary, textAlign: "center", maxWidth: "80%" },
+
+  // Inputs
   inputWrapper: {
     width: "100%",
     marginBottom: SPACING.md,
@@ -380,74 +406,23 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 6,
   },
-  input: {
-    padding: SPACING.md,
-    fontSize: 16,
-    color: COLORS.textPrimary,
-  },
-  passwordRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  passwordInput: {
-    flex: 1,
-    padding: SPACING.md,
-    fontSize: 16,
-    color: COLORS.textPrimary,
-  },
-  eyeBtn: {
-    padding: SPACING.sm,
-  },
+  input: { padding: SPACING.md, fontSize: 16, color: COLORS.textPrimary },
+  passwordRow: { flexDirection: "row", alignItems: "center" },
+  passwordInput: { flex: 1, padding: SPACING.md, fontSize: 16, color: COLORS.textPrimary },
+  eyeBtn: { padding: SPACING.sm },
 
-  // SIGN IN BUTTON
-  btnWrapper: {
-    width: "100%",
-    marginTop: SPACING.md,
-    marginBottom: SPACING.xl,
-    borderRadius: SPACING.md,
-    overflow: "hidden",
-  },
-  btnTouch: {
-    position: "relative",
-  },
-  btnGradient: {
-    paddingVertical: 16,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  btnText: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: COLORS.white,
-    letterSpacing: 0.5,
-  },
-  ripple: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(255,255,255,0.4)",
-    borderRadius: SPACING.md,
-  },
+  // Button
+  btnWrapper: { width: "100%", marginTop: SPACING.md, marginBottom: SPACING.xl, borderRadius: SPACING.md, overflow: "hidden" },
+  btnTouch: { position: "relative" },
+  btnGradient: { paddingVertical: 16, alignItems: "center", justifyContent: "center" },
+  btnText: { fontSize: 17, fontWeight: "700", color: COLORS.white, letterSpacing: 0.5 },
+  ripple: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(255,255,255,0.4)", borderRadius: SPACING.md },
 
-  // CTA BUTTONS
-  ctaContainer: {
-    width: "100%",
-    gap: SPACING.sm,
-  },
-  ctaPressable: {
-    borderRadius: 999,
-    overflow: "hidden",
-    elevation: 5,
-    shadowColor: "#000",
-  },
-  ctaGradient: {
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  ctaText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: COLORS.white,
-    letterSpacing: 0.3,
-  },
+  // CTA
+  ctaContainer: { width: "100%", gap: SPACING.sm },
+  ctaPressable: { borderRadius: 999, overflow: "hidden", elevation: 5, shadowColor: "#000" },
+  ctaGradient: { paddingVertical: 14, alignItems: "center" },
+  ctaText: { fontSize: 15, fontWeight: "600", color: COLORS.white, letterSpacing: 0.3 },
 });
 
 export default SignIn;

@@ -222,12 +222,15 @@ const styles = StyleSheet.create({
     flexWrap: 'nowrap',
   },
   priceCell: {
-    width: 90,
+    minWidth: 90,           // Keep minimum size for small prices
+    maxWidth: 150,          // Allow growth up to this for large numbers
+    width: 'auto', 
     textAlign: 'center',
     fontSize: 14,
     color: '#1e293b',
     paddingHorizontal: 8,
     flexShrink: 0,
+    flexGrow: 0,
   },
   cellWide: {
     flex: 2,

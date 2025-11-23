@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef, useContext } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -19,7 +19,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Slider from '@react-native-community/slider';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useInterstitialAd } from '../../components/AdMobManager';
-import { SubscriptionContext } from '../../components/SubscriptionProvider';
 import SubscriptionRequired from '@/components/RequiredSubscription';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { ZoomIn } from 'react-native-reanimated';
@@ -32,9 +31,9 @@ const SEARCH_AD_THRESHOLD = 3;
 const SearchResults = () => {
   const params = useLocalSearchParams();
   const { searchTerm, shops } = params;
-  const { subscriptionStatus, loading } = useContext(SubscriptionContext);
   const { showInterstitial, adLoaded } = useInterstitialAd();
   const router = useRouter();
+
   const [modalVisible, setModalVisible] = useState(false);
   const [subscriptionModalVisible, setSubscriptionModalVisible] = useState(false);
   const [showAd, setShowAd] = useState(false);
@@ -56,36 +55,58 @@ const SearchResults = () => {
   const [minDistance, setMinDistance] = useState(0);
   const [maxDistance, setMaxDistance] = useState(50);
 
+  // Subscription state from AsyncStorage
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(true);
+
   // Memoize allDistancesNull
   const allDistancesNull = useMemo(
     () => Array.isArray(searchResults) && searchResults.length > 0 && searchResults.every((shop) => shop?.distance == null),
     [searchResults]
   );
 
-  // Ref to track mounted state and ad display
+  // Refs
   const isMountedRef = useRef(true);
   const isShowingAdRef = useRef(false);
   const lastAdCheckTimeRef = useRef(0);
 
-  // Manage isMountedRef
+  // Cleanup
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
-      console.log('SearchResults unmounted');
     };
   }, []);
 
-  // Load search results from params and initialize filteredResults
+  // Load subscription from AsyncStorage
   useEffect(() => {
-    console.log('SearchResults params:', { searchTerm, shops });
+    const loadSubscription = async () => {
+      try {
+        const cache = await AsyncStorage.getItem("subscription_cache");
+        if (cache) {
+          const parsed = JSON.parse(cache);
+          setSubscriptionStatus(parsed.plan?.toLowerCase() || null);
+        } else {
+          setSubscriptionStatus(null);
+        }
+      } catch (error) {
+        console.error("Failed to load subscription_cache:", error);
+        setSubscriptionStatus(null);
+      } finally {
+        setSubscriptionLoading(false);
+      }
+    };
+    loadSubscription();
+  }, []);
+
+  // Load search results
+  useEffect(() => {
     try {
       const shopsArray = shops ? JSON.parse(shops) : [];
       if (Array.isArray(shopsArray) && shopsArray.length > 0) {
-        const limitedShops = shopsArray.slice(0, 50); // Limit to 50 shops to improve performance
+        const limitedShops = shopsArray.slice(0, 50);
         setSearchResults(limitedShops);
-        setFilteredResults(limitedShops); // Initialize filteredResults synchronously
-        // Defer image prefetching to avoid blocking render
+        setFilteredResults(limitedShops);
         setTimeout(() => {
           limitedShops.forEach((shop) => {
             if (shop.image) {
@@ -95,7 +116,6 @@ const SearchResults = () => {
         }, 0);
         setIsDataLoaded(true);
       } else {
-        console.warn('No valid shops data:', shopsArray);
         setSearchResults([]);
         setFilteredResults([]);
         setIsDataLoaded(true);
@@ -108,10 +128,9 @@ const SearchResults = () => {
     }
   }, [shops]);
 
-  // Filter results based on rating, distance, verified, and premium status
+  // Filter logic
   useEffect(() => {
     if (!Array.isArray(searchResults) || searchResults.length === 0) {
-      console.warn('searchResults is empty or not an array:', searchResults);
       setFilteredResults([]);
       return;
     }
@@ -138,43 +157,32 @@ const SearchResults = () => {
     });
 
     if (isMountedRef.current) {
-      console.log('Filtered results:', results.length, 'Original results:', searchResults.length);
       setFilteredResults(results);
     }
   }, [minRating, maxRating, minDistance, maxDistance, isVerified, isPremium, searchResults, allDistancesNull]);
 
-  // Ad logic on screen focus (deferred to avoid blocking render)
+  // Ad logic
   useFocusEffect(
     useCallback(() => {
       const checkAd = async () => {
         const now = Date.now();
-        if (now - lastAdCheckTimeRef.current < 2000) {
-          console.log('Ad check debounced: too soon since last check');
-          return;
-        }
+        if (now - lastAdCheckTimeRef.current < 2000) return;
         lastAdCheckTimeRef.current = now;
 
-        if (loading || !isMountedRef.current || isShowingAdRef.current) {
-          console.log('Ad check skipped: loading=', loading, 'isMounted=', isMountedRef.current, 'isShowingAd=', isShowingAdRef.current);
-          return;
-        }
+        if (subscriptionLoading || !isMountedRef.current || isShowingAdRef.current) return;
 
-        const isFreeUser =
-          !['regular', 'standard', 'premium'].includes(subscriptionStatus) ||
-          subscriptionStatus === 'free' ||
-          subscriptionStatus == null;
+        const isFreeUser = !['standard', 'premium'].includes(subscriptionStatus || '');
 
         if (isFreeUser && adLoaded) {
           const count = parseInt(await AsyncStorage.getItem('searchCount') || '0', 10);
           if (count >= SEARCH_AD_THRESHOLD) {
-            console.log('Triggering interstitial ad display');
             isShowingAdRef.current = true;
             setShowAd(true);
             try {
               await showInterstitial();
               await AsyncStorage.setItem('searchCount', '0');
             } catch (error) {
-              console.error('Error displaying interstitial ad:', error);
+              console.error('Error displaying ad:', error);
             } finally {
               setShowAd(false);
               isShowingAdRef.current = false;
@@ -183,25 +191,20 @@ const SearchResults = () => {
         }
       };
 
-      // Defer ad check to avoid blocking render
       setTimeout(checkAd, 100);
-
-      return () => {
-        if (__DEV__) console.log('SearchResults unfocused');
-      };
-    }, [subscriptionStatus, loading, adLoaded, showInterstitial])
+    }, [subscriptionStatus, subscriptionLoading, adLoaded, showInterstitial])
   );
 
-  // Memoized filter press handler
+  // Handle Filter Press
   const handleFilterPress = useCallback(() => {
-    if (['regular', 'standard', 'premium'].includes(subscriptionStatus)) {
-      if (!modalVisible) setModalVisible(true);
+    if (['standard', 'premium'].includes(subscriptionStatus || '')) {
+      setModalVisible(true);
     } else {
-      if (!subscriptionModalVisible) setSubscriptionModalVisible(true);
+      setSubscriptionModalVisible(true);
     }
-  }, [subscriptionStatus, modalVisible, subscriptionModalVisible]);
+  }, [subscriptionStatus]);
 
-  // Memoized apply filters
+  // Apply Filters
   const applyFilters = useCallback(() => {
     setMinRating(tempMinRating);
     setMaxRating(tempMaxRating);
@@ -214,7 +217,7 @@ const SearchResults = () => {
     setModalVisible(false);
   }, [tempMinRating, tempMaxRating, tempMinDistance, tempMaxDistance, tempIsVerified, tempIsPremium, allDistancesNull]);
 
-  // Memoized reset filters
+  // Reset Filters
   const resetFilters = useCallback(() => {
     setTempMinRating(0);
     setTempMaxRating(5);
@@ -234,7 +237,7 @@ const SearchResults = () => {
     setModalVisible(false);
   }, [allDistancesNull, searchResults]);
 
-  // Memoized shop card renderer
+  // Render Shop Card
   const renderShopCard = useCallback(
     ({ item }) => (
       <LinearGradient colors={['rgba(255,255,255,0.6)', 'rgba(240,240,240,0.4)']} style={styles.shopCard}>
@@ -302,17 +305,13 @@ const SearchResults = () => {
     [router]
   );
 
-  // Memoized key extractor
   const keyExtractor = useCallback((item) => item.id.toString(), []);
-
-  // FlatList item layout
   const getItemLayout = useCallback((data, index) => ({
     length: 150,
     offset: 150 * index,
     index,
   }), []);
 
-  // Memoized filter modal content
   const FilterModalContent = useMemo(() => (
     <Animated.View entering={ZoomIn.duration(500)} style={styles.modalContent}>
       <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.modalCloseButton}>
@@ -408,8 +407,8 @@ const SearchResults = () => {
     </Animated.View>
   ), [tempMinRating, tempMaxRating, tempMinDistance, tempMaxDistance, tempIsVerified, tempIsPremium, allDistancesNull, applyFilters, resetFilters]);
 
-  // Render loading UI during subscription loading, ad display, or data loading
-  if (loading || showAd || !isDataLoaded) {
+  // Loading UI
+  if (subscriptionLoading || showAd || !isDataLoaded) {
     return (
       <SafeAreaView style={styles.loader}>
         <ActivityIndicator size="large" color="#007BFF" />
@@ -420,7 +419,6 @@ const SearchResults = () => {
     );
   }
 
-  // Render main UI with FlatList or empty state
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
       <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
@@ -432,10 +430,12 @@ const SearchResults = () => {
           <Text style={styles.headerTitle}>Results for: {searchTerm || 'Search'}</Text>
           <View style={styles.headerSpacer} />
         </View>
+
         <TouchableOpacity onPress={handleFilterPress} style={styles.filterContainer}>
           <Ionicons name="filter-outline" size={20} color="#007BFF" style={styles.filterIcon} />
           <Text style={styles.filterText}>Filter</Text>
         </TouchableOpacity>
+
         {searchResults.length === 0 ? (
           <Text style={styles.noResults}>No shops found for your search.</Text>
         ) : (
@@ -453,16 +453,14 @@ const SearchResults = () => {
           />
         )}
       </LinearGradient>
-      <Modal visible={subscriptionModalVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <SubscriptionRequired onClose={() => setSubscriptionModalVisible(false)} />
-            <TouchableOpacity onPress={() => setSubscriptionModalVisible(false)} style={styles.closeButton}>
-              <Text style={styles.closeButtonText}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+
+      {/* Subscription Modal - NO WRAPPER, LET COMPONENT HANDLE IT */}
+      <SubscriptionRequired
+        visible={subscriptionModalVisible}
+        onClose={() => setSubscriptionModalVisible(false)}
+      />
+
+      {/* Filter Modal */}
       <Modal visible={modalVisible} animationType="fade" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
@@ -476,6 +474,7 @@ const SearchResults = () => {
   );
 };
 
+// ────── STYLES (UNCHANGED) ──────
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,

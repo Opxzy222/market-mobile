@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,7 +17,7 @@ import {
 import * as Animatable from 'react-native-animatable';
 import api from '../../api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import ReviewForm from '../../components/shop/ReviewForm';
 import ShopReview from '../../components/shop/ShopReview';
 import FollowButton from '../../components/shop/FollowButton';
@@ -29,7 +29,6 @@ import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AdMobManager from '../../components/AdMobManager';
-import { SubscriptionContext } from '../../components/SubscriptionProvider';
 import { getFullUrl } from '../../utils/imageUtils';
 import { format, parseISO } from 'date-fns';
 
@@ -65,7 +64,6 @@ const SPACING = {
 };
 
 const ShopPage = () => {
-  const { subscriptionStatus, loading } = useContext(SubscriptionContext);
   const params = useLocalSearchParams();
   const { shopId } = params;
   const router = useRouter();
@@ -78,13 +76,45 @@ const ShopPage = () => {
   const [activeTab, setActiveTab] = useState('posts');
   const [error, setError] = useState('');
   const [sessionId, setSessionId] = useState(null);
-  const [plan, setPlan] = useState('');
+  const [plan, setPlan] = useState<string | null>(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [descriptionAnim] = useState(new Animated.Value(0));
   const [statusAnim] = useState(new Animated.Value(0));
   const [isImageModalVisible, setIsImageModalVisible] = useState(false);
+
+  // Load subscription from AsyncStorage
+  const loadSubscription = async () => {
+    try {
+      const cache = await AsyncStorage.getItem('subscription_cache');
+      if (cache) {
+        const data = JSON.parse(cache);
+        setPlan(data.plan?.toLowerCase() || null);
+      } else {
+        setPlan(null);
+      }
+    } catch (e) {
+      console.error('Failed to load subscription_cache:', e);
+      setPlan(null);
+    } finally {
+      setSubscriptionLoading(false);
+    }
+  };
+
+  // Re-load subscription every time screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      loadSubscription();
+    }, [])
+  );
+
+  React.useEffect(() => {
+    if (!shop) return;
+    const firstTab = shop.category?.name === 'Services' ? 'services' : 'products';
+    setActiveTab(firstTab);
+  }, [shop]);
 
   const fetchShopData = async () => {
     if (!sessionId || !shopId) return;
@@ -119,7 +149,6 @@ const ShopPage = () => {
       setFollowerCount(data.follower_count);
       setFollowers(data.followers || []);
       setPosts(data.posts);
-      setPlan(data.plan);
       setError('');
       if (data.shop.image) {
         const imageUrl = getFullUrl(data.shop.image);
@@ -149,7 +178,9 @@ const ShopPage = () => {
   }, []);
 
   useEffect(() => {
-    fetchShopData();
+    if (sessionId) {
+      fetchShopData();
+    }
   }, [sessionId, shopId]);
 
   useEffect(() => {
@@ -189,7 +220,7 @@ const ShopPage = () => {
   };
 
   const copyToClipboard = () => {
-    if (shop.shop_id) {
+    if (shop?.shop_id) {
       Clipboard.setString(shop.shop_id);
       setCopied(true);
       if (Platform.OS === 'android') {
@@ -250,7 +281,8 @@ const ShopPage = () => {
     ['#D97706', '#F59E0B'],
   ];
 
-  if (loading || !shop || sessionId === null) {
+  // Loading state: wait for subscription + shop data
+  if (subscriptionLoading || !shop || sessionId === null) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }}>
         <StatusBar barStyle="light-content" backgroundColor={COLORS.statusBar} />
@@ -327,6 +359,9 @@ const ShopPage = () => {
       </SafeAreaView>
     );
   }
+
+  // Free user = not standard or premium
+  const isFreeUser = !['standard', 'premium'].includes(plan || '');
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
@@ -627,8 +662,8 @@ const ShopPage = () => {
 
           <View style={styles.nav}>
             {(shop.category?.name === 'Services'
-              ? ['posts', 'services', 'customers', 'reviews']
-              : ['posts', 'products', 'customers', 'reviews']
+              ? ['services', 'posts', 'customers', 'reviews']
+              : ['products', 'posts', 'customers', 'reviews']
             ).map((tab) => (
               <TouchableOpacity
                 key={tab}
@@ -647,20 +682,28 @@ const ShopPage = () => {
           </View>
 
           <View style={styles.tabContent}>
-            {activeTab === 'posts' &&
-              (plan === null || plan === '' ? (
-                <Text style={styles.noPostsText}>No posts available</Text>
+            {activeTab === 'products' && (
+              <ShopProduct key={shopId} products={shop.products} shopId={shopId} shopName={shop.name} />
+            )}
+            {activeTab === 'services' && (
+              <ShopProduct key={shopId} products={shop.products} shopId={shopId} shopName={shop.name} />
+            )}
+            {activeTab === 'posts' && (
+              isFreeUser ? (
+                posts.length > 0 ? (
+                  <View style={styles.postsContainer}>
+                    <ShopPosts posts={[posts[0]]} scrollEnabled={false} />
+                  </View>
+                ) : (
+                  <Text style={styles.noPostsText}>No posts available</Text>
+                )
               ) : (
                 <View style={styles.postsContainer}>
                   <ShopPosts posts={posts} scrollEnabled={false} />
                 </View>
-              ))}
-            {activeTab === 'products' && (
-              <ShopProduct key={shopId} products={shop.products} />
+              )
             )}
-            {activeTab === 'services' && (
-              <ShopProduct key={shopId} products={shop.products} />
-            )}
+            
             {activeTab === 'customers' && <Followers followers={followers} />}
             {activeTab === 'reviews' && (
               <View
@@ -674,7 +717,9 @@ const ShopPage = () => {
               </View>
             )}
           </View>
-          {!['regular', 'standard', 'premium'].includes(subscriptionStatus) && (
+
+          {/* Show Ad only for free users */}
+          {isFreeUser && (
             <View style={styles.adContainer}>
               <AdMobManager />
             </View>

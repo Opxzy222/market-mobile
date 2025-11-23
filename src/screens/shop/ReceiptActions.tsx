@@ -23,11 +23,35 @@ const ReceiptActions = () => {
           >
             <MaterialIcons name="arrow-back" size={26} color="white" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Receipt Actions</Text>
+          <Text style={styles.headerTitle}>Orders & Receipts</Text>
           <View style={styles.headerSpacer} />
         </Animated.View>
+
         <View style={styles.buttonsContainer}>
+          {/* 1. Buyer PO Dashboard */}
           <Animated.View entering={FadeIn.duration(300).delay(100)}>
+            <TouchableOpacity
+              style={styles.button}
+              onPress={() =>
+                router.push({
+                  pathname: "/cart/SellerPODashboard",
+                  params: { shopId, prevRoute: pathname },
+                })
+              }
+              activeOpacity={0.9}
+            >
+              <LinearGradient
+                colors={["#3B82F6", "#2563EB"]}
+                style={styles.buttonGradient}
+              >
+                <MaterialIcons name="shopping-cart-checkout" size={30} color="#FFFFFF" />
+                <Text style={styles.buttonText}>My Orders</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </Animated.View>
+
+          {/* 2. Generate Receipt */}
+          <Animated.View entering={FadeIn.duration(300).delay(200)}>
             <TouchableOpacity
               style={styles.button}
               onPress={() =>
@@ -47,7 +71,9 @@ const ReceiptActions = () => {
               </LinearGradient>
             </TouchableOpacity>
           </Animated.View>
-          <Animated.View entering={FadeIn.duration(300).delay(200)}>
+
+          {/* 3. View Receipts */}
+          <Animated.View entering={FadeIn.duration(300).delay(300)}>
             <TouchableOpacity
               style={styles.button}
               onPress={() =>
@@ -109,7 +135,7 @@ const styles = StyleSheet.create({
   buttonsContainer: {
     flex: 1,
     padding: 16,
-    justifyContent: "flex-start", // Changed from alignItems: "center"
+    justifyContent: "flex-start",
   },
   button: {
     width: "93%",

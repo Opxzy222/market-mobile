@@ -1,7 +1,9 @@
 import React, { useState, useCallback, useMemo, memo, useRef, useEffect, useContext } from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
-import SubscriptionProvider, { SubscriptionContext } from '@/components/SubscriptionProvider';
+import { SellerFloatingOrb } from '@/components/cart/SellerFloatingOrb';
+import { CartProvider } from '@/context/CartContext';
+import { FloatingCartOrb } from '@/components/cart/FloatingCartOrb';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Linking from 'expo-linking';
 import { SelectProvider } from '@mobile-reality/react-native-select-pro';
@@ -114,7 +116,16 @@ const RootLayout = () => {
   const pathname = usePathname();
   const router = useRouter();
   const segments = useSegments();
-  const { resetSubscription } = useContext(SubscriptionContext);
+
+  // Animation refs
+  const scaleAnims = useRef({
+    shop: new Animated.Value(0.8),
+    status: new Animated.Value(0.8),
+    messages: new Animated.Value(0.8),
+    myshop: new Animated.Value(0.8),
+    account: new Animated.Value(0.8),
+    profile: new Animated.Value(0.8),
+  }).current;
 
   const resetAppState = useCallback(() => {
     setUserId(null);
@@ -140,19 +151,9 @@ const RootLayout = () => {
     });
 
     setResetKey((prev) => prev + 1);
-    resetSubscription();
+   
     if (__DEV__) console.log('App state reset');
-  }, [resetSubscription]);
-
-  // Animation refs
-  const scaleAnims = useRef({
-    shop: new Animated.Value(0.8),
-    status: new Animated.Value(0.8),
-    messages: new Animated.Value(0.8),
-    myshop: new Animated.Value(0.8),
-    account: new Animated.Value(0.8),
-    profile: new Animated.Value(0.8),
-  }).current;
+  }, []);
 
   const opacityAnims = useRef({
     shop: new Animated.Value(0.6),
@@ -308,7 +309,10 @@ const RootLayout = () => {
   const { isShopActive, activeTab } = useMemo(() => {
     const normalizedPath = pathname.split('?')[0].replace(/\/+$/, '').toLowerCase();
     const otherTabNames = ['status', 'messages', 'myshop', 'account', 'profile'];
-    const isShopSubRoute = normalizedPath.startsWith('/shop/');
+    const isShopSubRoute = 
+      normalizedPath.startsWith('/shop/') ||
+      normalizedPath.startsWith('/cart/');
+
     const isOtherTab = segments.includes('(tabs)') && otherTabNames.some((tab) => segments.includes(tab));
     const isShopActive = isOtherTab || isShopSubRoute;
 
@@ -722,7 +726,14 @@ const RootLayout = () => {
         'OTPVerification',
         'VerificationStatus',
         'IDVerification',
-        'verification'
+        'verification',
+        'cart/editor',
+        'cart/BuyerPODashboard',
+        'cart/SellerPOEditor',
+        'cart/SellerPODashboard',
+        'cart/SellerPOCounter',
+        'cart/BuyerPOEditor',
+        'cart/BuyerCounterEditor'
       ].map((name) => ({
         name,
         options: {
@@ -753,7 +764,8 @@ const RootLayout = () => {
     <GestureHandlerRootView style={styles.container} key={resetKey}>
       <SafeAreaProvider>
         <SelectProvider>
-          <SubscriptionProvider userId={userId}>
+          <CartProvider>
+          
             <AdProvider>
               <AppResetContext.Provider value={{ resetAppState }}>
                 <MemoizedTabs screenOptions={tabOptions}>
@@ -764,7 +776,10 @@ const RootLayout = () => {
                 <Toast position="top" topOffset={50} visibilityTime={7000} />
               </AppResetContext.Provider>
             </AdProvider>
-          </SubscriptionProvider>
+            <SellerFloatingOrb />
+            <FloatingCartOrb />
+          </CartProvider>
+          
         </SelectProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

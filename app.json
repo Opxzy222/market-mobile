@@ -67,30 +67,11 @@
           ]
         }
       ],
-      "edgeToEdgeEnabled": true,
       "buildProperties": {
         "android.enableR8.fullMode": true,
         "android.enableProguardInReleaseBuilds": true
       },
-      "runtimeVersion": "2.0.0",
-      "plugins": [
-        [
-          "react-native-edge-to-edge",
-          {
-            "android": {
-              "parentTheme": "Default",
-              "enforceNavigationBarContrast": false
-            }
-          }
-        ],
-        [
-          "expo-screen-orientation",
-          {
-            "initialOrientation": "DEFAULT",
-            "supportedOrientations": ["PORTRAIT", "LANDSCAPE"]
-          }
-        ]
-      ]
+      "runtimeVersion": "2.0.0"
     },
     "web": {
       "bundler": "metro",
@@ -177,14 +158,13 @@
         "expo-build-properties",
         {
           "android": {
+            "enableHermes": true,
             "compileSdkVersion": 35,
             "targetSdkVersion": 35,
             "buildToolsVersion": "35.0.0",
             "minSdkVersion": 24,
             "ndkVersion": "25.2.9519653",
-            "enableHermes": false,
-            "enableProguardInReleaseBuilds": true,
-            "edgeToEdgeEnabled": true
+            "enableProguardInReleaseBuilds": true
           },
           "ios": {
             "deploymentTarget": "15.1",

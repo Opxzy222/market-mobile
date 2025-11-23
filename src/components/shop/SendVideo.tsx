@@ -10,6 +10,8 @@ import {
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import { Ionicons } from "@expo/vector-icons";
+import SubscriptionRequiredModal from "@/components/RequiredSubscription";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const SendVideo = ({ onSend }) => {
   console.log("SendVideo render start");
@@ -17,7 +19,34 @@ const SendVideo = ({ onSend }) => {
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [videoValid, setVideoValid] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
 
+  // Subscription from AsyncStorage
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(true);
+
+  // Load subscription
+  useEffect(() => {
+    const loadSubscription = async () => {
+      try {
+        const cache = await AsyncStorage.getItem("subscription_cache");
+        if (cache) {
+          const parsed = JSON.parse(cache);
+          setSubscriptionStatus(parsed.plan?.toLowerCase() || null);
+        } else {
+          setSubscriptionStatus(null);
+        }
+      } catch (error) {
+        console.error("Failed to load subscription_cache:", error);
+        setSubscriptionStatus(null);
+      } finally {
+        setSubscriptionLoading(false);
+      }
+    };
+    loadSubscription();
+  }, []);
+
+  // Validate video when selected
   useEffect(() => {
     console.log("useEffect: selectedVideo changed:", selectedVideo);
     if (!selectedVideo) {
@@ -31,6 +60,7 @@ const SendVideo = ({ onSend }) => {
       try {
         console.log("Validating URI:", selectedVideo.uri);
         setIsValidating(true);
+
         const fileName = selectedVideo.name || selectedVideo.uri.split("/").pop() || "";
         if (!fileName.toLowerCase().endsWith(".mp4")) {
           throw new Error("Unsupported video format (only MP4 supported)");
@@ -108,6 +138,12 @@ const SendVideo = ({ onSend }) => {
   };
 
   const handleSend = () => {
+    // Check subscription
+    if (!['standard', 'premium'].includes(subscriptionStatus || '')) {
+      setShowSubscriptionModal(true);
+      return;
+    }
+
     if (selectedVideo && videoValid) {
       console.log("Sending video:", selectedVideo);
       onSend(selectedVideo);
@@ -125,6 +161,16 @@ const SendVideo = ({ onSend }) => {
     "isValidating:",
     isValidating
   );
+
+  // Show loading while subscription loads
+  if (subscriptionLoading) {
+    return (
+      <View style={styles.loader}>
+        <ActivityIndicator size="small" color="#28a745" />
+        <Text style={styles.loaderText}>Loading...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -184,7 +230,7 @@ const SendVideo = ({ onSend }) => {
             </TouchableOpacity>
             <TouchableOpacity
               onPress={handleSend}
-              style={[styles.sendButton, !videoValid && styles.sendButtonDisabled]}
+              style={[styles.sendButton, (!videoValid || isValidating) && styles.sendButtonDisabled]}
               disabled={!videoValid || isValidating}
             >
               <Text style={styles.sendButtonText}>Send</Text>
@@ -192,6 +238,12 @@ const SendVideo = ({ onSend }) => {
           </View>
         </View>
       )}
+
+      {/* JUST CALL THE MODAL DIRECTLY */}
+      <SubscriptionRequiredModal
+        visible={showSubscriptionModal}
+        onClose={() => setShowSubscriptionModal(false)}
+      />
     </View>
   );
 };
@@ -297,6 +349,17 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "bold",
     fontSize: 16,
+  },
+  loader: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  loaderText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: "#555",
   },
 });
 

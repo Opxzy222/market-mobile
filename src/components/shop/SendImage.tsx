@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   TouchableOpacity,
@@ -7,13 +7,12 @@ import {
   Alert,
   StyleSheet,
   ActivityIndicator,
-  Modal,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
 import { Ionicons } from "@expo/vector-icons";
-import { SubscriptionContext } from "../../components/SubscriptionProvider"; // Import SubscriptionContext
-import SubscriptionRequired from "@/components/RequiredSubscription"; // Import SubscriptionRequired
+import SubscriptionRequiredModal from "@/components/RequiredSubscription";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const SendImage = ({ onSend }) => {
   console.log("SendImage render start");
@@ -22,9 +21,34 @@ const SendImage = ({ onSend }) => {
   const [imageValid, setImageValid] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
-  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false); // State for subscription modal
-  const { subscriptionStatus } = useContext(SubscriptionContext); // Access subscription status
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
 
+  // Subscription from AsyncStorage
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(true);
+
+  // Load subscription
+  useEffect(() => {
+    const loadSubscription = async () => {
+      try {
+        const cache = await AsyncStorage.getItem("subscription_cache");
+        if (cache) {
+          const parsed = JSON.parse(cache);
+          setSubscriptionStatus(parsed.plan?.toLowerCase() || null);
+        } else {
+          setSubscriptionStatus(null);
+        }
+      } catch (error) {
+        console.error("Failed to load subscription_cache:", error);
+        setSubscriptionStatus(null);
+      } finally {
+        setSubscriptionLoading(false);
+      }
+    };
+    loadSubscription();
+  }, []);
+
+  // Validate image when selected
   useEffect(() => {
     console.log("useEffect: selectedImage changed:", selectedImage);
     if (!selectedImage) {
@@ -108,9 +132,9 @@ const SendImage = ({ onSend }) => {
   };
 
   const handleSend = async () => {
-    // Check subscription status
-    if (subscriptionStatus !== "standard" && subscriptionStatus !== "premium") {
-      setShowSubscriptionModal(true); // Show subscription modal
+    // Check subscription
+    if (!['standard', 'premium'].includes(subscriptionStatus || '')) {
+      setShowSubscriptionModal(true);
       return;
     }
 
@@ -143,6 +167,16 @@ const SendImage = ({ onSend }) => {
     "isLoading:",
     isLoading
   );
+
+  // Show loading while subscription loads
+  if (subscriptionLoading) {
+    return (
+      <View style={styles.loader}>
+        <ActivityIndicator size="small" color="#28a745" />
+        <Text style={styles.loaderText}>Loading...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -189,7 +223,10 @@ const SendImage = ({ onSend }) => {
             </TouchableOpacity>
             <TouchableOpacity
               onPress={handleSend}
-              style={[styles.sendButton, (!imageValid || isLoading) && styles.sendButtonDisabled]}
+              style={[
+                styles.sendButton,
+                (!imageValid || isLoading) && styles.sendButtonDisabled,
+              ]}
               disabled={!imageValid || isLoading}
             >
               {isLoading ? (
@@ -202,15 +239,11 @@ const SendImage = ({ onSend }) => {
         </View>
       )}
 
-      <Modal visible={showSubscriptionModal} animationType="slide" transparent>
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowSubscriptionModal(false)}
-        >
-          <SubscriptionRequired />
-        </TouchableOpacity>
-      </Modal>
+      {/* JUST CALL THE MODAL DIRECTLY */}
+      <SubscriptionRequiredModal
+        visible={showSubscriptionModal}
+        onClose={() => setShowSubscriptionModal(false)}
+      />
     </View>
   );
 };

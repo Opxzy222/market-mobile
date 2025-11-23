@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef, useContext } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -17,15 +17,13 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigationInterstitialAd } from "../../components/AdMobManager";
-import { SubscriptionContext } from "../../components/SubscriptionProvider";
 
 const CACHE_KEY = "MyShop_Cache";
 const NAVIGATION_THRESHOLD = 3;
-const SESSION_CHECK_INTERVAL = 1000; // Check session every 1s
-const FETCH_DEBOUNCE_MS = 10000; // Debounce fetch by 10s
+const SESSION_CHECK_INTERVAL = 1000;
+const FETCH_DEBOUNCE_MS = 10000;
 
 const MyShop = () => {
-  const { subscriptionStatus, loading: subscriptionLoading } = useContext(SubscriptionContext);
   const { showInterstitial, adLoaded } = useNavigationInterstitialAd();
   const [shops, setShops] = useState([]);
   const [sessionId, setSessionId] = useState(null);
@@ -33,6 +31,9 @@ const MyShop = () => {
   const [hasFetched, setHasFetched] = useState(false);
   const [error, setError] = useState(false);
   const [showAd, setShowAd] = useState(false);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(true);
+
   const router = useRouter();
   const pathname = usePathname();
   const isMountedRef = useRef(true);
@@ -43,6 +44,28 @@ const MyShop = () => {
   const appStateRef = useRef(AppState.currentState);
   const lastRouteRef = useRef(pathname);
   const lastSessionIdRef = useRef(null);
+
+  // ────── Load subscription from AsyncStorage ──────
+  useEffect(() => {
+    const loadSubscription = async () => {
+      try {
+        const cache = await AsyncStorage.getItem("subscription_cache");
+        if (cache) {
+          const parsed = JSON.parse(cache);
+          setSubscriptionStatus(parsed.plan?.toLowerCase() || null);
+        } else {
+          setSubscriptionStatus(null);
+        }
+      } catch (error) {
+        console.error("Failed to load subscription_cache:", error);
+        setSubscriptionStatus(null);
+      } finally {
+        setSubscriptionLoading(false);
+      }
+    };
+
+    loadSubscription();
+  }, []);
 
   // Clear cache for new session
   const clearCache = useCallback(async () => {
@@ -92,7 +115,7 @@ const MyShop = () => {
         setLoading(false);
       } else {
         console.log("No cached data found");
-        setLoading(true); // Trigger fetch if no cache
+        setLoading(true);
       }
     } catch (error) {
       console.error("Error loading cached data:", error);
@@ -190,7 +213,7 @@ const MyShop = () => {
     }
 
     const isFreeOrRegularUser =
-      !["standard", "premium"].includes(subscriptionStatus) ||
+      !["standard", "premium"].includes(subscriptionStatus || '') ||
       subscriptionStatus === "free" ||
       subscriptionStatus == null;
 
@@ -228,7 +251,6 @@ const MyShop = () => {
     };
     initialize();
 
-    // Periodic session check
     const sessionCheckInterval = setInterval(checkSession, SESSION_CHECK_INTERVAL);
 
     return () => {
@@ -251,11 +273,10 @@ const MyShop = () => {
       console.log("MyShop focused, subscriptionStatus:", subscriptionStatus, "appState:", appStateRef.current);
       checkSession().then(() => {
         if (sessionId) {
-          fetchShops(); // Fetch fresh data in background
+          fetchShops();
         }
       });
 
-      // Only increment navigationCount on route change
       if (lastRouteRef.current !== pathname && appStateRef.current === "active") {
         console.log("MyShop focused via navigation, prevRoute:", lastRouteRef.current, "currentRoute:", pathname);
         lastRouteRef.current = pathname;
@@ -507,7 +528,7 @@ const MyShop = () => {
                         onPress={() => navigateToShopPage(item.id)}
                         activeOpacity={0.7}
                       >
-                        <MaterialIcons name="store" size= {28} color="#007bff" />
+                        <MaterialIcons name="store" size={28} color="#007bff" />
                         <Text style={styles.actionText}>Admin</Text>
                       </TouchableOpacity>
                       <TouchableOpacity

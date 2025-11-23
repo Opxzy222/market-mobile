@@ -1,23 +1,59 @@
-import React, { useState, useContext } from "react";
-import { View, TouchableOpacity, Text, Linking, Alert, Platform } from "react-native";
+import React, { useState, useEffect } from "react";
+import {
+  View,
+  TouchableOpacity,
+  Text,
+  Linking,
+  Alert,
+  Platform,
+} from "react-native";
 import * as Location from "expo-location";
 import { MaterialIcons } from "@expo/vector-icons";
-import { SafeAreaView } from "react-native-safe-area-context";
-import SubscriptionProvider, { SubscriptionContext } from "../SubscriptionProvider";
+import AsyncStorage from "@react-native-async-storage/async-storage"; // ← NEW
 import SubscriptionRequired from "../RequiredSubscription";
 
 const ShopLocation = ({ shopLat, shopLng }) => {
   const [userLocation, setUserLocation] = useState(null);
-  const { subscriptionStatus, loading } = useContext(SubscriptionContext);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
+
+  // ────── Load subscription from AsyncStorage ──────
+  useEffect(() => {
+    const loadSubscription = async () => {
+      try {
+        const cache = await AsyncStorage.getItem("subscription_cache");
+        if (cache) {
+          const parsed = JSON.parse(cache);
+          setSubscriptionStatus(parsed.plan?.toLowerCase() || null);
+        } else {
+          setSubscriptionStatus(null);
+        }
+      } catch (error) {
+        console.error("Failed to load subscription_cache:", error);
+        setSubscriptionStatus(null);
+      } finally {
+        setSubscriptionLoading(false);
+      }
+    };
+
+    loadSubscription();
+  }, []);
 
   const handleLocationAndOpenMaps = async () => {
     console.log("Subscription Status:", subscriptionStatus);
+    console.log("Subscription Loading:", subscriptionLoading);
     console.log("Modal visible (before check):", modalVisible);
     console.log("Shop Coordinates:", { shopLat, shopLng });
 
+    // Wait for subscription to load
+    if (subscriptionLoading) {
+      console.log("Subscription still loading, skipping action");
+      return;
+    }
+
     // Check subscription status
-    if (!loading && subscriptionStatus !== "standard" && subscriptionStatus !== "premium") {
+    if (subscriptionStatus !== "standard" && subscriptionStatus !== "premium") {
       console.log("Subscription check failed, showing modal");
       setModalVisible(true);
       return;
@@ -67,7 +103,6 @@ const ShopLocation = ({ shopLat, shopLng }) => {
     console.log("Apple Maps URL:", appleMapsUrl);
 
     try {
-      // Prioritize Google Maps app
       let url = googleMapsAppUrl;
       let supported = await Linking.canOpenURL(url);
       console.log("Can open Google Maps app:", supported);
@@ -78,7 +113,6 @@ const ShopLocation = ({ shopLat, shopLng }) => {
         return;
       }
 
-      // Fallback to Apple Maps on iOS
       if (Platform.OS === "ios") {
         url = appleMapsUrl;
         supported = await Linking.canOpenURL(url);
@@ -90,7 +124,6 @@ const ShopLocation = ({ shopLat, shopLng }) => {
         }
       }
 
-      // Fallback to Google Maps web URL
       url = googleMapsWebUrl;
       supported = await Linking.canOpenURL(url);
       console.log("Can open Google Maps web:", supported);
@@ -100,7 +133,6 @@ const ShopLocation = ({ shopLat, shopLng }) => {
         return;
       }
 
-      // No supported apps
       console.log("No supported map apps found");
       Alert.alert("Error", "No map application available on this device");
     } catch (error) {
@@ -114,26 +146,24 @@ const ShopLocation = ({ shopLat, shopLng }) => {
       <TouchableOpacity
         onPress={handleLocationAndOpenMaps}
         style={{ flexDirection: "row", alignItems: "center", marginTop: 5 }}
+        disabled={subscriptionLoading} // Optional: disable while loading
       >
         <MaterialIcons name="location-on" size={24} color="#007BFF" />
-        <Text style={{ color: "#007BFF", marginLeft: 5, fontSize: 16 }}>View in Maps</Text>
+        <Text style={{ color: "#007BFF", marginLeft: 5, fontSize: 16 }}>
+          {subscriptionLoading ? "Loading..." : "View in Maps"}
+        </Text>
       </TouchableOpacity>
 
-      {/* Render SubscriptionRequired directly when modalVisible is true */}
-      {modalVisible && (
-        <SubscriptionRequired
-          onClose={() => {
-            console.log("Modal closed via SubscriptionRequired");
-            setModalVisible(false);
-          }}
-        />
-      )}
+      {/* Subscription Modal */}
+      <SubscriptionRequired
+        visible={modalVisible}
+        onClose={() => {
+          console.log("Modal closed");
+          setModalVisible(false);
+        }}
+      />
     </>
   );
 };
 
-export default (props) => (
-  <SubscriptionProvider>
-    <ShopLocation {...props} />
-  </SubscriptionProvider>
-);
+export default ShopLocation;

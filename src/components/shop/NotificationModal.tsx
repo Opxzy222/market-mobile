@@ -7,10 +7,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import messaging from '@react-native-firebase/messaging';
 import { setupNotificationHandlers } from '../NotificationHandlers';
-import { v4 as uuidv4 } from 'uuid'; // For unique ID generation
+import { v4 as uuidv4 } from 'uuid';
 
 const MERGE_TYPES = new Set(['shop_follower', 'shop_review', 'shop_post']);
-const FALLBACK_IMAGE_URL = 'https://via.placeholder.com/40'; // Fallback image URL
+const FALLBACK_IMAGE_URL = 'https://via.placeholder.com/40';
 
 const NotificationModal = () => {
   const [notifications, setNotifications] = useState([]);
@@ -25,13 +25,12 @@ const NotificationModal = () => {
   const router = useRouter();
   const isMountedRef = useRef(true);
 
-  // Clean up old displayed notification IDs
   const cleanOldDisplayedIds = useCallback(async () => {
     try {
       const stored = await AsyncStorage.getItem('displayed_notification_ids');
       if (stored) {
         const { ids, timestamp } = JSON.parse(stored);
-        if (Date.now() - timestamp > 24 * 60 * 60 * 1000) { // 24-hour TTL
+        if (Date.now() - timestamp > 24 * 60 * 60 * 1000) {
           await AsyncStorage.removeItem('displayed_notification_ids');
           displayedNotificationIdsRef.current.clear();
           console.log('Cleared expired displayed notification IDs');
@@ -42,7 +41,6 @@ const NotificationModal = () => {
     }
   }, []);
 
-  // Initialize WebSocket, notifications, and displayed IDs
   useEffect(() => {
     isMountedRef.current = true;
     const initialize = async () => {
@@ -57,7 +55,6 @@ const NotificationModal = () => {
           router.push('/login');
         }
 
-        // Load notifications
         const storedNotifications = await AsyncStorage.getItem('notifications');
         let filteredNotifications = [];
         if (storedNotifications) {
@@ -84,7 +81,7 @@ const NotificationModal = () => {
               .map((n) => ({
                 ...n,
                 timestamp: timeAgo(n.created_at),
-                image: n.image || FALLBACK_IMAGE_URL, // Ensure valid image URL
+                image: n.image || FALLBACK_IMAGE_URL,
               }));
             console.log('Loaded notifications from storage:', filteredNotifications.length);
             if (isMountedRef.current) {
@@ -101,7 +98,6 @@ const NotificationModal = () => {
           await AsyncStorage.setItem('notifications', JSON.stringify([]));
         }
 
-        // Load displayed notification IDs
         const storedDisplayedIds = await AsyncStorage.getItem('displayed_notification_ids');
         if (storedDisplayedIds) {
           const { ids } = JSON.parse(storedDisplayedIds);
@@ -115,7 +111,6 @@ const NotificationModal = () => {
     };
     initialize();
 
-    // FCM foreground handler
     const unsubscribeFCM = messaging().onMessage(async (remoteMessage) => {
       console.log('Foreground FCM message received:', JSON.stringify(remoteMessage, null, 2));
       try {
@@ -131,6 +126,7 @@ const NotificationModal = () => {
           } else {
             notificationData = remoteMessage.data || {};
           }
+
           const notification = {
             id: notificationData.id || remoteMessage.messageId || uuidv4(),
             type: (notificationData.type || remoteMessage.data?.type || 'unknown').toLowerCase(),
@@ -140,52 +136,39 @@ const NotificationModal = () => {
             conversation_id: notificationData.conversation_id || remoteMessage.data?.conversation_id,
             sender_id: notificationData.sender_id || remoteMessage.data?.sender_id,
             receiver_id: notificationData.receiver_id || remoteMessage.data?.receiver_id,
+            po_id: notificationData.po_id || remoteMessage.data?.po_id,
             created_at: new Date().toISOString(),
             is_read: false,
-            meta_data: notificationData,
+            meta_data: {
+              ...notificationData,
+              po_id: notificationData.po_id || remoteMessage.data?.po_id,
+              pickup_code: notificationData.pickup_code || remoteMessage.data?.pickup_code,
+            },
             image: notificationData.image || FALLBACK_IMAGE_URL,
           };
-          console.log('FCM notification processed:', { id: notification.id, type: notification.type });
 
-          // Validate notification
-          if (!notification.id) {
-            console.warn('Skipping notification with missing id:', JSON.stringify(notification, null, 2));
-            return;
-          }
+          if (!notification.id) return;
 
-          // Check for duplicate ID
-          if (displayedNotificationIdsRef.current.has(notification.id)) {
-            console.warn('Duplicate FCM notification ID ignored:', notification.id, JSON.stringify(notification, null, 2));
-            return;
-          }
+          if (displayedNotificationIdsRef.current.has(notification.id)) return;
 
-          // Show banner only if not already displayed
-          if (!displayedNotificationIdsRef.current.has(notification.id)) {
-            Toast.show({
-              type: 'info',
-              text1: notification.message,
-              autoHide: true,
-              visibilityTime: 8000,
-              position: 'top',
-              topOffset: 60,
-              onPress: () => handleNotificationPress(notification),
-            });
-            displayedNotificationIdsRef.current.add(notification.id);
-            await AsyncStorage.setItem(
-              'displayed_notification_ids',
-              JSON.stringify({ ids: Array.from(displayedNotificationIdsRef.current), timestamp: Date.now() })
-            );
-            console.log('Banner displayed for notification:', notification.id);
-          } else {
-            console.log('Banner skipped (already displayed):', notification.id);
-          }
+          Toast.show({
+            type: 'info',
+            text1: notification.message,
+            autoHide: true,
+            visibilityTime: 8000,
+            position: 'top',
+            topOffset: 60,
+            onPress: () => handleNotificationPress(notification),
+          });
 
-          // Add to pending list for modal (exclude chat_message and unknown)
+          displayedNotificationIdsRef.current.add(notification.id);
+          await AsyncStorage.setItem(
+            'displayed_notification_ids',
+            JSON.stringify({ ids: Array.from(displayedNotificationIdsRef.current), timestamp: Date.now() })
+          );
+
           if (notification.type !== 'chat_message' && notification.type !== 'unknown') {
             pendingNotificationsRef.current = [...pendingNotificationsRef.current, notification];
-            console.log('Added non-chat_message to pending:', notification.id);
-          } else {
-            console.log('Ignored notification for modal list:', { id: notification.id, type: notification.type });
           }
         }
       } catch (error) {
@@ -199,7 +182,6 @@ const NotificationModal = () => {
     };
   }, [router, cleanOldDisplayedIds]);
 
-  // WebSocket connection
   useEffect(() => {
     if (userId !== null && !isConnectedRef.current) {
       connectWebSocket();
@@ -213,7 +195,6 @@ const NotificationModal = () => {
     };
   }, [userId]);
 
-  // Update timestamps when menu is visible
   useEffect(() => {
     if (menuVisible && isMountedRef.current) {
       setNotifications((prev) =>
@@ -225,26 +206,18 @@ const NotificationModal = () => {
     }
   }, [menuVisible]);
 
-  // Process pending notifications
   useEffect(() => {
     const processPending = async () => {
       if (pendingNotificationsRef.current.length > 0 && isMountedRef.current) {
         const seenIds = new Set(notifications.map((n) => n.id));
         const newNotifications = pendingNotificationsRef.current.filter((n) => {
-          if (!n.id) {
-            console.warn('Pending notification missing id, assigning UUID:', JSON.stringify(n, null, 2));
-            n.id = uuidv4();
-          }
-          if (seenIds.has(n.id)) {
-            console.warn('Duplicate pending notification ID ignored:', n.id, JSON.stringify(n, null, 2));
-            return false;
-          }
+          if (!n.id) n.id = uuidv4();
+          if (seenIds.has(n.id)) return false;
           seenIds.add(n.id);
           return n.id && n.type?.toLowerCase() !== 'chat_message' && n.type?.toLowerCase() !== 'unknown';
         });
         pendingNotificationsRef.current = [];
         if (newNotifications.length > 0) {
-          console.log('Processing pending notifications:', newNotifications.length);
           setNotifications((prev) => {
             let updated = [...prev];
             newNotifications.forEach((notification) => {
@@ -252,8 +225,6 @@ const NotificationModal = () => {
             });
             return updated.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
           });
-        } else {
-          console.log('No valid pending notifications to process');
         }
       }
     };
@@ -268,7 +239,7 @@ const NotificationModal = () => {
     socketRef.current = new WebSocket(wsUrl);
 
     socketRef.current.onopen = () => {
-      console.log('✅ Notification WebSocket Connected');
+      console.log('Notification WebSocket Connected');
       isConnectedRef.current = true;
       isManuallyClosedRef.current = false;
     };
@@ -276,11 +247,8 @@ const NotificationModal = () => {
     socketRef.current.onmessage = async (event) => {
       try {
         const data = JSON.parse(event.data);
-        console.log('WebSocket message:', JSON.stringify(data, null, 2));
-        if (!data?.type) {
-          console.warn('Invalid notification message (missing type):', data);
-          return;
-        }
+        if (!data?.type) return;
+
         const notification = {
           id: data.id || uuidv4(),
           type: (data.type || 'unknown').toLowerCase(),
@@ -290,84 +258,61 @@ const NotificationModal = () => {
           conversation_id: data.meta_data?.conversation_id,
           sender_id: data.meta_data?.sender_id,
           receiver_id: data.meta_data?.receiver_id,
+          po_id: data.meta_data?.po_id,
           created_at: data.created_at || new Date().toISOString(),
           is_read: data.is_read || false,
-          meta_data: data.meta_data || {},
+          meta_data: {
+            ...data.meta_data,
+            po_id: data.meta_data?.po_id,
+            pickup_code: data.meta_data?.pickup_code,
+          },
           image: data.meta_data?.image || FALLBACK_IMAGE_URL,
         };
-        console.log('WebSocket notification processed:', { id: notification.id, type: notification.type });
 
-        // Check for duplicate ID
-        if (displayedNotificationIdsRef.current.has(notification.id)) {
-          console.warn('Duplicate WebSocket notification ID ignored:', notification.id, JSON.stringify(notification, null, 2));
-          return;
-        }
+        if (displayedNotificationIdsRef.current.has(notification.id)) return;
 
-        // Show banner only if not already displayed
-        if (!displayedNotificationIdsRef.current.has(notification.id)) {
-          Toast.show({
-            type: 'info',
-            text1: notification.message,
-            autoHide: true,
-            visibilityTime: 8000,
-            position: 'top',
-            topOffset: 60,
-            onPress: () => handleNotificationPress(notification),
-          });
-          displayedNotificationIdsRef.current.add(notification.id);
-          await AsyncStorage.setItem(
-            'displayed_notification_ids',
-            JSON.stringify({ ids: Array.from(displayedNotificationIdsRef.current), timestamp: Date.now() })
-          );
-          console.log('Banner displayed for notification:', notification.id);
-        } else {
-          console.log('Banner skipped (already displayed):', notification.id);
-        }
+        Toast.show({
+          type: 'info',
+          text1: notification.message,
+          autoHide: true,
+          visibilityTime: 8000,
+          position: 'top',
+          topOffset: 60,
+          onPress: () => handleNotificationPress(notification),
+        });
 
-        // Add to pending list for modal (exclude chat_message and unknown)
+        displayedNotificationIdsRef.current.add(notification.id);
+        await AsyncStorage.setItem(
+          'displayed_notification_ids',
+          JSON.stringify({ ids: Array.from(displayedNotificationIdsRef.current), timestamp: Date.now() })
+        );
+
         if (notification.type !== 'chat_message' && notification.type !== 'unknown') {
           pendingNotificationsRef.current = [...pendingNotificationsRef.current, notification];
-          console.log('Added non-chat_message to pending:', notification.id);
-        } else {
-          console.log('Ignored notification for modal list:', { id: notification.id, type: notification.type });
         }
       } catch (error) {
-        console.error('WebSocket message error:', error, 'Raw data:', event.data);
+        console.error('WebSocket message error:', error);
       }
     };
 
-    socketRef.current.onerror = (error) => {
-      console.error('❌ Notification WebSocket Error:', error);
+    socketRef.current.onerror = () => {
       isConnectedRef.current = false;
       socketRef.current = null;
-      if (!isManuallyClosedRef.current) {
-        setTimeout(connectWebSocket, 5000);
-      }
+      if (!isManuallyClosedRef.current) setTimeout(connectWebSocket, 5000);
     };
 
-    socketRef.current.onclose = (event) => {
-      console.log('⚠️ Notification WebSocket Disconnected:', { code: event.code, reason: event.reason });
+    socketRef.current.onclose = () => {
       isConnectedRef.current = false;
       socketRef.current = null;
-      if (!isManuallyClosedRef.current) {
-        setTimeout(connectWebSocket, 5000);
-      }
+      if (!isManuallyClosedRef.current) setTimeout(connectWebSocket, 5000);
     };
   }, [userId]);
 
   const processIncomingNotification = useCallback((prevNotifications, notification) => {
     if (!notification?.id || !notification?.type || notification.type.toLowerCase() === 'chat_message' || notification.type.toLowerCase() === 'unknown') {
-      console.log('Ignoring notification for modal list:', {
-        id: notification?.id || 'missing',
-        type: notification?.type || 'missing',
-      });
       return prevNotifications;
     }
-    if (prevNotifications.some((n) => n.id === notification.id)) {
-      console.log('Duplicate notification ignored:', notification.id, JSON.stringify(notification, null, 2));
-      return prevNotifications;
-    }
-    console.log('Adding new notification:', { id: notification.id, type: notification.type });
+    if (prevNotifications.some((n) => n.id === notification.id)) return prevNotifications;
 
     let updatedNotifications = [...prevNotifications];
 
@@ -382,10 +327,7 @@ const NotificationModal = () => {
           is_read: false,
           timestamp: timeAgo(notification.created_at),
           message: notification.type === 'shop_post' ? `${count} New post${count > 1 ? 's' : ''} from ${notification.meta_data.shop_name || 'Shop'}` : notification.message,
-          meta_data: {
-            ...notification.meta_data,
-            count,
-          },
+          meta_data: { ...notification.meta_data, count },
         };
       } else {
         updatedNotifications = [
@@ -415,9 +357,7 @@ const NotificationModal = () => {
     updatedNotifications = updatedNotifications.filter(
       (n) => n.id && n.type.toLowerCase() !== 'chat_message' && n.type.toLowerCase() !== 'unknown'
     );
-    AsyncStorage.setItem('notifications', JSON.stringify(updatedNotifications)).catch((error) =>
-      console.error('Error saving notifications:', error)
-    );
+    AsyncStorage.setItem('notifications', JSON.stringify(updatedNotifications)).catch(() => {});
     updateUnreadCount(updatedNotifications);
     return updatedNotifications;
   }, []);
@@ -427,7 +367,6 @@ const NotificationModal = () => {
     const unread = notifications.filter(
       (n) => !n.is_read && n.id && n.type.toLowerCase() !== 'chat_message' && n.type.toLowerCase() !== 'unknown'
     ).length;
-    console.log('Updated Unread Count:', unread);
     setUnreadCount(unread);
   }, []);
 
@@ -455,8 +394,26 @@ const NotificationModal = () => {
       if (item.type.toLowerCase() !== 'chat_message' && item.type.toLowerCase() !== 'unknown') {
         markNotificationAsRead();
       }
-      const type = item.type?.toLowerCase() || '';
 
+      const type = item.type?.toLowerCase() || '';
+      const message = (item.message || '').toLowerCase();
+
+      // PO NOTIFICATION — DETERMINE ROLE FROM MESSAGE CONTENT
+      if (type === 'po_notification' && item.po_id) {
+        const isSeller = 
+          message.includes('new order from') ||
+          message.includes('countered your offer') ||
+          message.includes('accepted your counter') ||
+          message.includes('cancelled their counter');
+
+        router.push({
+          pathname: isSeller ? '/cart/SellerPOEditor' : '/cart/BuyerPOEditor',
+          params: { poId: item.po_id }
+        });
+        return;
+      }
+
+      // ALL OTHER NOTIFICATIONS — UNCHANGED
       switch (type) {
         case 'shop_post':
         case 'shop_review':
@@ -469,7 +426,9 @@ const NotificationModal = () => {
         case 'receipt_status':
           if (item.receipt_id) {
             router.push({
-              pathname: item.type === 'receipt_status' && item.meta_data?.status === 'voided' ? '/shop/CustomerReceipts' : '/shop/ShopReceipts',
+              pathname: item.type === 'receipt_status' && item.meta_data?.status === 'voided' 
+                ? '/shop/CustomerReceipts' 
+                : '/shop/ShopReceipts',
               params: { receiptId: item.receipt_id, shopId: item.shop_id },
             });
           }
@@ -490,7 +449,6 @@ const NotificationModal = () => {
           }
           break;
         default:
-          console.warn('Unhandled notification type:', type);
           break;
       }
     },
@@ -525,7 +483,6 @@ const NotificationModal = () => {
     }
   }, []);
 
-  // FlatList optimizations
   const getItemLayout = useCallback(
     (data, index) => ({
       length: 60,
@@ -545,6 +502,7 @@ const NotificationModal = () => {
           </View>
         )}
       </TouchableOpacity>
+
       <Modal
         isVisible={menuVisible}
         onBackdropPress={() => setMenuVisible(false)}
@@ -561,25 +519,41 @@ const NotificationModal = () => {
               <Ionicons name="close" size={24} color="black" />
             </TouchableOpacity>
           </View>
+
           <FlatList
             data={notifications}
             keyExtractor={(item) => item.id.toString()}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                onPress={() => handleNotificationPress(item)}
-                style={[styles.notificationItem, !item.is_read && styles.unreadNotification]}
-              >
-                <Image
-                  source={{ uri: item.image || FALLBACK_IMAGE_URL }}
-                  style={styles.avatar}
-                  onError={() => console.warn(`Failed to load image for notification ${item.id}, using fallback`)}
-                />
-                <View style={styles.textContainer}>
-                  <Text style={styles.notificationText}>{item.message || 'No message'}</Text>
-                  <Text style={styles.timestamp}>{item.timestamp || 'Just now'}</Text>
-                </View>
-              </TouchableOpacity>
-            )}
+            renderItem={({ item }) => {
+              const isPO = item.type === 'po_notification';
+              const messageText = item.message || '';
+              const hasCode = messageText.includes('Code:') || messageText.includes('code:');
+
+              return (
+                <TouchableOpacity
+                  onPress={() => handleNotificationPress(item)}
+                  style={[styles.notificationItem, !item.is_read && styles.unreadNotification]}
+                >
+                  <View style={[styles.avatar, isPO && styles.poAvatar]}>
+                    <Ionicons
+                      name={isPO ? "cart-outline" : "notifications-outline"}
+                      size={24}
+                      color={isPO ? "#F59E0B" : "#666"}
+                    />
+                  </View>
+                  <View style={styles.textContainer}>
+                    <Text style={styles.notificationText}>{messageText}</Text>
+                    {hasCode && (
+                      <Text style={styles.pickupCode}>
+                        Pickup Code: <Text style={styles.code}>
+                          {messageText.split('Code:')[1]?.trim() || messageText.split('code:')[1]?.trim()}
+                        </Text>
+                      </Text>
+                    )}
+                    <Text style={styles.timestamp}>{item.timestamp || 'Just now'}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            }}
             getItemLayout={getItemLayout}
             initialNumToRender={10}
             maxToRenderPerBatch={10}
@@ -593,7 +567,7 @@ const NotificationModal = () => {
 };
 
 const styles = StyleSheet.create({
-  parentContainer: { position: 'relative', zIndex: 2001, },
+  parentContainer: { position: 'relative', zIndex: 2001 },
   notificationIconContainer: { position: 'relative', marginHorizontal: 10 },
   badge: {
     position: 'absolute',
@@ -633,10 +607,23 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: '#3b82f6',
   },
-  textContainer: { marginLeft: 10, flex: 1 },
-  notificationText: { fontSize: 16, color: '#333' },
-  timestamp: { fontSize: 12, color: '#888' },
-  avatar: { width: 40, height: 40, borderRadius: 20 },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#eee',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  poAvatar: {
+    backgroundColor: '#FEF3C7',
+  },
+  textContainer: { flex: 1 },
+  notificationText: { fontSize: 16, color: '#333', fontWeight: '500' },
+  pickupCode: { fontSize: 13, color: '#666', marginTop: 4 },
+  code: { fontWeight: 'bold', color: '#10B981' },
+  timestamp: { fontSize: 12, color: '#888', marginTop: 4 },
   noNotifications: { textAlign: 'center', padding: 20, color: '#888' },
 });
 

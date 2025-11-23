@@ -6,7 +6,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  ScrollView, StatusBar
+  ScrollView,
+  StatusBar,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -23,8 +24,6 @@ const Account = () => {
   const pathname = usePathname();
   const router = useRouter();
 
-  const API_BASE_URL = '';
-
   useEffect(() => {
     const fetchUserData = async () => {
       setLoading(true);
@@ -40,6 +39,7 @@ const Account = () => {
           setBalance(balance);
           setVirtualAccount(virtual_account);
           setSubscription(subscription);
+
           await AsyncStorage.setItem('balance', balance.toString());
           if (virtual_account) {
             await AsyncStorage.setItem('dva_account_number', virtual_account.account_number);
@@ -60,15 +60,23 @@ const Account = () => {
     };
 
     fetchUserData();
-  }, []); // Always refetch on mount
+  }, []);
 
   return (
-    <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+    <>
+      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+      
+      {/* LinearGradient as absolute background */}
+      <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={StyleSheet.absoluteFillObject} />
+
+      {/* Scrollable content with proper flex */}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        bounces={true}
+      >
         {/* Account Details Card */}
         <View style={styles.accountCard}>
-          {/*<Text style={styles.cardTitle}>Your Virtual Account</Text>*/}
           {loading && !virtualAccount && !balance ? (
             <ActivityIndicator size="large" color="#5A8DEE" style={styles.loader} />
           ) : (
@@ -120,7 +128,6 @@ const Account = () => {
                   </TouchableOpacity>
                 </View>
               )}
-              
             </>
           )}
         </View>
@@ -136,10 +143,7 @@ const Account = () => {
             <MaterialIcons name="receipt-long" size={24} color="#5A8DEE" />
             <Text style={styles.optionText}>View Receipts</Text>
           </TouchableOpacity>
-          {/*<TouchableOpacity style={styles.optionCard}>
-            <MaterialIcons name="sync-alt" size={24} color="#5A8DEE" />
-            <Text style={styles.optionText}>View Transactions</Text>
-          </TouchableOpacity> */}
+
           <TouchableOpacity
             style={styles.optionCard}
             onPress={() =>
@@ -156,20 +160,38 @@ const Account = () => {
             <MaterialIcons name="card-membership" size={24} color="#5A8DEE" />
             <Text style={styles.optionText}>Subscription</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.optionCard}
+            onPress={() =>
+              router.push({
+                pathname: 'cart/BuyerPODashboard',
+                params: {
+                  prevRoute: pathname,
+                  currentPlan: subscription.plan || 'none',
+                  endDate: subscription.end_date || 'N/A',
+                },
+              })
+            }
+          >
+            <MaterialIcons name="card-membership" size={24} color="#5A8DEE" />
+            <Text style={styles.optionText}>Order</Text>
+          </TouchableOpacity>
         </View>
+
+        {/* Extra bottom padding so last item is fully visible */}
+        <View style={{ height: 40 }} />
       </ScrollView>
-    </LinearGradient>
+    </>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
   scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 40,
-    paddingBottom: 20,
+    paddingBottom: 60, // Critical: gives space at bottom
+    flexGrow: 1,
   },
   accountCard: {
     backgroundColor: '#fff',

@@ -1,4 +1,5 @@
-import React, { useState, useCallback, useMemo, useRef, useEffect, useContext } from 'react';
+// app/(tabs)/ShopHomePage.tsx  (or wherever your file is)
+import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   FlatList,
   StyleSheet,
@@ -24,12 +25,19 @@ import api from '../../api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { clearNonSuggestionData } from '../../storage/storage';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import SubscriptionProvider, { SubscriptionContext } from '../../components/SubscriptionProvider';
 import { LinearGradient } from 'expo-linear-gradient';
-import axios from 'axios'; // Ensure axios is imported for error handling
+import axios from 'axios';
+
+// ────────────────────── AUTH GUARD ──────────────────────
+import { useAuthGuard } from '../../hooks/useAuthGuard'; // ← ADDED
 
 const ShopHomePage = () => {
-  const { subscriptionStatus, loading: subscriptionLoading } = useContext(SubscriptionContext);
+  // ───── BLOCK RENDER IF NOT LOGGED IN ─────
+  useAuthGuard();
+
+  // ───── State ─────
+  const [subscriptionPlan, setSubscriptionPlan] = useState<string | null>(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(true);
   const [data, setData] = useState({
     categories: [],
     followed_shops: [],
@@ -44,108 +52,104 @@ const ShopHomePage = () => {
   const [progress, setProgress] = useState(0);
   const [modalTitle, setModalTitle] = useState('Setting Up Your Dashboard');
   const [modalSubtitle, setModalSubtitle] = useState('Please hold on this could take a few minutes...');
+
   const hasFetchedOnceRef = useRef(false);
-  const sessionTokenRef = useRef(null);
   const flatListRef = useRef(null);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const TAB_BAR_HEIGHT = 60;
 
-  const isValidCache = (parsedData) => {
-    return (
-      parsedData &&
-      (parsedData.categories?.length > 0 ||
-       parsedData.followed_shops?.length > 0 ||
-       parsedData.recently_visited_shops?.length > 0)
-    );
-  };
-
-  const loadCachedData = async () => {
-    try {
-      const sessionToken = await AsyncStorage.getItem('sessionToken');
-      sessionTokenRef.current = sessionToken;
-      if (!sessionToken) {
-        await clearNonSuggestionData();
-        setData({ categories: [], followed_shops: [], recently_visited_shops: [] });
-        console.log('No session token, cleared stale data and reset state');
-        router.push('/login');
-        return false;
+  // ───── Load Subscription Cache ─────
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const cache = await AsyncStorage.getItem('subscription_cache');
+        if (cache) {
+          const parsed = JSON.parse(cache);
+          setSubscriptionPlan(parsed.plan?.toLowerCase() || null);
+        }
+      } catch (e) {
+        console.error('Failed to load subscription_cache:', e);
+      } finally {
+        setSubscriptionLoading(false);
       }
-      const cachedData = await AsyncStorage.getItem('shopDashboardData');
-      const cacheTimestamp = await AsyncStorage.getItem('shopDashboardDataTimestamp');
-      const isCacheFresh = cacheTimestamp && (Date.now() - parseInt(cacheTimestamp) < 5 * 60 * 1000); // 5 minutes
-      if (cachedData && isCacheFresh) {
-        const parsedData = JSON.parse(cachedData);
-        if (isValidCache(parsedData)) {
-          setData(parsedData);
+    };
+    load();
+  }, []);
+
+  // ───── Cache Helpers ─────
+  const isValidCache = (d: any) =>
+    d &&
+    (d.categories?.length > 0 ||
+      d.followed_shops?.length > 0 ||
+      d.recently_visited_shops?.length > 0);
+
+  const loadCachedData = async (): Promise<boolean> => {
+    try {
+      const cached = await AsyncStorage.getItem('shopDashboardData');
+      const ts = await AsyncStorage.getItem('shopDashboardDataTimestamp');
+      const isFresh = ts && Date.now() - parseInt(ts) < 5 * 60 * 1000;
+
+      if (cached && isFresh) {
+        const parsed = JSON.parse(cached);
+        if (isValidCache(parsed)) {
+          setData(parsed);
           setIsLoading(false);
-          console.log('Loaded fresh cached dashboard data:', parsedData);
           return true;
         }
       }
-      console.log('No fresh cached data found');
       return false;
-    } catch (error) {
-      console.error('Error loading cached data:', error);
-      setNetworkError(true);
+    } catch (e) {
+      console.error('Cache load error:', e);
       return false;
     }
   };
 
+  // ───── Fetch Dashboard Data ─────
   const fetchData = async () => {
     try {
       setNetworkError(false);
-      if (!sessionTokenRef.current) {
-        sessionTokenRef.current = await AsyncStorage.getItem('sessionToken');
-        console.log('Fetched sessionToken:', sessionTokenRef.current);
-      }
-      if (!sessionTokenRef.current) {
-        console.log('No session token, skipping fetch');
+      const token = await AsyncStorage.getItem('sessionToken');
+      if (!token) {
         await clearNonSuggestionData();
         setData({ categories: [], followed_shops: [], recently_visited_shops: [] });
-        router.push('/login');
+        router.replace('/login');
         return;
       }
 
-      const response = await api.get('/shop-dashboard-overview/', {
-        headers: {
-          Authorization: sessionTokenRef.current,
-        },
+      const res = await api.get('/shop-dashboard-overview/', {
+        headers: { Authorization: token },
       });
-      const newData = response.data;
-      const plan = newData.plan;
-      const is_active = newData.is_active;
-      const start_date = newData.start_date;
-      const end_date = newData.end_date;
 
-      setData(newData); // Update state with backend data
-      await AsyncStorage.setItem('shopDashboardData', JSON.stringify(newData));
-      await AsyncStorage.setItem('shopDashboardDataTimestamp', Date.now().toString()); // Save timestamp
-      await AsyncStorage.setItem('user_verified', JSON.stringify(newData.user_verified));
-      await AsyncStorage.setItem('phone_verified', JSON.stringify(newData.phone_verified));
+      const newData = res.data;
+      setData(newData);
 
-      const subscriptionData = { plan, is_active, start_date, end_date };
-      await AsyncStorage.setItem('subscription_cache', JSON.stringify(subscriptionData));
-      console.log('Stored subscription data:', subscriptionData);
+      await AsyncStorage.multiSet([
+        ['shopDashboardData', JSON.stringify(newData)],
+        ['shopDashboardDataTimestamp', Date.now().toString()],
+        ['user_verified', JSON.stringify(newData.user_verified)],
+        ['phone_verified', JSON.stringify(newData.phone_verified)],
+        ['shop_id', JSON.stringify(newData.shop_id)],
+        [
+          'subscription_cache',
+          JSON.stringify({
+            plan: newData.plan,
+            is_active: newData.is_active,
+            start_date: newData.start_date,
+            end_date: newData.end_date,
+          }),
+        ],
+      ]);
 
-      console.log('Fetched and updated dashboard data:', newData);
+      setSubscriptionPlan(newData.plan?.toLowerCase() || null);
       hasFetchedOnceRef.current = true;
     } catch (error) {
-      console.log('Error details:', {
-        isAxiosError: axios.isAxiosError(error),
-        status: error.response?.status,
-        response: error.response,
-        message: error.message,
-      });
-
       if (axios.isAxiosError(error) && error.response?.status === 403) {
-        console.log('Authentication failed (403), clearing data and navigating to login');
         await clearNonSuggestionData();
-        setData({ categories: [], followed_shops: [], recently_visited_shops: [] });
-        sessionTokenRef.current = null;
-        router.push('/login');
+        await AsyncStorage.removeItem('sessionToken');
+        router.replace('/login');
       } else {
-        console.error('Network error fetching dashboard data:', error);
+        console.error('Network error:', error);
         setNetworkError(true);
       }
     } finally {
@@ -153,65 +157,45 @@ const ShopHomePage = () => {
     }
   };
 
+  // ───── Initialize on Focus (Only if logged in) ─────
   useFocusEffect(
     useCallback(() => {
-      console.log('Screen focused, initializing data');
-      const initializeData = async () => {
-        const hasValidCache = await loadCachedData();
-        if (!hasValidCache) {
-          fetchData(); // Only fetch if cache is invalid or stale
+      const init = async () => {
+        const hasCache = await loadCachedData();
+        if (!hasCache) {
+          await fetchData();
         }
       };
-      initializeData();
+      init();
     }, [])
   );
 
-  useEffect(() => {
-    const checkSessionToken = async () => {
-      const newToken = await AsyncStorage.getItem('sessionToken');
-      if (newToken !== sessionTokenRef.current) {
-        console.log('Session token changed, resetting fetch state and fetching data');
-        sessionTokenRef.current = newToken;
-        hasFetchedOnceRef.current = false;
-        setIsLoading(true); // Show loading state during token change
-        await fetchData();
-      }
-    };
-    checkSessionToken();
-    const interval = setInterval(checkSessionToken, 1000);
-    return () => clearInterval(interval);
-  }, []);
+  // ───── Handlers ─────
+  const handleSuggestionsStateChange = useCallback(
+    ({ showSuggestions, suggestionsHeight }: { showSuggestions: boolean; suggestionsHeight: number }) => {
+      setShowSuggestions(showSuggestions);
+      setSuggestionsHeight(showSuggestions ? suggestionsHeight : 0);
+    },
+    []
+  );
 
-  const handleSuggestionsStateChange = useCallback(({ showSuggestions, suggestionsHeight }) => {
-    console.log('Suggestions state changed:', { showSuggestions, suggestionsHeight });
-    setShowSuggestions(showSuggestions);
-    setSuggestionsHeight(showSuggestions ? suggestionsHeight : 0);
-  }, []);
-
-  const handleFocusChange = useCallback((focused) => {
-    console.log('Input focus changed:', focused);
-    setInputFocused(focused);
-  }, []);
-
-  const handlePopulationStateChange = useCallback(({ isPopulating, progress }) => {
-    console.log('Population state changed:', { isPopulating, progress });
-    setIsPopulating(isPopulating);
-    setProgress(progress);
-    if (progress >= 99) {
-      setModalTitle('Finalizing Your Dashboard');
-      setModalSubtitle('Almost ready, just a few more moments...');
-    } else {
-      setModalTitle('Setting Up Your Dashboard');
-      setModalSubtitle('Please hold on this could take a few minutes...');
-    }
-  }, []);
+  const handleFocusChange = useCallback((focused: boolean) => setInputFocused(focused), []);
+  const handlePopulationStateChange = useCallback(
+    ({ isPopulating, progress }: { isPopulating: boolean; progress: number }) => {
+      setIsPopulating(isPopulating);
+      setProgress(progress);
+      setModalTitle(progress >= 99 ? 'Finalizing Your Dashboard' : 'Setting Up Your Dashboard');
+      setModalSubtitle(progress >= 99 ? 'Almost ready...' : 'Please hold on this could take a few minutes...');
+    },
+    []
+  );
 
   const handleReload = useCallback(() => {
-    console.log('Reload button pressed');
-    setIsLoading(true); // Show loading state during reload
+    setIsLoading(true);
     fetchData();
   }, []);
 
+  // ───── Sections for FlatList ─────
   const sections = useMemo(
     () => [
       { type: 'header', id: 'header' },
@@ -236,7 +220,7 @@ const ShopHomePage = () => {
     ]
   );
 
-  const renderSection = ({ item }) => {
+  const renderSection = ({ item }: { item: any }) => {
     switch (item.type) {
       case 'header':
         return <View />;
@@ -259,6 +243,7 @@ const ShopHomePage = () => {
     }
   };
 
+  // ───── Early Returns ─────
   if (subscriptionLoading || isLoading) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: '#F7FAFC' }]}>
@@ -286,6 +271,9 @@ const ShopHomePage = () => {
     );
   }
 
+  const isFreeUser = !['standard', 'premium'].includes(subscriptionPlan || '');
+
+  // ───── Main Render ─────
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: '#F7FAFC' }]} edges={['top', 'left', 'right']}>
       <StatusBar barStyle="dark-content" backgroundColor="#2563EB" />
@@ -305,17 +293,15 @@ const ShopHomePage = () => {
             keyExtractor={(item) => item.id}
             contentContainerStyle={[
               styles.flatListContent,
-              {
-                paddingBottom: suggestionsHeight + insets.bottom + TAB_BAR_HEIGHT + 10,
-              },
+              { paddingBottom: suggestionsHeight + insets.bottom + TAB_BAR_HEIGHT + 10 },
             ]}
-            nestedScrollEnabled={true}
+            nestedScrollEnabled
             keyboardShouldPersistTaps="handled"
-            scrollEnabled={true}
+            scrollEnabled
             scrollEventThrottle={16}
             ListFooterComponent={
               <View style={styles.footerContainer}>
-                {!['regular', 'standard', 'premium'].includes(subscriptionStatus) && (
+                {isFreeUser && (
                   <View style={styles.adContainer}>
                     <AdMobManager />
                   </View>
@@ -326,6 +312,8 @@ const ShopHomePage = () => {
           />
         </LinearGradient>
       </KeyboardAvoidingView>
+
+      {/* Progress Modal */}
       <Modal visible={isPopulating} animationType="fade" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
@@ -334,7 +322,7 @@ const ShopHomePage = () => {
             <View style={styles.progressBarContainer}>
               <View style={[styles.progressBar, { width: `${progress}%` }]} />
             </View>
-            <Text style={styles.progressText}>{`${Math.round(progress)}%`}</Text>
+            <Text style={styles.progressText}>{Math.round(progress)}%</Text>
             <ActivityIndicator size="large" color="#2563EB" style={styles.modalLoader} />
           </View>
         </View>
@@ -343,33 +331,16 @@ const ShopHomePage = () => {
   );
 };
 
+// ───── Styles (unchanged) ─────
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
-  headerContainer: {
-    backgroundColor: '#F7FAFC',
-  },
-  keyboardAvoidingView: {
-    flex: 1,
-  },
-  container: {
-    flex: 1,
-    backgroundColor: '#F7FAFC',
-  },
-  flatListContent: {
-    paddingTop: 10,
-  },
-  footerContainer: {
-    alignItems: 'center',
-  },
-  adContainer: {
-    width: '100%',
-    alignItems: 'center',
-  },
-  footerSpacer: {
-    // Height for tab bar and insets
-  },
+  safeArea: { flex: 1 },
+  headerContainer: { backgroundColor: '#F7FAFC' },
+  keyboardAvoidingView: { flex: 1 },
+  container: { flex: 1, backgroundColor: '#F7FAFC' },
+  flatListContent: { paddingTop: 10 },
+  footerContainer: { alignItems: 'center' },
+  adContainer: { width: '100%', alignItems: 'center' },
+  footerSpacer: {},
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -460,13 +431,7 @@ const styles = StyleSheet.create({
     color: '#1F2937',
     marginBottom: 20,
   },
-  modalLoader: {
-    marginTop: 10,
-  },
+  modalLoader: { marginTop: 10 },
 });
 
-export default (props) => (
-  <SubscriptionProvider>
-    <ShopHomePage {...props} />
-  </SubscriptionProvider>
-);
+export default ShopHomePage;

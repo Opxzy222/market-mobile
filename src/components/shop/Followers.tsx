@@ -1,14 +1,19 @@
 import React from 'react';
-import { View, Text, StyleSheet, FlatList, Image, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  Image,
+  Platform,
+} from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
 interface Follower {
-  user_id?: string; // Optional, as it may be missing
-  id?: number; // Fallback unique identifier
-  email?: string; // Fallback unique identifier
+  user_id: string;        // Now REQUIRED from backend
   username: string;
-  image?: string;
+  image?: string | null;
   is_verified: boolean;
 }
 
@@ -16,9 +21,41 @@ interface FollowersProps {
   followers?: Follower[] | null;
 }
 
+/**
+ * Generate a **stable, unique key** for each follower.
+ * Priority:
+ * 1. user_id (unique per user)
+ * 2. image URL (unique per upload)
+ * 3. username (unique per account)
+ * 4. index (fallback – warns in dev)
+ */
+const generateKey = (item: Follower, index: number): string => {
+  if (item.user_id) {
+    return item.user_id;
+  }
+
+  if (item.image) {
+    // Remove query string to avoid auth token changes breaking key
+    return item.image.split('?')[0];
+  }
+
+  if (item.username) {
+    return item.username;
+  }
+
+  if (__DEV__) {
+    console.warn(
+      `Follower at index ${index} has no stable identifier:`,
+      item
+    );
+  }
+
+  return `fallback_${index}`;
+};
+
 const Followers = ({ followers = [] }: FollowersProps) => {
   const getColorForAlphabet = (alphabet: string) => {
-    const colors = {
+    const colors: Record<string, string> = {
       A: '#FFD700', B: '#FF6347', C: '#4682B4', D: '#32CD32', E: '#FF69B4',
       F: '#8A2BE2', G: '#FF4500', H: '#DA70D6', I: '#20B2AA', J: '#B22222',
       K: '#4B0082', L: '#FF8C00', M: '#808000', N: '#FF1493', O: '#8B4513',
@@ -29,24 +66,21 @@ const Followers = ({ followers = [] }: FollowersProps) => {
     return colors[alphabet.toUpperCase()] || '#FFD700';
   };
 
-  // Log followers to diagnose key issues
-  if (__DEV__) {
-    console.log('Followers data:', followers);
-  }
-
-  const keyExtractor = (item: Follower, index: number) => {
-    // Use user_id if available, else fallback to id or email, then index
-    const key = item.user_id || item.id?.toString() || item.email || `index_${index}`;
-    if (__DEV__ && !item.user_id && !item.id && !item.email) {
-      console.warn(`Follower at index ${index} lacks unique identifier:`, item);
-    }
-    return key;
-  };
+  const keyExtractor = (item: Follower, index: number) =>
+    generateKey(item, index);
 
   const renderFollower = ({ item }: { item: Follower }) => (
     <View style={styles.followerItem}>
       {item.image ? (
-        <Image source={{ uri: item.image }} style={styles.followerAvatar} />
+        <Image
+          source={{ uri: item.image }}
+          style={styles.followerAvatar}
+          onError={(e) => {
+            if (__DEV__) {
+              console.warn('Failed to load follower image:', item.image);
+            }
+          }}
+        />
       ) : (
         <View
           style={[
@@ -83,8 +117,9 @@ const Followers = ({ followers = [] }: FollowersProps) => {
           keyExtractor={keyExtractor}
           renderItem={renderFollower}
           contentContainerStyle={styles.followerList}
-          scrollEnabled={false} // Disable internal scrolling to avoid nesting issues
+          scrollEnabled={false}
           initialNumToRender={10}
+          removeClippedSubviews={true}
         />
       ) : (
         <Text style={styles.noFollowersText}>No followers yet.</Text>

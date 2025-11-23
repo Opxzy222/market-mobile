@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useContext } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -23,7 +23,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import StatusViewer from "../../components/shop/ShopStatusViewer";
-import SubscriptionProvider, { SubscriptionContext } from "../../components/SubscriptionProvider";
 import SubscriptionRequired from "@/components/RequiredSubscription";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -73,12 +72,18 @@ const StatusItem = ({ item, index, onPress, onDelete, regenerateMediaUrl, sessio
         {item.media_type === "image" && (
           <Image
             source={{ uri: mediaUrls.media || FALLBACK_IMAGE }}
-            style={[styles.avatar, styles.unreadBorder]}
+            style={[
+              styles.avatar,
+              !item.viewed && styles.unreadBorder
+            ]}
             onError={() => handleImageError("media")}
           />
         )}
         {item.media_type === "video" && (
-          <View style={[styles.avatar, styles.unreadBorder]}>
+          <View style={[
+            styles.avatar,
+            !item.viewed && styles.unreadBorder
+          ]}>
             <Image
               source={{ uri: mediaUrls.thumbnail || FALLBACK_IMAGE }}
               style={styles.avatar}
@@ -92,7 +97,10 @@ const StatusItem = ({ item, index, onPress, onDelete, regenerateMediaUrl, sessio
         {item.media_type === "text" && (
           <Image
             source={{ uri: item.image || FALLBACK_IMAGE }}
-            style={[styles.avatar, styles.unreadBorder]}
+            style={[
+              styles.avatar,
+              !item.viewed && styles.unreadBorder
+            ]}
             onError={() => console.error(`Failed to load shop image: ${item.image}`)}
           />
         )}
@@ -118,13 +126,38 @@ const StatusScreen = () => {
   const [currentStatusIndex, setCurrentStatusIndex] = useState(null);
   const [loading, setLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const uploadProgressAnim = useRef(new Animated.Value(0)).current;
-  const { subscriptionStatus } = useContext(SubscriptionContext);
+  const uploadProgressAnim = useRef(new Animated.Value(0));
   const fileInputRef = useRef(null);
   const { shopId, prevRoute } = useLocalSearchParams();
   const router = useRouter();
   const [sessionId, setSessionId] = useState<string | null>(null);
 
+  // Subscription from AsyncStorage
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(true);
+
+  // Load subscription
+  useEffect(() => {
+    const loadSubscription = async () => {
+      try {
+        const cache = await AsyncStorage.getItem("subscription_cache");
+        if (cache) {
+          const parsed = JSON.parse(cache);
+          setSubscriptionStatus(parsed.plan?.toLowerCase() || null);
+        } else {
+          setSubscriptionStatus(null);
+        }
+      } catch (error) {
+        console.error("Failed to load subscription_cache:", error);
+        setSubscriptionStatus(null);
+      } finally {
+        setSubscriptionLoading(false);
+      }
+    };
+    loadSubscription();
+  }, []);
+
+  // Load session ID
   useEffect(() => {
     const fetchSessionId = async () => {
       try {
@@ -138,34 +171,36 @@ const StatusScreen = () => {
   }, []);
 
   const fetchStatuses = useCallback(async () => {
+    if (!sessionId) return;
     try {
-        setLoading(true);
-        const response = await api.get(`${BACKEND_URL}/shop/${shopId}/active_status/`, {
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: sessionId ? `Bearer ${sessionId}` : "",
-            },
-        });
-        const formattedStatuses = response.data.statuses.map(status => ({
-            id: status.id,
-            shop_id: status.shop_id, // Add shop_id
-            shop: status.shop.name,
-            text: status.text,
-            media: status.media,
-            thumbnail_url: status.thumbnail_url,
-            media_type: status.media_type,
-            created_at: status.created_at,
-            views_count: status.views_count,
-            image: status.shop.image // Use shop.image
-        }));
-        setStatuses(formattedStatuses);
+      setLoading(true);
+      const response = await api.get(`${BACKEND_URL}/shop/${shopId}/active_status/`, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sessionId}`,
+        },
+      });
+      const formattedStatuses = response.data.statuses.map(status => ({
+        id: status.id,
+        shop_id: status.shop_id,
+        shop: status.shop.name,
+        text: status.text,
+        media: status.media,
+        thumbnail_url: status.thumbnail_url,
+        media_type: status.media_type,
+        created_at: status.created_at,
+        views_count: status.views_count,
+        image: status.shop.image,
+        viewed: status.viewed ?? false,
+      }));
+      setStatuses(formattedStatuses);
     } catch (error) {
-        console.error("Error fetching statuses:", error);
-        Alert.alert("Error", "Failed to fetch statuses. Please try again.");
+      console.error("Error fetching statuses:", error);
+      Alert.alert("Error", "Failed to fetch statuses. Please try again.");
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
-}, [shopId, sessionId]);
+  }, [shopId, sessionId]);
 
   useEffect(() => {
     if (sessionId) {
@@ -192,7 +227,7 @@ const StatusScreen = () => {
   const handleDeleteStatus = useCallback(async (statusId) => {
     try {
       setLoading(true);
-      await axios.delete(`${BACKEND_URL}/status/${statusId}/delete/`, {
+      await api.delete(`${BACKEND_URL}/status/${statusId}/delete/`, {
         headers: {
           Authorization: sessionId,
         },
@@ -208,6 +243,9 @@ const StatusScreen = () => {
     }
   }, [sessionId, fetchStatuses]);
 
+  // ──────────────────────────────────────────────────────
+  //  FIXED: pickMedia – Copy files to cache, no thumbnails
+  // ──────────────────────────────────────────────────────
   const pickMedia = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -227,34 +265,50 @@ const StatusScreen = () => {
             return null;
           }
 
+          let finalUri = uri;
+          let finalName = name || `media_${Date.now()}.${isVideo ? "mp4" : "jpg"}`;
+
           try {
             const info = await FileSystem.getInfoAsync(uri);
             if (!info.exists || info.isDirectory) {
               throw new Error("File not found");
             }
 
-            if (info.size > 10 * 1024 * 1024) {
-              Alert.alert("Warning", `File "${name || "selected file"}" is too large (max 10 MB).`);
+            // Copy to cache if not already there
+            if (!uri.startsWith(FileSystem.cacheDirectory)) {
+              finalUri = `${FileSystem.cacheDirectory}${finalName}`;
+              await FileSystem.copyAsync({ from: uri, to: finalUri });
+            }
+
+            const newInfo = await FileSystem.getInfoAsync(finalUri);
+            if (newInfo.size > 10 * 1024 * 1024) {
+              await FileSystem.deleteAsync(finalUri, { idempotent: true });
+              Alert.alert("Warning", `File "${name}" is too large (max 10 MB).`);
               return null;
             }
 
             return {
-              id: `${uri}_${Date.now()}`,
-              uri,
-              name: name || `media_${Date.now()}.${isVideo ? "mp4" : "jpg"}`,
+              id: `${finalUri}_${Date.now()}`,
+              uri: finalUri,
+              name: finalName,
               type: isVideo ? "video" : "image",
-              thumbnail: isVideo ? uri : null,
+              thumbnail: null, // No thumbnail
               valid: true,
             };
           } catch (error) {
             console.error("Validation failed for:", uri, error);
-            Alert.alert("Warning", `File "${name || "selected file"}" is invalid and will be skipped.`);
+            try {
+              if (finalUri.startsWith(FileSystem.cacheDirectory)) {
+                await FileSystem.deleteAsync(finalUri, { idempotent: true });
+              }
+            } catch (_) {}
+            Alert.alert("Warning", `File "${name}" is invalid and will be skipped.`);
             return null;
           }
         });
 
-        const newMedia = (await Promise.all(newMediaPromises)).filter((item) => item !== null);
-        setSelectedMedia((prevMedia) => [...prevMedia, ...newMedia]);
+        const newMedia = (await Promise.all(newMediaPromises)).filter(Boolean);
+        setSelectedMedia((prev) => [...prev, ...newMedia]);
       }
     } catch (error) {
       console.error("Error picking media:", error);
@@ -283,17 +337,17 @@ const StatusScreen = () => {
           uri: URL.createObjectURL(file),
           name: file.name,
           type: mediaType,
-          thumbnail: mediaType === "video" ? URL.createObjectURL(file) : null,
+          thumbnail: null,
           file,
           valid: true,
         };
-      }).filter((item) => item !== null);
-      setSelectedMedia((prevMedia) => [...prevMedia, ...newMedia]);
+      }).filter(Boolean);
+      setSelectedMedia((prev) => [...prev, ...newMedia]);
     }
   };
 
   const removeMedia = (id) => {
-    setSelectedMedia((prevMedia) => prevMedia.filter((m) => m.id !== id));
+    setSelectedMedia((prev) => prev.filter((m) => m.id !== id));
   };
 
   const handlePostTextStatus = async () => {
@@ -322,6 +376,9 @@ const StatusScreen = () => {
     }
   };
 
+  // ──────────────────────────────────────────────────────
+  //  FIXED: handlePostMediaStatus – Safe URI handling
+  // ──────────────────────────────────────────────────────
   const handlePostMediaStatus = async () => {
     if (!selectedMedia.length && !statusText) {
       Alert.alert("Error", "Please add a caption or select at least one media file.");
@@ -329,7 +386,7 @@ const StatusScreen = () => {
     }
     setLoading(true);
     setUploadProgress(0);
-    Animated.timing(uploadProgressAnim, {
+    Animated.timing(uploadProgressAnim.current, {
       toValue: 0,
       duration: 0,
       useNativeDriver: false,
@@ -341,28 +398,38 @@ const StatusScreen = () => {
 
       const validMedia = [];
       for (const file of selectedMedia) {
-        if (file.valid) {
-          try {
-            if (Platform.OS === "web" && file.file) {
-              formData.append("media", file.file);
-              validMedia.push(file);
-            } else {
-              const info = await FileSystem.getInfoAsync(file.uri);
-              if (!info.exists) {
-                Alert.alert("Warning", `File "${file.name}" is no longer accessible and will be skipped.`);
-                continue;
-              }
-              formData.append("media", {
-                uri: file.uri.startsWith("file://") ? file.uri : `file://${file.uri}`,
-                type: file.type === "image" ? "image/jpeg" : "video/mp4",
-                name: file.name,
-              });
-              validMedia.push(file);
-            }
-          } catch (error) {
-            console.error("File validation failed before submit:", file.uri, error);
-            Alert.alert("Warning", `File "${file.name}" is invalid and will be skipped.`);
+        if (!file.valid) continue;
+
+        try {
+          if (Platform.OS === "web" && file.file) {
+            formData.append("media", file.file);
+            validMedia.push(file);
+            continue;
           }
+
+          // Ensure file is in cache
+          let validUri = file.uri;
+          if (!validUri.startsWith(FileSystem.cacheDirectory)) {
+            const newUri = `${FileSystem.cacheDirectory}${file.name}`;
+            await FileSystem.copyAsync({ from: validUri, to: newUri });
+            validUri = newUri;
+          }
+
+          const info = await FileSystem.getInfoAsync(validUri);
+          if (!info.exists) {
+            Alert.alert("Warning", `File "${file.name}" is no longer accessible and will be skipped.`);
+            continue;
+          }
+
+          formData.append("media", {
+            uri: validUri,
+            type: file.type === "image" ? "image/jpeg" : "video/mp4",
+            name: file.name,
+          });
+          validMedia.push(file);
+        } catch (error) {
+          console.error("File validation failed before submit:", file.uri, error);
+          Alert.alert("Warning", `File "${file.name}" is invalid and will be skipped.`);
         }
       }
 
@@ -382,7 +449,7 @@ const StatusScreen = () => {
           if (progressEvent.total) {
             const progress = Math.min((progressEvent.loaded / progressEvent.total) * 100, 100);
             setUploadProgress(progress);
-            Animated.timing(uploadProgressAnim, {
+            Animated.timing(uploadProgressAnim.current, {
               toValue: Math.min(progress / 100, 1),
               duration: 200,
               useNativeDriver: false,
@@ -390,6 +457,7 @@ const StatusScreen = () => {
           }
         },
       });
+
       setStatusText("");
       setSelectedMedia([]);
       setIsMediaPosting(false);
@@ -407,7 +475,7 @@ const StatusScreen = () => {
     } finally {
       setLoading(false);
       setUploadProgress(0);
-      Animated.timing(uploadProgressAnim, {
+      Animated.timing(uploadProgressAnim.current, {
         toValue: 0,
         duration: 0,
         useNativeDriver: false,
@@ -439,19 +507,9 @@ const StatusScreen = () => {
                 resizeMode="cover"
               />
             ) : (
-              <View style={styles.mediaPreview}>
-                <Image
-                  source={{ uri: item.thumbnail || item.uri }}
-                  style={styles.mediaPreview}
-                  resizeMode="cover"
-                />
-                <View style={styles.playIconContainer}>
-                  <Ionicons
-                    name="play-circle"
-                    size={30}
-                    color="rgba(255, 255, 255, 0.8)"
-                  />
-                </View>
+              // VIDEO: Show placeholder with play icon
+              <View style={[styles.mediaPreview, styles.videoPlaceholder]}>
+                <Ionicons name="play-circle" size={36} color="#fff" />
               </View>
             )
           ) : (
@@ -474,6 +532,15 @@ const StatusScreen = () => {
       ))}
     </ScrollView>
   );
+
+  if (subscriptionLoading) {
+    return (
+      <SafeAreaView style={styles.loader}>
+        <ActivityIndicator size="large" color="#007BFF" />
+        <Text style={styles.loaderText}>Loading...</Text>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
@@ -550,6 +617,7 @@ const StatusScreen = () => {
             />
           )}
 
+          {/* Text Status Modal */}
           <Modal visible={isTextPosting} animationType="slide" transparent>
             <View style={styles.modalContainer}>
               <View style={styles.modalCard}>
@@ -593,8 +661,9 @@ const StatusScreen = () => {
             </View>
           </Modal>
 
+          {/* Media Status Modal */}
           <Modal visible={isMediaPosting} animationType="slide" transparent>
-            {subscriptionStatus === "standard" || subscriptionStatus === "premium" ? (
+            {['standard', 'premium'].includes(subscriptionStatus || '') ? (
               <View style={styles.modalContainer}>
                 <View style={styles.modalCard}>
                   <View style={styles.modalHeaderRow}>
@@ -618,7 +687,7 @@ const StatusScreen = () => {
                           style={[
                             styles.progressBar,
                             {
-                              width: uploadProgressAnim.interpolate({
+                              width: uploadProgressAnim.current.interpolate({
                                 inputRange: [0, 1],
                                 outputRange: ["0%", "100%"],
                               }),
@@ -674,31 +743,39 @@ const StatusScreen = () => {
                 </View>
               </View>
             ) : (
-              <TouchableOpacity
-                style={styles.modalOverlay}
-                activeOpacity={1}
-                onPress={() => setIsMediaPosting(false)}
-              >
-                <SubscriptionRequired />
-              </TouchableOpacity>
+              <SubscriptionRequired
+                visible={true}
+                onClose={() => setIsMediaPosting(false)}
+              />
             )}
           </Modal>
 
-          {currentStatusIndex !== null && StatusViewer ? (
+          {/* Status Viewer */}
+          {currentStatusIndex !== null && StatusViewer && (
             <StatusViewer
               statuses={statuses}
               initialIndex={currentStatusIndex}
               onClose={handleCloseViewer}
               sessionId={sessionId}
+              onStatusViewed={(viewedData) => {
+                const { statuses: viewedStatuses } = viewedData;
+                setStatuses((prev) =>
+                  prev.map((status) =>
+                    viewedStatuses.some((v) => v.id === status.id)
+                      ? { ...status, viewed: true }
+                      : status
+                  )
+                );
+              }}
             />
-          ) : null}
+          )}
         </View>
       </View>
     </SafeAreaView>
   );
 };
 
-// Styles remain the same
+// ────── STYLES (with video placeholder) ──────
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -859,12 +936,6 @@ const styles = StyleSheet.create({
     color: "#333",
     marginLeft: 8,
   },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.5)",
-  },
   input: {
     backgroundColor: "#F8F8F8",
     borderRadius: 12,
@@ -914,6 +985,11 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 8,
+  },
+  videoPlaceholder: {
+    backgroundColor: "#333",
+    justifyContent: "center",
+    alignItems: "center",
   },
   playIconContainer: {
     position: "absolute",
@@ -970,10 +1046,17 @@ const styles = StyleSheet.create({
     color: "#333",
     textAlign: "center",
   },
+  loader: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F5F5F5",
+  },
+  loaderText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: "#333",
+  },
 });
 
-export default (props) => (
-  <SubscriptionProvider>
-    <StatusScreen {...props} />
-  </SubscriptionProvider>
-);
+export default StatusScreen;

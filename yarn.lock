@@ -4859,6 +4859,11 @@ expo-font@^13.0.2, expo-font@~13.3.2:
   dependencies:
     fontfaceobserver "^2.1.0"
 
+expo-haptics@^15.0.7:
+  version "15.0.7"
+  resolved "https://registry.npmjs.org/expo-haptics/-/expo-haptics-15.0.7.tgz#384bb873d7eca7b141f85e4f300b75eab68ebfe9"
+  integrity sha512-7flWsYPrwjJxZ8x82RiJtzsnk1Xp9ahnbd9PhCy3NnsemyMApoWIEUr4waPqFr80DtiLZfhD9VMLL1CKa8AImQ==
+
 expo-image-loader@~5.1.0:
   version "5.1.0"
   resolved "https://registry.npmjs.org/expo-image-loader/-/expo-image-loader-5.1.0.tgz#f7d65f9b9a9714eaaf5d50a406cb34cb25262153"
@@ -4979,11 +4984,6 @@ expo-router@~5.1.4:
     semver "~7.6.3"
     server-only "^0.0.1"
     shallowequal "^1.1.0"
-
-expo-screen-orientation@^9.0.7:
-  version "9.0.7"
-  resolved "https://registry.npmjs.org/expo-screen-orientation/-/expo-screen-orientation-9.0.7.tgz#27eb8c9f57af22e1917fc025d318dd9bf31e05c3"
-  integrity sha512-UH/XlB9eMw+I2cyHSkXhAHRAPk83WyA3k5bst7GLu14wRuWiTch9fb6I7qEJK5CN6+XelcWxlBJymys6Fr/FKA==
 
 expo-secure-store@^14.2.3:
   version "14.2.4"
@@ -7650,11 +7650,6 @@ react-native-edge-to-edge@1.6.0:
   version "1.6.0"
   resolved "https://registry.npmjs.org/react-native-edge-to-edge/-/react-native-edge-to-edge-1.6.0.tgz#2ba63b941704a7f713e298185c26cde4d9e4b973"
   integrity sha512-2WCNdE3Qd6Fwg9+4BpbATUxCLcouF6YRY7K+J36KJ4l3y+tWN6XCqAC4DuoGblAAbb2sLkhEDp4FOlbOIot2Og==
-
-react-native-edge-to-edge@^1.7.0:
-  version "1.7.0"
-  resolved "https://registry.npmjs.org/react-native-edge-to-edge/-/react-native-edge-to-edge-1.7.0.tgz#6999ee86febe920b9b4e730ec1f0eaf0c28f0003"
-  integrity sha512-ERegbsq28yoMndn/Uq49i4h6aAhMvTEjOfkFh50yX9H/dMjjCr/Tix/es/9JcPRvC+q7VzCMWfxWDUb6Jrq1OQ==
 
 react-native-element-dropdown@^2.12.4:
   version "2.12.4"

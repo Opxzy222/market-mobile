@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect, useContext } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -13,7 +13,6 @@ import {
   Platform,
   KeyboardAvoidingView,
   ScrollView,
-  Modal,
   Animated,
   Dimensions,
 } from "react-native";
@@ -21,8 +20,8 @@ import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import { Ionicons } from "@expo/vector-icons";
 import api from '../../api';
-import { SubscriptionContext } from "../../components/SubscriptionProvider";
-import SubscriptionRequired from "@/components/RequiredSubscription";
+import SubscriptionRequiredModal from "@/components/RequiredSubscription";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const { height: screenHeight } = Dimensions.get("window");
 
@@ -33,13 +32,38 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
   const [isFocused, setIsFocused] = useState(false);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const uploadProgressAnim = useRef(new Animated.Value(0)).current;
+  const uploadProgressAnim = useRef(new Animated.Value(0)); // Keep full ref
   const textInputRef = useRef(null);
   const scrollViewRef = useRef(null);
   const containerViewRef = useRef(null);
   const renderCountRef = useRef(0);
-  const { subscriptionStatus } = useContext(SubscriptionContext);
 
+  // Subscription from AsyncStorage
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(true);
+
+  // Load subscription
+  useEffect(() => {
+    const loadSubscription = async () => {
+      try {
+        const cache = await AsyncStorage.getItem("subscription_cache");
+        if (cache) {
+          const parsed = JSON.parse(cache);
+          setSubscriptionStatus(parsed.plan?.toLowerCase() || null);
+        } else {
+          setSubscriptionStatus(null);
+        }
+      } catch (error) {
+        console.error("Failed to load subscription_cache:", error);
+        setSubscriptionStatus(null);
+      } finally {
+        setSubscriptionLoading(false);
+      }
+    };
+    loadSubscription();
+  }, []);
+
+  // Render count debug
   useEffect(() => {
     renderCountRef.current += 1;
     console.log(`ShopPostForm rendered (count: ${renderCountRef.current})`);
@@ -48,6 +72,7 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
     };
   }, []);
 
+  // Keyboard scroll
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener(
       "keyboardDidShow",
@@ -56,7 +81,7 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
           textInputRef.current.measureLayout(
             containerViewRef.current,
             (x, y, width, height) => {
-              scrollViewRef.current.scrollTo({ y: y - 20, animated: true });
+              scrollViewRef.current?.scrollTo({ y: y - 20, animated: true });
             },
             () => {
               console.warn("Failed to measure TextInput layout");
@@ -150,7 +175,8 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
       setIsFocused(false);
     }
 
-    if (subscriptionStatus !== "standard" && subscriptionStatus !== "premium") {
+    // Check subscription
+    if (!['standard', 'premium'].includes(subscriptionStatus || '')) {
       setShowSubscriptionModal(true);
       return;
     }
@@ -183,7 +209,7 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
 
     setLoading(true);
     setUploadProgress(0);
-    Animated.timing(uploadProgressAnim, {
+    Animated.timing(uploadProgressAnim.current, {
       toValue: 0,
       duration: 0,
       useNativeDriver: false,
@@ -240,7 +266,7 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
               );
               console.log(`Upload progress: ${progress.toFixed(2)}%`);
               setUploadProgress(progress);
-              Animated.timing(uploadProgressAnim, {
+              Animated.timing(uploadProgressAnim.current, {
                 toValue: Math.min(progress / 100, 1),
                 duration: 200,
                 useNativeDriver: false,
@@ -285,7 +311,7 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
     } finally {
       setLoading(false);
       setUploadProgress(0);
-      Animated.timing(uploadProgressAnim, {
+      Animated.timing(uploadProgressAnim.current, {
         toValue: 0,
         duration: 0,
         useNativeDriver: false,
@@ -300,7 +326,7 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
       textInputRef.current.measureLayout(
         containerViewRef.current,
         (x, y, width, height) => {
-          scrollViewRef.current.scrollTo({ y: y - 20, animated: true });
+          scrollViewRef.current?.scrollTo({ y: y - 20, animated: true });
         },
         () => {
           console.warn("Failed to measure TextInput layout");
@@ -359,6 +385,16 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
     ),
     [removeMedia]
   );
+
+  // Loading UI
+  if (subscriptionLoading) {
+    return (
+      <View style={styles.loader}>
+        <ActivityIndicator size="large" color="#28a745" />
+        <Text style={styles.loaderText}>Loading...</Text>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -432,7 +468,7 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
                   style={[
                     styles.progressBar,
                     {
-                      width: uploadProgressAnim.interpolate({
+                      width: uploadProgressAnim.current.interpolate({
                         inputRange: [0, 1],
                         outputRange: ["0%", "100%"],
                       }),
@@ -463,17 +499,11 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
         </View>
       </ScrollView>
 
-      <Modal visible={showSubscriptionModal} animationType="slide" transparent>
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowSubscriptionModal(false)}
-        >
-          <View style={styles.subscriptionWrapper}>
-            <SubscriptionRequired />
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      {/* JUST CALL THE MODAL DIRECTLY */}
+      <SubscriptionRequiredModal
+        visible={showSubscriptionModal}
+        onClose={() => setShowSubscriptionModal(false)}
+      />
     </KeyboardAvoidingView>
   );
 };
@@ -593,19 +623,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.5)",
-  },
-  subscriptionWrapper: {
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 20,
-    width: "80%",
-    alignItems: "center",
-  },
   progressContainer: {
     marginBottom: 15,
     backgroundColor: "#fff",
@@ -630,6 +647,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#333",
     textAlign: "center",
+  },
+  loader: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f9f9f9",
+  },
+  loaderText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: "#555",
   },
 });
 

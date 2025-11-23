@@ -1,21 +1,45 @@
-import React, { useState, useContext } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   TouchableOpacity,
   Text,
   Alert,
   StyleSheet,
-  Modal,
+  ActivityIndicator,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { Ionicons } from "@expo/vector-icons";
-import { SubscriptionContext } from "../../components/SubscriptionProvider"; // Import SubscriptionContext
-import SubscriptionRequired from "@/components/RequiredSubscription"; // Import SubscriptionRequired
+import SubscriptionRequiredModal from "@/components/RequiredSubscription";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const SendPDF = ({ onSend }) => {
   const [selectedPDF, setSelectedPDF] = useState(null);
-  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false); // State for subscription modal
-  const { subscriptionStatus } = useContext(SubscriptionContext); // Access subscription status
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+
+  // Subscription from AsyncStorage
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(true);
+
+  // Load subscription
+  useEffect(() => {
+    const loadSubscription = async () => {
+      try {
+        const cache = await AsyncStorage.getItem("subscription_cache");
+        if (cache) {
+          const parsed = JSON.parse(cache);
+          setSubscriptionStatus(parsed.plan?.toLowerCase() || null);
+        } else {
+          setSubscriptionStatus(null);
+        }
+      } catch (error) {
+        console.error("Failed to load subscription_cache:", error);
+        setSubscriptionStatus(null);
+      } finally {
+        setSubscriptionLoading(false);
+      }
+    };
+    loadSubscription();
+  }, []);
 
   const pickPDF = async () => {
     try {
@@ -42,9 +66,8 @@ const SendPDF = ({ onSend }) => {
   };
 
   const handleSend = () => {
-    // Check subscription status
-    if (subscriptionStatus !== "standard" && subscriptionStatus !== "premium") {
-      setShowSubscriptionModal(true); // Show subscription modal
+    if (!['standard', 'premium'].includes(subscriptionStatus || '')) {
+      setShowSubscriptionModal(true);
       return;
     }
 
@@ -54,47 +77,56 @@ const SendPDF = ({ onSend }) => {
     }
   };
 
+  // Show loading while subscription loads
+  if (subscriptionLoading) {
+    return (
+      <View style={styles.loader}>
+        <ActivityIndicator size="small" color="#28a745" />
+        <Text style={styles.loaderText}>Loading...</Text>
+      </View>
+    );
+  }
+
   return (
-    <View style={styles.container}>
-      <TouchableOpacity onPress={pickPDF} style={styles.optionCard}>
-        <Ionicons
-          name="document-text-outline"
-          size={24}
-          color="#2980b9"
-          style={styles.optionIcon}
-        />
-        <Text style={styles.optionText}>Select Document</Text>
-      </TouchableOpacity>
-
-      {selectedPDF && (
-        <View style={styles.previewContainer}>
-          <Text style={styles.previewText} numberOfLines={1} ellipsizeMode="tail">
-            {selectedPDF.name}
-          </Text>
-          <View style={styles.actionButtons}>
-            <TouchableOpacity
-              onPress={handleRemovePDF}
-              style={styles.removeButton}
-            >
-              <Ionicons name="trash" size={24} color="#ff4d4d" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleSend} style={styles.sendButton}>
-              <Text style={styles.sendButtonText}>Send</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      <Modal visible={showSubscriptionModal} animationType="slide" transparent>
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowSubscriptionModal(false)}
-        >
-          <SubscriptionRequired />
+    <>
+      {/* Main UI */}
+      <View style={styles.container}>
+        <TouchableOpacity onPress={pickPDF} style={styles.optionCard}>
+          <Ionicons
+            name="document-text-outline"
+            size={24}
+            color="#2980b9"
+            style={styles.optionIcon}
+          />
+          <Text style={styles.optionText}>Select Document</Text>
         </TouchableOpacity>
-      </Modal>
-    </View>
+
+        {selectedPDF && (
+          <View style={styles.previewContainer}>
+            <Text style={styles.previewText} numberOfLines={1} ellipsizeMode="tail">
+              {selectedPDF.name}
+            </Text>
+            <View style={styles.actionButtons}>
+              <TouchableOpacity
+                onPress={handleRemovePDF}
+                style={styles.removeButton}
+              >
+                <Ionicons name="trash" size={24} color="#ff4d4d" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleSend} style={styles.sendButton}>
+                <Text style={styles.sendButtonText}>Send</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </View>
+
+      {/* MODAL RENDERED AT ROOT LEVEL */}
+      <SubscriptionRequiredModal
+        visible={showSubscriptionModal}
+        onClose={() => setShowSubscriptionModal(false)}
+      />
+    </>
   );
 };
 
@@ -161,11 +193,16 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     fontSize: 16,
   },
-  modalOverlay: {
+  loader: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.5)",
+    padding: 20,
+  },
+  loaderText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: "#555",
   },
 });
 

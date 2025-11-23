@@ -1,0 +1,407 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  StyleSheet,
+  ScrollView,
+  ActivityIndicator,
+  TouchableOpacity,
+  Image,
+  Modal,
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+
+type Product = {
+  id: number | string;
+  product_name: string;
+  price: number | null;
+  is_available: boolean;
+  image?: string;
+};
+
+type Subcategory = {
+  subcategory: string;
+  products: Product[];
+};
+
+type Category = {
+  category: string;
+  subcategories: Subcategory[];
+};
+
+type Props = {
+  products: Category[];
+};
+
+const ShopProduct = ({ products }: Props) => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [fullScreenImage, setFullScreenImage] = useState<{ visible: boolean; url: string }>({
+    visible: false,
+    url: '',
+  });
+  const router = useRouter();
+
+  // ────────────────────── SUBSCRIPTION LOGIC ──────────────────────
+  useEffect(() => {
+    const loadSubscription = async () => {
+      try {
+        const cache = await AsyncStorage.getItem('subscription_cache');
+        if (cache) {
+          const parsed = JSON.parse(cache);
+          const plan = parsed.plan?.trim().toLowerCase();
+          console.log('Loaded subscription plan:', plan);
+          setSubscriptionStatus(plan);
+        } else {
+          console.log('No subscription cache found');
+          setSubscriptionStatus(null);
+        }
+      } catch (error) {
+        console.error('Failed to load subscription_cache:', error);
+        setSubscriptionStatus(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadSubscription();
+  }, []);
+
+  const isSubscribed = subscriptionStatus && 
+    ['regular', 'standard', 'premium'].includes(subscriptionStatus);
+
+  // ────────────────────── FULL-SCREEN IMAGE HANDLER ──────────────────────
+  const openFullScreen = (url: string) => {
+    if (isSubscribed) {
+      setFullScreenImage({ visible: true, url });
+    } else {
+      alert('Upgrade to Standard plan to view images in full screen.');
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loader}>
+        <ActivityIndicator size="large" color="#007BFF" />
+      </View>
+    );
+  }
+
+  if (!isSubscribed) {
+    return (
+      <LinearGradient colors={['#F7F7F7', '#EAEAEA']} style={styles.container}>
+        <View style={styles.lockedContent}>
+          <Ionicons name="lock-closed" size={48} color="#64748B" />
+          <Text style={styles.lockedTitle}>Premium Feature</Text>
+          <Text style={styles.lockedText}>
+            Upgrade to Standard plan to view all space products or services.
+          </Text>
+          <TouchableOpacity
+            style={styles.upgradeButton}
+            onPress={() => {
+              router.push({
+                pathname: '/shop/Subscription',
+                params: { prevRoute: '/shop/products' },
+              });
+            }}>
+            <Text style={styles.upgradeButtonText}>Upgrade Now</Text>
+          </TouchableOpacity>
+        </View>
+      </LinearGradient>
+    );
+  }
+
+  const filteredProducts = products
+    .map(cat => {
+      const filteredSubs = cat.subcategories
+        .map(sub => {
+          const filteredProds = sub.products.filter(p => {
+            const name = p.product_name.toLowerCase();
+            const q = searchQuery.toLowerCase();
+            if (!q) return true;
+            return name.includes(q) || (q.length === 1 && name.startsWith(q));
+          });
+          return { ...sub, products: filteredProds };
+        })
+        .filter(sub => sub.products.length > 0);
+      return { ...cat, subcategories: filteredSubs };
+    })
+    .filter(cat => cat.subcategories.length > 0);
+
+  return (
+    <>
+      <LinearGradient colors={['#F7F7F7', '#EAEAEA']} style={styles.container}>
+        {/* Search Bar */}
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search products..."
+          placeholderTextColor="#888"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+
+        <ScrollView contentContainerStyle={styles.scrollContainer}>
+          {filteredProducts.length === 0 ? (
+            <Text style={styles.noProducts}>No products found.</Text>
+          ) : (
+            filteredProducts.map(cat => (
+              <View key={cat.category} style={cat.categorySection}>
+                <Text style={styles.categoryTitle}>{cat.category}</Text>
+
+                {cat.subcategories.map(sub => (
+                  <View key={sub.subcategory} style={styles.subcategorySection}>
+                    <Text style={styles.subcategoryTitle}>{sub.subcategory}</Text>
+
+                    {sub.products.map(product => (
+                      <View key={product.id} style={styles.productCard}>
+                        {/* Product Image with Placeholder + Fullscreen */}
+                        <TouchableOpacity
+                          onPress={() => product.image && openFullScreen(product.image)}
+                          style={styles.imageWrapper}
+                        >
+                          {product.image ? (
+                            <Image
+                              source={{ uri: product.image }}
+                              style={styles.productImg}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View style={styles.placeholderContainer}>
+                              <Ionicons name="image-outline" size={28} color="#94A3B8" />
+                              <Text style={styles.placeholderText}>No Image</Text>
+                            </View>
+                          )}
+                        </TouchableOpacity>
+
+                        {/* Text: Name + Availability + Price */}
+                        <View style={styles.textColumn}>
+                          <Text style={styles.productName}>{product.product_name}</Text>
+
+                          <View style={styles.priceRow}>
+                            <View style={styles.availabilityBadge}>
+                              <Text
+                                style={[
+                                  styles.availability,
+                                  product.is_available ? styles.available : styles.notAvailable,
+                                ]}>
+                                {product.is_available ? 'Available' : 'Unavailable'}
+                              </Text>
+                            </View>
+
+                            <Text style={styles.priceText}>
+                              {product.price != null
+                                ? `₦${Math.floor(product.price).toLocaleString()}`
+                                : 'N/A'}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                ))}
+              </View>
+            ))
+          )}
+        </ScrollView>
+      </LinearGradient>
+
+      {/* Full-Screen Image Modal */}
+      {fullScreenImage.visible && (
+        <Modal transparent animationType="fade">
+          <View style={styles.fullScreenOverlay}>
+            <Image
+              source={{ uri: fullScreenImage.url }}
+              style={styles.fullScreenImage}
+              resizeMode="contain"
+            />
+            <TouchableOpacity
+              style={styles.closeFullScreen}
+              onPress={() => setFullScreenImage({ visible: false, url: '' })}
+            >
+              <Ionicons name="close" size={32} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </Modal>
+      )}
+    </>
+  );
+};
+
+/* ===================================================== */
+/*                   STYLES – FINAL & CLEAN              */
+/* ===================================================== */
+const styles = StyleSheet.create({
+  container: { flex: 1, paddingHorizontal: 16, paddingTop: 12 },
+  loader: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
+  searchInput: {
+    height: 48,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+
+  scrollContainer: { paddingBottom: 30 },
+  noProducts: { textAlign: 'center', fontSize: 16, color: '#757575', marginTop: 20 },
+
+  // Category
+  categorySection: { marginBottom: 24 },
+  categoryTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 12,
+  },
+
+  // Subcategory
+  subcategorySection: { marginBottom: 20 },
+  subcategoryTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+    marginLeft: 35,
+  },
+
+  // Product Card
+  productCard: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+
+  imageWrapper: {
+    width: 60,
+    height: 60,
+    borderRadius: 10,
+    overflow: 'hidden',
+    marginRight: 14,
+  },
+  productImg: {
+    width: '100%',
+    height: '100%',
+  },
+  placeholderContainer: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#F8FAFC',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 10,
+  },
+  placeholderText: {
+    marginTop: 4,
+    fontSize: 10,
+    color: '#94A3B8',
+  },
+
+  textColumn: { flex: 1, justifyContent: 'center' },
+
+  productName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 6,
+    flexShrink: 1,
+  },
+
+  priceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  availabilityBadge: {},
+  availability: {
+    fontSize: 13,
+    fontWeight: '500',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  available: {
+    backgroundColor: '#dcfce7',
+    color: '#166534',
+  },
+  notAvailable: {
+    backgroundColor: '#fee2e2',
+    color: '#991b1b',
+  },
+
+  priceText: {
+    fontSize: 15,
+    color: '#2e7d32',
+    fontWeight: 'bold',
+  },
+
+  // Locked UI
+  lockedContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  lockedTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1e293b',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  lockedText: {
+    fontSize: 16,
+    color: '#64748b',
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 30,
+  },
+  upgradeButton: {
+    backgroundColor: '#2563eb',
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    elevation: 3,
+  },
+  upgradeButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+
+  // Full-Screen Image
+  fullScreenOverlay: {
+    flex: 1,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullScreenImage: {
+    width: '100%',
+    height: '100%',
+  },
+  closeFullScreen: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 20,
+    padding: 8,
+  },
+});
+
+export default ShopProduct;

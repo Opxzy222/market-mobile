@@ -928,6 +928,7 @@ const Conversation = () => {
       formData.append("sender_id", String(userId));
       formData.append("shop_id", String(shopId));
       formData.append("msg_type", normalizedType);
+      formData.append("temp_id", tempId);  // ← ADD THIS
 
       let fileUri = file.uri;
       let mimeType =

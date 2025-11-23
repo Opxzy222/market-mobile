@@ -13,7 +13,7 @@ import {
   StatusBar,
   ActivityIndicator,
   Modal,
-  Keyboard,
+  Dimensions,
 } from "react-native";
 import * as Location from "expo-location";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -23,9 +23,8 @@ import api from '../../api';
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SelectList } from "react-native-dropdown-select-list";
 import { MultiSelect as RNMultiSelect } from "react-native-element-dropdown";
-import axios from "axios";
 
-export default function CreateShopScreen({ navigation }) {
+export default function CreateShopScreen() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [geoLocation, setGeoLocation] = useState({ lat: "", lng: "" });
@@ -51,15 +50,14 @@ export default function CreateShopScreen({ navigation }) {
   const [selectedChildLocation, setSelectedChildLocation] = useState(null);
   const [grandChildLocations, setGrandChildLocations] = useState([]);
   const [selectedGrandChildLocation, setSelectedGrandChildLocation] = useState(null);
+  const [locationDetected, setLocationDetected] = useState(false); // NEW: hide button after detection
 
   const router = useRouter();
   const flatListRef = useRef(null);
   const dropdownRef = useRef(null);
-  const cancelTokenSourceRef = useRef(null);
   const subcategorySectionRef = useRef(null);
   const addressInputRef = useRef(null);
 
-  // Measure section heights for getItemLayout
   const sectionHeights = useRef({
     name: 100,
     description: 150,
@@ -73,108 +71,55 @@ export default function CreateShopScreen({ navigation }) {
     submit: 80,
   }).current;
 
-  // Keyboard listeners for debugging
-  useEffect(() => {
-    const keyboardDidShow = Keyboard.addListener("keyboardDidShow", () => {
-      console.log("Keyboard shown");
-    });
-    const keyboardDidHide = Keyboard.addListener("keyboardDidHide", () => {
-      console.log("Keyboard hidden");
-    });
-
-    return () => {
-      keyboardDidShow.remove();
-      keyboardDidHide.remove();
-    };
-  }, []);
-
   // Fetch session ID
   useEffect(() => {
-    cancelTokenSourceRef.current = axios.CancelToken.source();
     const fetchSessionId = async () => {
       try {
         const sessionIdString = await AsyncStorage.getItem("sessionToken");
         setSessionId(sessionIdString);
-        console.log("Session ID fetched:", sessionIdString);
       } catch (err) {
         console.error("Error fetching session ID:", err);
       }
     };
     fetchSessionId();
-
-    return () => {
-      if (cancelTokenSourceRef.current) {
-        cancelTokenSourceRef.current.cancel("Component unmounted");
-      }
-    };
   }, []);
 
-  // Fetch categories and locations only when screen is focused
+  // Fetch categories and locations on focus
   useFocusEffect(
     useCallback(() => {
-      cancelTokenSourceRef.current = axios.CancelToken.source();
-
       const fetchCategories = async () => {
         try {
-          console.log("Fetching categories...");
-          const response = await api.post(
-            "/category/dropdown-options/",
-            {},
-            { cancelToken: cancelTokenSourceRef.current.token }
-          );
+          const response = await api.post("/category/dropdown-options/");
           const categoryData = response.data.categories.map((cat) => ({
             key: cat.id,
             value: cat.name,
           }));
-          // Sort categories alphabetically by name
           const sortedCategories = categoryData.sort((a, b) => a.value.localeCompare(b.value));
           setCategories(sortedCategories);
           setFilteredCategories(sortedCategories);
-          console.log("Sorted categories fetched:", sortedCategories);
         } catch (error) {
-          if (!axios.isCancel(error)) {
-            console.error("Error fetching categories:", error);
-          }
+          console.error("Error fetching categories:", error);
         }
       };
 
       const fetchTopLevelLocations = async () => {
         try {
-          console.log("Fetching top-level locations...");
-          const response = await api.post(
-            "/location/states/",
-            {},
-            { cancelToken: cancelTokenSourceRef.current.token }
-          );
-          // Sort locations alphabetically by name
+          const response = await api.post("/location/states/");
           const sortedLocations = response.data.locations
-            .map((loc) => ({
-              key: loc.id,
-              value: loc.name,
-            }))
+            .map((loc) => ({ key: loc.id, value: loc.name }))
             .sort((a, b) => a.value.localeCompare(b.value));
           setLocations(sortedLocations);
-          console.log("Sorted locations fetched:", sortedLocations);
         } catch (error) {
-          if (!axios.isCancel(error)) {
-            console.error("Error fetching locations:", error);
-          }
+          console.error("Error fetching locations:", error);
         }
       };
 
       fetchCategories();
       fetchTopLevelLocations();
-
-      return () => {
-        console.log("Screen unfocused, canceling requests");
-        if (cancelTokenSourceRef.current) {
-          cancelTokenSourceRef.current.cancel("Screen unfocused");
-        }
-      };
     }, [])
   );
 
-  // Filter categories based on search input
+  // Filter categories
   useEffect(() => {
     setFilteredCategories(
       categories.filter((cat) =>
@@ -183,7 +128,7 @@ export default function CreateShopScreen({ navigation }) {
     );
   }, [categorySearch, categories]);
 
-  // Handle state selection and fetch LGAs
+  // Handle location changes
   const handleLocationChange = useCallback(async (selectedOption) => {
     setSelectedLocation(selectedOption);
     setSelectedChildLocation(null);
@@ -195,35 +140,20 @@ export default function CreateShopScreen({ navigation }) {
       try {
         const formData = new FormData();
         formData.append("parent_id", selectedOption);
-
-        const response = await api.post(
-          "/location/children/",
-          formData,
-          {
-            headers: { "Content-Type": "multipart/form-data" },
-            cancelToken: cancelTokenSourceRef.current?.token,
-          }
-        );
-
-        // Sort child locations alphabetically by name
+        const response = await api.post("/location/children/", formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
         const sortedChildLocations = response.data.locations
-          .map((loc) => ({
-            key: loc.id,
-            value: loc.name,
-          }))
+          .map((loc) => ({ key: loc.id, value: loc.name }))
           .sort((a, b) => a.value.localeCompare(b.value));
         setChildLocations(sortedChildLocations);
-        console.log("Sorted child locations fetched:", sortedChildLocations);
       } catch (error) {
-        if (!axios.isCancel(error)) {
-          console.error("Error fetching child locations:", error);
-          setChildLocations([]);
-        }
+        console.error("Error fetching child locations:", error);
+        setChildLocations([]);
       }
     }
   }, []);
 
-  // Handle LGA selection and fetch locations
   const handleChildLocationChange = useCallback(async (selectedOption) => {
     setSelectedChildLocation(selectedOption);
     setSelectedGrandChildLocation(null);
@@ -233,30 +163,16 @@ export default function CreateShopScreen({ navigation }) {
       try {
         const formData = new FormData();
         formData.append("parent_id", selectedOption);
-
-        const response = await api.post(
-          "/location/children/",
-          formData,
-          {
-            headers: { "Content-Type": "multipart/form-data" },
-            cancelToken: cancelTokenSourceRef.current?.token,
-          }
-        );
-
-        // Sort grandchild locations alphabetically by name
+        const response = await api.post("/location/children/", formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
         const sortedGrandChildLocations = response.data.locations
-          .map((loc) => ({
-            key: loc.id,
-            value: loc.name,
-          }))
+          .map((loc) => ({ key: loc.id, value: loc.name }))
           .sort((a, b) => a.value.localeCompare(b.value));
         setGrandChildLocations(sortedGrandChildLocations);
-        console.log("Sorted grandchild locations fetched:", sortedGrandChildLocations);
       } catch (error) {
-        if (!axios.isCancel(error)) {
-          console.error("Error fetching grandchild locations:", error);
-          setGrandChildLocations([]);
-        }
+        console.error("Error fetching grandchild locations:", error);
+        setGrandChildLocations([]);
       }
     }
   }, []);
@@ -275,46 +191,30 @@ export default function CreateShopScreen({ navigation }) {
     try {
       const formData = new FormData();
       formData.append("parent_id", key);
-
-      const response = await api.post(
-        "/category/subcategories/",
-        formData,
-        {
-          headers: { "Content-Type": "multipart/form-data" },
-          cancelToken: cancelTokenSourceRef.current?.token,
-        }
-      );
-
-      // Sort subcategories alphabetically by name
+      const response = await api.post("/category/subcategories/", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
       const sortedSubcategories = response.data.subcategories
-        .map((subcat) => ({
-          key: subcat.id,
-          value: subcat.name,
-        }))
+        .map((subcat) => ({ key: subcat.id, value: subcat.name }))
         .sort((a, b) => a.value.localeCompare(b.value));
       setSubcategories(sortedSubcategories);
-      console.log("Sorted subcategories fetched:", sortedSubcategories);
 
-      // Scroll to subcategories section after fetching
       setTimeout(() => {
-        const index = formSections.findIndex((section) => section.id === "subcategories");
+        const index = formSections.findIndex((s) => s.id === "subcategories");
         if (flatListRef.current && index !== -1) {
-          console.log("Scrolling to subcategories section after category change, index:", index);
           flatListRef.current.scrollToIndex({ index, animated: true });
         }
       }, 100);
     } catch (error) {
-      if (!axios.isCancel(error)) {
-        console.error("Error fetching subcategories:", error);
-        setSubcategories([]);
-      }
+      console.error("Error fetching subcategories:", error);
+      setSubcategories([]);
     }
-  }, [formSections]);
+  }, []);
 
   const handlePinLocation = useCallback(async () => {
     Alert.alert(
       "Prepare for Location Detection",
-      "For the best accuracy, please stand outside your business location, away from roofs or obstructions, to allow clear GPS signal reception.",
+      "For the best accuracy, please stand outside your business location, away from roofs or obstructions.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -322,107 +222,65 @@ export default function CreateShopScreen({ navigation }) {
           onPress: async () => {
             setIsDetectingLocation(true);
             try {
-              let { status } = await Location.requestForegroundPermissionsAsync();
+              const { status } = await Location.requestForegroundPermissionsAsync();
               if (status !== "granted") {
-                setGeoError("Permission to access location was denied.");
-                Alert.alert(
-                  "Location Access Denied",
-                  "Please enable location permissions in your device settings to use this feature.",
-                  [
-                    { text: "OK", style: "cancel" },
-                    {
-                      text: "Open Settings",
-                      onPress: () =>
-                        Location.openLocationSettings?.() ||
-                        Alert.alert("Error", "Unable to open settings."),
-                    },
-                  ]
-                );
+                setGeoError("Permission denied.");
+                Alert.alert("Location Access Denied", "Enable in settings.", [
+                  { text: "OK" },
+                  { text: "Open Settings", onPress: () => Location.openLocationSettings?.() },
+                ]);
                 return;
               }
 
               const location = await Location.getCurrentPositionAsync({
                 accuracy: Location.Accuracy.High,
-                timeInterval: 5000,
-                distanceInterval: 0,
-                timeout: 10000,
+                timeout: 15000,
               });
 
               const { latitude, longitude } = location.coords;
-
-              setGeoLocation({
-                lat: latitude.toString(),
-                lng: longitude.toString(),
-              });
+              setGeoLocation({ lat: latitude.toString(), lng: longitude.toString() });
               setShowGeoFields(true);
+              setLocationDetected(true);
 
               let formattedAddress = "";
               try {
-                const reverseGeocode = await Location.reverseGeocodeAsync({
-                  latitude,
-                  longitude,
-                });
-
-                if (reverseGeocode.length > 0) {
-                  const { street, city, region, postalCode, country } = reverseGeocode[0];
-                  formattedAddress = [street, city, region, postalCode, country]
+                const reverse = await Location.reverseGeocodeAsync({ latitude, longitude });
+                if (reverse.length > 0) {
+                  const r = reverse[0];
+                  formattedAddress = [r.street, r.city, r.region, r.postalCode, r.country]
                     .filter(Boolean)
                     .join(", ");
                   setAddress(formattedAddress || "Address detected");
-                } else {
-                  setAddress("Unable to fetch address. Please enter manually.");
                 }
-              } catch (error) {
-                console.error("Error during reverse geocoding:", error);
-                setAddress("Unable to fetch address. Please enter manually.");
+              } catch (err) {
+                setAddress("Enter address manually.");
               }
 
               setShowAddressField(true);
               setGeoError("");
 
               setTimeout(() => {
-                const addressIndex = formSections.findIndex((section) => section.id === "address");
-                if (flatListRef.current && addressIndex !== -1) {
-                  console.log("Scrolling to address section after detection, index:", addressIndex);
-                  flatListRef.current.scrollToIndex({ index: addressIndex, animated: true });
+                const idx = formSections.findIndex((s) => s.id === "address");
+                if (flatListRef.current && idx !== -1) {
+                  flatListRef.current.scrollToIndex({ index: idx, animated: true });
                 }
               }, 100);
 
-              Alert.alert(
-                "Verify Your Address",
-                `We detected the following address:\n\n${formattedAddress || "No address detected."}\n\nIs this correct? If not, please edit the address in the field provided.`,
-                [
-                  { text: "OK", style: "default" },
-                  {
-                    text: "Edit Address",
-                    style: "default",
-                    onPress: () => {
-                      const addressIndex = formSections.findIndex((section) => section.id === "address");
-                      if (flatListRef.current && addressIndex !== -1) {
-                        console.log("Scrolling to address section for editing, index:", addressIndex);
-                        flatListRef.current.scrollToIndex({ index: addressIndex, animated: true });
-                        // Focus the address input after scrolling
-                        setTimeout(() => {
-                          if (addressInputRef.current) {
-                            addressInputRef.current.focus();
-                            console.log("Address input focused");
-                          }
-                        }, 300); // Delay to ensure scroll completes
-                      }
-                    },
+              Alert.alert("Verify Address", formattedAddress || "No address", [
+                { text: "OK" },
+                {
+                  text: "Edit",
+                  onPress: () => {
+                    setTimeout(() => addressInputRef.current?.focus(), 300);
                   },
-                ]
-              );
+                },
+              ]);
             } catch (error) {
-              console.error("Error fetching geolocation:", error);
-              let errorMessage = "An error occurred while fetching your location.";
-              if (error.message.includes("timeout")) {
-                errorMessage = "Location request timed out. Please try again.";
-              } else if (error.message.includes("network")) {
-                errorMessage = "Network error. Please check your connection and try again.";
-              }
-              setGeoError(errorMessage);
-              Alert.alert("Error", errorMessage);
+              const msg = error.message.includes("timeout")
+                ? "Location timed out."
+                : "Check connection.";
+              setGeoError(msg);
+              Alert.alert("Error", msg);
             } finally {
               setIsDetectingLocation(false);
             }
@@ -438,13 +296,10 @@ export default function CreateShopScreen({ navigation }) {
     if (!name.trim()) errors.name = "Business name is required.";
     if (!description.trim()) errors.description = "Description is required.";
     if (!address.trim()) errors.address = "Address is required.";
-    if (!geoLocation.lat || !geoLocation.lng)
-      errors.geoLocation = "Geolocation is required. Please pin your location.";
-    if (!selectedLocation) errors.location = "Location is required.";
-    if (!selectedChildLocation) errors.childLocation = "Child location is required.";
-    if (!selectedGrandChildLocation)
-      errors.grandChildLocation = "Grandchild location is required.";
-
+    if (!geoLocation.lat || !geoLocation.lng) errors.geoLocation = "Detect your location.";
+    if (!selectedLocation) errors.location = "State is required.";
+    if (!selectedChildLocation) errors.childLocation = "LGA is required.";
+    if (!selectedGrandChildLocation) errors.grandChildLocation = "Location is required.";
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   }, [name, description, address, geoLocation, selectedLocation, selectedChildLocation, selectedGrandChildLocation]);
@@ -461,144 +316,105 @@ export default function CreateShopScreen({ navigation }) {
       formData.append("address", address);
       formData.append("lga", selectedChildLocation);
       formData.append("location", selectedGrandChildLocation);
+      selectedSubcategories.forEach((id) => formData.append("subcategories[]", id));
 
-      selectedSubcategories.forEach((subId) =>
-        formData.append("subcategories[]", subId)
-      );
-
-      const response = await api.post(
-        "/create-shop/",
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-            Authorization: sessionId,
-          },
-          cancelToken: cancelTokenSourceRef.current?.token,
-        }
-      );
-
-      const shopId = response.data.shop_id;
+      const response = await api.post("/create-shop/", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          Authorization: sessionId,
+        },
+      });
 
       Alert.alert("Success", "Your space has been created!");
-      router.replace({ pathname: "/shop/WelcomeWorkingHours", params: { shopId } });
+      router.replace({ pathname: "/shop/WelcomeWorkingHours", params: { shopId: response.data.shop_id } });
     } catch (error) {
-      if (!axios.isCancel(error)) {
-        console.error("Error creating space:", error);
-        Alert.alert("Error", "Something went wrong. Please try again.");
-      }
+      console.error("Error creating space:", error);
+      Alert.alert("Error", "Failed to create space.");
     } finally {
       setIsSubmitting(false);
     }
   }, [name, description, geoLocation, address, selectedChildLocation, selectedGrandChildLocation, selectedSubcategories, sessionId, handleValidation]);
 
   const handleInputFocus = useCallback((sectionId) => {
-    const index = formSections.findIndex((section) => section.id === sectionId);
+    const index = formSections.findIndex((s) => s.id === sectionId);
     if (flatListRef.current && index !== -1) {
-      console.log("Scrolling to section:", sectionId, "index:", index);
       flatListRef.current.scrollToIndex({ index, animated: true });
     }
-  }, [formSections]);
+  }, []);
 
-  // Handle dropdown focus with scroll adjustment
   const handleDropdownFocus = useCallback(() => {
-    const index = formSections.findIndex((section) => section.id === "subcategories");
+    const index = formSections.findIndex((s) => s.id === "subcategories");
     if (flatListRef.current && index !== -1) {
-      console.log("Focusing subcategories section, scrolling to index:", index);
       flatListRef.current.scrollToIndex({ index, animated: true });
-      // Delay to ensure scroll is complete before dropdown renders
-      setTimeout(() => {
-        console.log("Dropdown should open after scroll");
-      }, 300);
     }
-  }, [formSections]);
+  }, []);
 
   const renderCategoryItem = useCallback(({ item }) => (
-    <TouchableOpacity
-      style={styles.categoryItem}
-      onPress={() => handleCategoryChange(item.key, item.value)}
-    >
+    <TouchableOpacity style={styles.categoryItem} onPress={() => handleCategoryChange(item.key, item.value)}>
       <Text style={styles.categoryItemText}>{item.value}</Text>
     </TouchableOpacity>
   ), [handleCategoryChange]);
 
-  const formSections = useMemo(
-    () => [
-      {
-        id: "name",
-        render: () => (
+  const formSections = useMemo(() => [
+    {
+      id: "name",
+      render: () => (
+        <>
+          <Text style={styles.label}>Name</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Input your business name"
+            placeholderTextColor="#5A5A5A"
+            value={name}
+            onChangeText={setName}
+            onFocus={() => handleInputFocus("name")}
+            returnKeyType="next"
+          />
+          {formErrors.name && <Text style={styles.error}>{formErrors.name}</Text>}
+        </>
+      ),
+    },
+    {
+      id: "description",
+      render: () => (
+        <>
+          <Text style={styles.label}>Description</Text>
+          <TextInput
+            style={[styles.input, styles.description]}
+            placeholder="Tell us about your business"
+            placeholderTextColor="#5A5A5A"
+            value={description}
+            onChangeText={setDescription}
+            multiline
+            numberOfLines={4}
+            onFocus={() => handleInputFocus("description")}
+            returnKeyType="next"
+          />
+          {formErrors.description && <Text style={styles.error}>{formErrors.description}</Text>}
+        </>
+      ),
+    },
+    {
+      id: "category",
+      render: () => (
+        <>
+          <Text style={styles.label}>Category</Text>
+          <TouchableOpacity style={styles.dropdown} onPress={() => setModalVisible(true)}>
+            <Text style={styles.dropdownText}>{selectedCategoryName || "Select Category"}</Text>
+            <MaterialIcons name="arrow-drop-down" size={24} color="#6c757d" />
+          </TouchableOpacity>
+        </>
+      ),
+    },
+    {
+      id: "subcategories",
+      render: () => {
+        if (!selectedCategory || subcategories.length === 0) return null;
+        return (
           <>
-            <Text style={styles.label}>Name</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Input your business name"
-              placeholderTextColor="#5A5A5A"
-              value={name}
-              onChangeText={setName}
-              onFocus={() => handleInputFocus("name")}
-              returnKeyType="next"
-            />
-            {formErrors.name && <Text style={styles.error}>{formErrors.name}</Text>}
-          </>
-        ),
-      },
-      {
-        id: "description",
-        render: () => (
-          <>
-            <Text style={styles.label}>Description</Text>
-            <TextInput
-              style={[styles.input, styles.description]}
-              placeholder="Tell us about your business"
-              placeholderTextColor="#5A5A5A"
-              value={description}
-              onChangeText={setDescription}
-              multiline
-              numberOfLines={4}
-              onFocus={() => handleInputFocus("description")}
-              returnKeyType="next"
-            />
-            {formErrors.description && <Text style={styles.error}>{formErrors.description}</Text>}
-          </>
-        ),
-      },
-      {
-        id: "category",
-        render: () => (
-          <>
-            <Text style={styles.label}>Category</Text>
-            <TouchableOpacity
-              style={styles.dropdown}
-              onPress={() => setModalVisible(true)}
-            >
-              <Text style={styles.dropdownText}>
-                {selectedCategoryName || "Select Category"}
-              </Text>
-              <MaterialIcons name="arrow-drop-down" size={24} color="#6c757d" />
-            </TouchableOpacity>
-          </>
-        ),
-      },
-      {
-        id: "subcategories",
-        render: () => {
-          if (!selectedCategory || !subcategories || subcategories.length === 0) {
-            return null;
-          }
-          console.log("Rendering sorted subcategories:", subcategories);
-          return (
-            <>
-              <Text style={styles.label}>Subcategories</Text>
-              <View
-                style={styles.subcategoriesContainer}
-                ref={subcategorySectionRef}
-                onLayout={(event) => {
-                  const { y, height } = event.nativeEvent.layout;
-                  console.log("Subcategories section layout, y:", y, "height:", height);
-                  sectionHeights.subcategories = height;
-                }}
-              >
-                <RNMultiSelect
+            <Text style={styles.label}>Subcategories</Text>
+            <View style={styles.subcategoriesContainer} ref={subcategorySectionRef}>
+              <RNMultiSelect
                   ref={dropdownRef}
                   style={styles.dropdown}
                   containerStyle={styles.multiSelectDropdownMenu}
@@ -618,7 +434,8 @@ export default function CreateShopScreen({ navigation }) {
                   onChange={(items) => setSelectedSubcategories(items)}
                   search
                   maxHeight={350}
-                  fontFamily="System"
+                fontFamily="System"
+                dropdownStyle={styles.fixedWidthDropdown}
                   dropdownPosition="bottom"
                   onFocus={handleDropdownFocus}
                   onBlur={() => console.log("Dropdown blurred")}
@@ -639,122 +456,110 @@ export default function CreateShopScreen({ navigation }) {
                   )}
                 />
               </View>
-            </>
-          );
-        },
+          </>
+        );
       },
-      {
-        id: "state",
-        render: () => (
+    },
+    {
+      id: "state",
+      render: () => (
+        <>
+          <Text style={styles.label}>State</Text>
+          <SelectList
+            setSelected={handleLocationChange}
+            data={locations}
+            placeholder="Select State"
+            save="key"
+            boxStyles={styles.dropdown}
+            searchPlaceholder="Search states"
+            defaultOption={locations.find((loc) => loc.key === selectedLocation)}
+            maxHeight={250}
+          />
+          {formErrors.location && <Text style={styles.error}>{formErrors.location}</Text>}
+        </>
+      ),
+    },
+    {
+      id: "childLocation",
+      render: () =>
+        selectedLocation && childLocations.length > 0 ? (
           <>
-            <Text style={styles.label}>State</Text>
+            <Text style={styles.label}>Local Government</Text>
             <SelectList
-              setSelected={handleLocationChange}
-              data={locations}
-              placeholder="Select State"
+              setSelected={handleChildLocationChange}
+              data={childLocations}
+              placeholder="Select LGA"
               save="key"
               boxStyles={styles.dropdown}
-              searchPlaceholder="Search states"
-              defaultOption={locations.find((loc) => loc.key === selectedLocation)}
+              searchPlaceholder="Search LGAs"
+              defaultOption={childLocations.find((loc) => loc.key === selectedChildLocation)}
+              maxHeight={250}
             />
-            {formErrors.location && <Text style={styles.error}>{formErrors.location}</Text>}
+            {formErrors.childLocation && <Text style={styles.error}>{formErrors.childLocation}</Text>}
           </>
-        ),
-      },
-      {
-        id: "childLocation",
-        render: () =>
-          selectedLocation && childLocations.length > 0 ? (
+        ) : null,
+    },
+    {
+      id: "grandChildLocation",
+      render: () =>
+        selectedChildLocation && grandChildLocations.length > 0 ? (
+          <>
+            <Text style={styles.label}>Location</Text>
+            <SelectList
+              setSelected={handleGrandChildLocationChange}
+              data={grandChildLocations}
+              placeholder="Select Location"
+              save="key"
+              boxStyles={styles.dropdown}
+              searchPlaceholder="Search locations"
+              defaultOption={grandChildLocations.find((loc) => loc.key === selectedGrandChildLocation)}
+              maxHeight={250}
+            />
+            {formErrors.grandChildLocation && <Text style={styles.error}>{formErrors.grandChildLocation}</Text>}
+          </>
+        ) : null,
+    },
+    {
+      id: "address",
+      render: () =>
+        showAddressField ? (
+          <>
+            <Text style={styles.label}>Address</Text>
+            <TextInput
+              ref={addressInputRef}
+              style={[styles.input, styles.addressInput]}
+              placeholder="Edit address if needed"
+              placeholderTextColor="#5A5A5A"
+              value={address}
+              onChangeText={setAddress}
+              onFocus={() => handleInputFocus("address")}
+              multiline
+              numberOfLines={3}
+              returnKeyType="done"
+            />
+            {formErrors.address && <Text style={styles.error}>{formErrors.address}</Text>}
+          </>
+        ) : null,
+    },
+    {
+      id: "geo",
+      render: () => (
+        <View style={styles.geoSection}>
+          {showGeoFields && (
             <>
-              <Text style={styles.label}>Local Government</Text>
-              <SelectList
-                setSelected={handleChildLocationChange}
-                data={childLocations}
-                placeholder="Select Local Government"
-                save="key"
-                boxStyles={styles.dropdown}
-                searchPlaceholder="Search local governments"
-                defaultOption={childLocations.find((loc) => loc.key === selectedChildLocation)}
-              />
-              {formErrors.childLocation && (
-                <Text style={styles.error}>{formErrors.childLocation}</Text>
-              )}
+              <View style={styles.geoInputContainer}>
+                <Text style={styles.geoLabel}>Latitude</Text>
+                <TextInput style={[styles.input, styles.readOnly]} value={geoLocation.lat} editable={false} />
+              </View>
+              <View style={styles.geoInputContainer}>
+                <Text style={styles.geoLabel}>Longitude</Text>
+                <TextInput style={[styles.input, styles.readOnly]} value={geoLocation.lng} editable={false} />
+              </View>
             </>
-          ) : null,
-      },
-      {
-        id: "grandChildLocation",
-        render: () =>
-          selectedChildLocation && grandChildLocations.length > 0 ? (
-            <>
-              <Text style={styles.label}>Location</Text>
-              <SelectList
-                setSelected={handleGrandChildLocationChange}
-                data={grandChildLocations}
-                placeholder="Select Location"
-                save="key"
-                boxStyles={styles.dropdown}
-                searchPlaceholder="Search locations"
-                defaultOption={grandChildLocations.find(
-                  (loc) => loc.key === selectedGrandChildLocation
-                )}
-              />
-              {formErrors.grandChildLocation && (
-                <Text style={styles.error}>{formErrors.grandChildLocation}</Text>
-              )}
-            </>
-          ) : null,
-      },
-      {
-        id: "address",
-        render: () =>
-          showAddressField ? (
-            <>
-              <Text style={styles.label}>Address</Text>
-              <TextInput
-                ref={addressInputRef}
-                style={[styles.input, styles.addressInput]}
-                placeholder="Edit your business address if needed"
-                placeholderTextColor="#5A5A5A"
-                value={address}
-                onChangeText={setAddress}
-                onFocus={() => handleInputFocus("address")}
-                multiline
-                numberOfLines={3}
-                returnKeyType="done"
-              />
-              {formErrors.address && <Text style={styles.error}>{formErrors.address}</Text>}
-            </>
-          ) : null,
-      },
-      {
-        id: "geo",
-        render: () => (
-          <View style={styles.geoSection}>
-            {showGeoFields && (
-              <>
-                <View style={styles.geoInputContainer}>
-                  <Text style={styles.geoLabel}>Latitude</Text>
-                  <TextInput
-                    style={[styles.input, styles.readOnly]}
-                    placeholder="Auto-filled after detection"
-                    placeholderTextColor="#5A5A5A"
-                    value={geoLocation.lat}
-                    editable={false}
-                  />
-                </View>
-                <View style={styles.geoInputContainer}>
-                  <Text style={styles.geoLabel}>Longitude</Text>
-                  <TextInput
-                    style={[styles.input, styles.readOnly]}
-                    placeholder="Auto-filled after detection"
-                    placeholderTextColor="#5A5A5A"
-                    value={geoLocation.lng}
-                    editable={false}
-                  />
-                </View>
-              </>
-            )}
+          )}
+
+          {/* Only show button if not detected */}
+          {!locationDetected && (
             <TouchableOpacity
               style={[styles.pinButton, isDetectingLocation && styles.disabledButton]}
               onPress={handlePinLocation}
@@ -765,75 +570,49 @@ export default function CreateShopScreen({ navigation }) {
               ) : (
                 <>
                   <MaterialIcons name="my-location" style={styles.pinIcon} />
-                  <Text style={styles.pinButtonText}>
-                    {geoLocation.lat && geoLocation.lng ? "Update Location" : "Detect My Location"}
-                  </Text>
+                  <Text style={styles.pinButtonText}>Detect My Location</Text>
                 </>
               )}
             </TouchableOpacity>
-            <Text style={styles.helperText}>
-              Stand outside your business, away from roofs, for accurate location detection.
-            </Text>
-            {geoError && <Text style={styles.error}>{geoError}</Text>}
-            {formErrors.geoLocation && <Text style={styles.error}>{formErrors.geoLocation}</Text>}
-          </View>
-        ),
-      },
-      {
-        id: "submit",
-        render: () => (
-          <Pressable
-            style={[styles.submitButton, isSubmitting && styles.disabledButton]}
-            onPress={handleSubmit}
-            disabled={isSubmitting}
-          >
-            <Text style={styles.submitButtonText}>
-              {isSubmitting ? "Submitting..." : "Create Business Space"}
-            </Text>
-          </Pressable>
-        ),
-      },
-    ],
-    [
-      name,
-      description,
-      address,
-      geoLocation,
-      selectedCategory,
-      selectedCategoryName,
-      selectedSubcategories,
-      subcategories,
-      selectedLocation,
-      selectedChildLocation,
-      selectedGrandChildLocation,
-      childLocations,
-      grandChildLocations,
-      locations,
-      formErrors,
-      isSubmitting,
-      showAddressField,
-      showGeoFields,
-      isDetectingLocation,
-      geoError,
-      handleInputFocus,
-    ]
-  );
+          )}
 
-  const getItemLayout = useCallback(
-    (data, index) => {
-      let offset = 0;
-      for (let i = 0; i < index; i++) {
-        const sectionId = formSections[i]?.id;
-        offset += sectionHeights[sectionId] || 100;
-      }
-      return {
-        length: sectionHeights[formSections[index]?.id] || 100,
-        offset,
-        index,
-      };
+          <Text style={styles.helperText}>
+            Stand outside your business for accurate GPS.
+          </Text>
+          {geoError && <Text style={styles.error}>{geoError}</Text>}
+          {formErrors.geoLocation && <Text style={styles.error}>{formErrors.geoLocation}</Text>}
+        </View>
+      ),
     },
-    [formSections]
-  );
+    {
+      id: "submit",
+      render: () => (
+        <Pressable
+          style={[styles.submitButton, isSubmitting && styles.disabledButton]}
+          onPress={handleSubmit}
+          disabled={isSubmitting}
+        >
+          <Text style={styles.submitButtonText}>
+            {isSubmitting ? "Submitting..." : "Create Business Space"}
+          </Text>
+        </Pressable>
+      ),
+    },
+  ], [
+    name, description, address, geoLocation, selectedCategory, selectedCategoryName,
+    selectedSubcategories, subcategories, selectedLocation, selectedChildLocation,
+    selectedGrandChildLocation, childLocations, grandChildLocations, locations,
+    formErrors, isSubmitting, showAddressField, showGeoFields, isDetectingLocation,
+    locationDetected, geoError, handleInputFocus
+  ]);
+
+  const getItemLayout = useCallback((data, index) => {
+    let offset = 0;
+    for (let i = 0; i < index; i++) {
+      offset += sectionHeights[formSections[i]?.id] || 100;
+    }
+    return { length: sectionHeights[formSections[index]?.id] || 100, offset, index };
+  }, []);
 
   const renderFormSection = useCallback(({ item }) => item.render(), []);
 
@@ -842,15 +621,12 @@ export default function CreateShopScreen({ navigation }) {
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 80 : 20}
+        keyboardVerticalOffset={80}
       >
-        <View style={styles.container} keyboardShouldPersistTaps="handled">
+        <View style={styles.container}>
           <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
           <View style={styles.header}>
-            <TouchableOpacity
-              onPress={() => router.back()}
-              style={styles.backButton}
-            >
+            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
               <MaterialIcons name="arrow-back" size={26} color="white" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Create Space</Text>
@@ -863,29 +639,14 @@ export default function CreateShopScreen({ navigation }) {
             renderItem={renderFormSection}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.formContainer}
-            keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
-            nestedScrollEnabled={true}
             getItemLayout={getItemLayout}
           />
 
-          <Modal
-            visible={modalVisible}
-            animationType="slide"
-            transparent={false}
-            onRequestClose={() => setModalVisible(false)}
-            onShow={() => {
-              setTimeout(() => {
-                flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
-              }, 100);
-            }}
-          >
+          <Modal visible={modalVisible} animationType="slide" transparent={false}>
             <SafeAreaView style={styles.modalContainer}>
               <View style={styles.modalHeader}>
-                <TouchableOpacity
-                  onPress={() => setModalVisible(false)}
-                  style={styles.closeButton}
-                >
+                <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.closeButton}>
                   <MaterialIcons name="arrow-back" size={26} color="#fff" />
                 </TouchableOpacity>
                 <Text style={styles.modalTitle}>Select Category</Text>
@@ -894,7 +655,6 @@ export default function CreateShopScreen({ navigation }) {
               <TextInput
                 style={styles.searchInput}
                 placeholder="Search categories..."
-                placeholderTextColor="#5A5A5A"
                 value={categorySearch}
                 onChangeText={setCategorySearch}
               />
@@ -903,12 +663,7 @@ export default function CreateShopScreen({ navigation }) {
                 renderItem={renderCategoryItem}
                 keyExtractor={(item) => item.key.toString()}
                 contentContainerStyle={styles.categoryList}
-                initialNumToRender={15}
-                windowSize={21}
-                ListEmptyComponent={
-                  <Text style={styles.emptyText}>No categories found</Text>
-                }
-                style={styles.modalFlatList}
+                ListEmptyComponent={<Text style={styles.emptyText}>No categories found</Text>}
               />
             </SafeAreaView>
           </Modal>
@@ -1181,7 +936,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 5,
     marginTop: 2,
-    width: "100%",
+    width: "89%",
   },
   multiSelectText: {
     fontSize: 16,

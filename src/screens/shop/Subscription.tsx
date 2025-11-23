@@ -1,4 +1,4 @@
-import React, { useState, useContext, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -19,7 +19,6 @@ import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import api from '../../api';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { FadeInDown, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing } from 'react-native-reanimated';
-import SubscriptionProvider, { SubscriptionContext } from '../../components/SubscriptionProvider';
 
 const Subscription = () => {
   const [selectedPlan, setSelectedPlan] = useState('');
@@ -30,7 +29,6 @@ const Subscription = () => {
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const { currentPlan, endDate } = useLocalSearchParams();
   const router = useRouter();
-  const { refreshSubscription } = useContext(SubscriptionContext);
   const scrollViewRef = useRef(null);
   const dropdownOpacity = useSharedValue(0);
   const dropdownTranslateY = useSharedValue(20);
@@ -128,24 +126,44 @@ const Subscription = () => {
           },
         }
       );
-      setModalMessage(response.data.message);
+
+      const { message } = response.data;
+
+      // SUCCESS: Save to subscription_cache
+      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      const endDate = new Date();
+      endDate.setDate(endDate.getDate() + 30); // 30 days
+      const endDateStr = endDate.toISOString().split('T')[0];
+
+      const subscriptionData = {
+        plan: selectedPlan,
+        is_active: true,
+        start_date: today,
+        end_date: endDateStr,
+      };
+
+      await AsyncStorage.setItem('subscription_cache', JSON.stringify(subscriptionData));
+      console.log('Subscription saved to cache:', subscriptionData);
+
+      setModalMessage(message || 'Subscription successful!');
       setModalVisible(true);
 
-      await refreshSubscription();
-      const balanceResponse = await api.get(`${API_BASE_URL}/payments/balance/`, {
-        headers: { Authorization: token },
-      });
-      const { balance, virtual_account, subscription } = balanceResponse.data;
-      await AsyncStorage.setItem('balance', balance.toString());
-      if (virtual_account) {
-        await AsyncStorage.setItem('dva_account_number', virtual_account.account_number);
-        await AsyncStorage.setItem('dva_bank_name', virtual_account.bank_name);
-        await AsyncStorage.setItem('dva_account_name', virtual_account.account_name);
+      // Optional: Refresh balance & virtual account
+      try {
+        const balanceResponse = await api.get(`${API_BASE_URL}/payments/balance/`, {
+          headers: { Authorization: token },
+        });
+        const { balance, virtual_account } = balanceResponse.data;
+        await AsyncStorage.setItem('balance', balance.toString());
+        if (virtual_account) {
+          await AsyncStorage.setItem('dva_account_number', virtual_account.account_number);
+          await AsyncStorage.setItem('dva_bank_name', virtual_account.bank_name);
+          await AsyncStorage.setItem('dva_account_name', virtual_account.account_name);
+        }
+      } catch (balError) {
+        console.warn('Failed to refresh balance:', balError);
       }
-      if (subscription) {
-        await AsyncStorage.setItem('subscription_plan', subscription.plan || '');
-        await AsyncStorage.setItem('subscription_end_date', subscription.end_date || '');
-      }
+
     } catch (error) {
       const message = error.response?.data?.message || 'Failed to purchase plan. Please try again.';
       if (message.toLowerCase().includes('insufficient balance')) {
@@ -306,7 +324,6 @@ const Subscription = () => {
                 <Text style={styles.dropdownTriggerText}>
                   {selectedPlan ? PLAN_OPTIONS.find(opt => opt.value === selectedPlan)?.label : 'Select a Plan'}
                 </Text>
-                
               </TouchableOpacity>
             </Animated.View>
             <Modal
@@ -383,6 +400,8 @@ const Subscription = () => {
     </SafeAreaView>
   );
 };
+
+// ... [styles unchanged, full list below]
 
 const styles = StyleSheet.create({
   container: {
