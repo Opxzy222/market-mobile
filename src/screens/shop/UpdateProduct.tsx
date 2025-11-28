@@ -485,7 +485,7 @@ const UpdateShopProducts = () => {
   
   useEffect(() => {
     const initialExpanded = Object.keys(groupedProductSuggestions).reduce((acc, category) => {
-      acc[category] = true;
+      acc[category] = false;
       return acc;
     }, {});
     setExpandedCategories(initialExpanded);
@@ -566,88 +566,97 @@ const UpdateShopProducts = () => {
               {/* Custom Product Section */}
               <View style={styles.customProductContainer}>
                 {customProducts.length > 0 && (
-                  <View style={styles.tableWrapper}>
-                    <Text style={styles.customTableTitle}>Create Your Own Listing</Text>
-                    <Table borderStyle={{ borderWidth: 1, borderColor: "#ddd" }}>
-                      <Row
-                        data={["Item Name", "Category", "Subcategory", "Available", "Price", "Img", "Action"]}
-                        flexArr={[2.5, 1.2, 1.5, 0.8, 1.2, 0.8, 0.8]}
-                        style={styles.tableHeader}
-                        textStyle={styles.tableHeaderText}
-                      />
-                      {customProducts.map((product, index) => (
-                        <Rows
-                          key={index}
-                          data={[
-                            [
-                              editingIndex === index ? (
-                                <TextInput
-                                  style={styles.customNameInput}
-                                  value={product.name}
-                                  onChangeText={(text) => handleCustomProductNameChange(index, text)}
-                                  onBlur={() => setEditingIndex(null)}
-                                  onSubmitEditing={() => setEditingIndex(null)}
-                                  placeholder="Enter listing name"
-                                  placeholderTextColor="#5A5A5A"
-                                  autoFocus
-                                />
-                              ) : (
-                                <TouchableOpacity onPress={() => setEditingIndex(index)}>
-                                  <Text style={styles.tableText}>{product.name}</Text>
-                                </TouchableOpacity>
-                              ),
-                              <Text numberOfLines={1} ellipsizeMode="tail" style={styles.tableText}>
-                                {product.category_name}
-                              </Text>,
-                              <Text numberOfLines={1} ellipsizeMode="tail" style={styles.tableText}>
-                                {product.subcategory_name}
-                              </Text>,
-                              <Checkbox
-                                value={product.is_available}
-                                onValueChange={() => handleCustomProductCheckboxChange(index)}
-                                style={styles.checkBox}
-                              />,
-                              <TouchableOpacity
-                                style={styles.priceInput}
-                                onPress={() => {
-                                  setModalTargetInfo({ type: "custom", index });
-                                  setModalValue(product.price || "");
-                                  setShowModal(true);
-                                }}
-                              >
-                                <Text
-                                  style={[{ flexShrink: 1, numberOfLines: 1 }]}
-                                  numberOfLines={1}
-                                  ellipsizeMode="tail"
-                                >
-                                  {product.price ? `₦${Number(product.price).toLocaleString()}` : "Set Price"}
-                                </Text>
-                              </TouchableOpacity>,
-                              <ProductImageManager
-  productKey={getImageKey('custom', index, product)}  // ← Pass `product` for serverIndex
-  currentImageUrl={product.image ?? null}            // ← NOW SHOWS SAVED IMAGE
-  onImageSelect={(key, file) => setPendingImages(p => ({ ...p, [key]: file }))}
-  onImageRemove={(key) => setPendingImages(p => {
-    const { [key]: _, ...rest } = p;
-    return rest;
-  })}
-/>,
-                              <TouchableOpacity
-                                onPress={() => handleRemoveCustomProduct(index)}
-                                style={styles.removeButton}
-                              >
-                                <Text style={styles.removeButtonText}>X</Text>
-                              </TouchableOpacity>,
-                            ],
-                          ]}
-                          flexArr={[2.5, 1.2, 1.5, 0.8, 1.2, 0.8, 0.8]}
-                          textStyle={styles.tableText}
-                        />
-                      ))}
-                    </Table>
-                  </View>
-                )}
+  <View style={styles.tableWrapper}>
+    <Text style={styles.customTableTitle}>Create Your Own Listing</Text>
+    <Table borderStyle={{ borderWidth: 1, borderColor: "#ddd" }}>
+      <Row
+        data={["Item Name", "Type", "Available", "Price", "Img", "Action"]}
+        flexArr={[2.5, 1.6, 0.8, 1.7, 0.8, 0.7]}  
+        style={styles.tableHeader}
+        textStyle={styles.tableHeaderText}
+      />
+      {customProducts.map((product, index) => (
+        <Rows
+          key={index}
+          data={[
+            [
+              editingIndex === index ? (
+                <TextInput
+                  style={styles.customNameInput}
+                  value={product.name}
+                  onChangeText={(text) => handleCustomProductNameChange(index, text)}
+                  onBlur={() => setEditingIndex(null)}
+                  onSubmitEditing={() => setEditingIndex(null)}
+                  placeholder="Enter listing name"
+                  placeholderTextColor="#5A5A5A"
+                  autoFocus
+                />
+              ) : (
+                <TouchableOpacity onPress={() => setEditingIndex(index)}>
+                  <Text style={styles.tableText}>{product.name}</Text>
+                </TouchableOpacity>
+              ),
 
+              // NEW: Beautiful Category → Subcategory column
+              <View style={{ paddingVertical: 4 }}>
+                <Text style={[styles.tableText, { fontWeight: '600', color: '#2563EB' }]}>
+                  {product.category_name || '—'}
+                </Text>
+                {product.subcategory_name ? (
+                  <Text style={[styles.tableText, { fontSize: 12, color: '#666', marginTop: 2 }]}>
+                    └ {product.subcategory_name}
+                  </Text>
+                ) : (
+                  <Text style={[styles.tableText, { fontSize: 11, color: '#999', fontStyle: 'italic' }]}>
+                    No subcategory
+                  </Text>
+                )}
+              </View>,
+
+              <Checkbox
+                value={product.is_available}
+                onValueChange={() => handleCustomProductCheckboxChange(index)}
+                style={styles.checkBox}
+              />,
+
+              <TouchableOpacity
+                style={styles.priceInput}
+                onPress={() => {
+                  setModalTargetInfo({ type: "custom", index });
+                  setModalValue(product.price || "");
+                  setShowModal(true);
+                }}
+              >
+                <Text style={styles.priceText}>
+                  {product.price ? `₦${Number(product.price).toLocaleString()}` : "Set Price"}
+                </Text>
+              </TouchableOpacity>,
+
+              <ProductImageManager
+                productKey={getImageKey('custom', index, product)}
+                currentImageUrl={product.image ?? null}
+                onImageSelect={(key, file) => setPendingImages(p => ({ ...p, [key]: file }))}
+                onImageRemove={(key) => setPendingImages(p => {
+                  const { [key]: _, ...rest } = p;
+                  return rest;
+                })}
+              />,
+
+              <TouchableOpacity
+                onPress={() => handleRemoveCustomProduct(index)}
+                style={styles.removeButton}
+              >
+                <Text style={styles.removeButtonText}>X</Text>
+              </TouchableOpacity>,
+            ],
+          ]}
+          flexArr={[2.5, 1.6, 0.8, 1.7, 0.8, 0.7]}
+          textStyle={styles.tableText}
+        />
+      ))}
+    </Table>
+  </View>
+)}
                 <View style={styles.customProductInputs}>
                   <TextInput
                     ref={customNameInputRef}
@@ -1251,11 +1260,17 @@ const styles = StyleSheet.create({
   checkBox: {
     alignSelf: "center",
   },
+  priceText: {
+  fontSize: 12,
+  color: '#2563EB',
+  fontWeight: '600',
+  textAlign: "flex-start",
+},
   priceInput: {
     borderWidth: 1,
     borderColor: '#ccc',
     borderRadius: 5,
-    paddingHorizontal: 10,
+    paddingHorizontal: 0,
     paddingVertical: 10,
     height: 50,
     fontSize: 16,

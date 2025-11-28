@@ -229,24 +229,24 @@ const EditProfileScreen = () => {
   };
 
   const pickImage = async () => {
-    iconScale.value = withSpring(0.8, { damping: 10 }, () => {
-      iconScale.value = withSpring(1);
-    });
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 1,
-    });
-    if (!result.canceled) {
-      const uri = result.assets[0].uri;
-      setImage(uri);
-      console.log("Image picked:", uri);
-      // Prefetch the image to verify
-      Image.prefetch(uri).catch((error) => console.error("Prefetch error:", error));
-    }
+  iconScale.value = withSpring(0.8, { damping: 10 }, () => {
+    iconScale.value = withSpring(1);
+  });
+  let result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ['images'],
+    allowsEditing: true,
+    aspect: [1, 1],
+    quality: 1,
+  });
+  if (!result.canceled) {
+    const uri = result.assets[0].uri;
+    setImage(uri);
+    console.log("Image picked:", uri);
+    // Prefetch the image to verify
+    Image.prefetch(uri).catch((error) => console.error("Prefetch error:", error));
+  }
   };
-
+  
   const copyToClipboard = () => {
     if (user?.user_id) {
       Clipboard.setString(user.user_id);

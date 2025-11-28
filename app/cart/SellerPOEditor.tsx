@@ -136,7 +136,7 @@ export default function SellerPOEditor() {
         }
 
         if (poId !== realRootPoId) {
-          router.replace(`/seller/po/${realRootPoId}`, { scroll: false });
+          router.replace(`/cart/SellerPOEditor?poId=${realRootPoId}`, { scroll: false });
         }
       } catch (err: any) {
         Alert.alert('Error', err.response?.data?.error || 'Failed to load order');
@@ -188,7 +188,7 @@ export default function SellerPOEditor() {
         headers: { Authorization: sessionToken!, 'Content-Type': 'multipart/form-data' },
       });
       Alert.alert('Accepted!', 'Offer accepted!', [
-        { text: 'OK', onPress: () => router.replace('/seller/dashboard') }
+        { text: 'OK', onPress: () => router.replace('/cart/SellerPODashboard') }
       ]);
     } catch (err: any) {
       Alert.alert('Error', err.response?.data?.error || 'Failed to accept');
@@ -210,7 +210,7 @@ export default function SellerPOEditor() {
         headers: { Authorization: sessionToken!, 'Content-Type': 'multipart/form-data' },
       });
       Alert.alert('Success!', 'Order completed!', [
-        { text: 'OK', onPress: () => router.replace('/seller/dashboard') }
+        { text: 'OK', onPress: () => router.replace('/cart/SellerPODashboard') }
       ]);
     } catch (err: any) {
       Alert.alert('Wrong Code', err.response?.data?.error || 'Invalid code');
@@ -268,7 +268,7 @@ export default function SellerPOEditor() {
       >
         {/* HEADER */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <TouchableOpacity onPress={() => router.push({pathname: 'cart/SellerPODashboard',})} style={styles.backBtn}>
             <MaterialIcons name="arrow-back-ios" size={26} color="#FFF" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{po?.buyer_name || 'Customer'}</Text>
@@ -445,7 +445,7 @@ export default function SellerPOEditor() {
 
               <TouchableOpacity
                 style={styles.actionBtnCounter}
-                onPress={() => router.push(`/seller/counter/${latestVersion.id}`)}
+                onPress={() => router.push(`/cart/SellerPOCounter?poId=${latestVersion.id}`)}
               >
                 <Text style={styles.actionBtnText}>Counter</Text>
               </TouchableOpacity>
@@ -485,7 +485,7 @@ const styles = StyleSheet.create({
     elevation: 16,
   },
   backBtn: { padding: 10, backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 16 },
-  headerTitle: { fontSize: 22, fontWeight: '900', color: '#FFF', flex: 1, textAlign: 'center', marginRight: -60 },
+  headerTitle: { fontSize: 17, fontWeight: '600', color: '#FFF', flex: 1, textAlign: 'center', marginRight: 6 },
   versionBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.3)', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 28 },
   versionText: { color: '#FFF', fontWeight: '900', fontSize: 16 },
 

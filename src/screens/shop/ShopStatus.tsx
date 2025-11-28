@@ -17,7 +17,7 @@ import {
   Animated,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
-import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
 import { Ionicons } from "@expo/vector-icons";
 import { MaterialIcons } from "@expo/vector-icons";
@@ -248,17 +248,23 @@ const StatusScreen = () => {
   // ──────────────────────────────────────────────────────
   const pickMedia = async () => {
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ["image/*", "video/*"],
-        copyToCacheDirectory: true,
-        multiple: true,
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert("Permission Required", "Please grant access to your media library to select images or videos.");
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.All,
+        allowsMultipleSelection: true,
+        quality: 1,
       });
 
       if (!result.canceled && result.assets?.length > 0) {
         const newMediaPromises = result.assets.map(async (asset) => {
-          const { uri, name, mimeType, size } = asset;
-          const isVideo = mimeType?.startsWith("video/");
-          const isImage = mimeType?.startsWith("image/");
+          const { uri, fileName: name, mimeType, fileSize: size, type } = asset;
+          const isVideo = type === "video" || mimeType?.startsWith("video/");
+          const isImage = type === "image" || mimeType?.startsWith("image/");
 
           if (!isImage && !isVideo) {
             Alert.alert("Warning", `File "${name || "selected file"}" is not a valid image or video.`);

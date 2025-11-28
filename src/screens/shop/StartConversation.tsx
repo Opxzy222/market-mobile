@@ -726,7 +726,7 @@ const StartConversation = () => {
 
     console.log("Connecting WebSocket for conversationId:", conversationId, "with userId:", userId);
     const connectWebSocket = () => {
-      const websocketUrl = `wss://retail-alvinia-goza-f6a0e4f7.koyeb.app/ws/chat/${conversationId}/?user_id=${userId}`;
+      const websocketUrl = `wss://api.gogo-digital.com/ws/chat/${conversationId}/?user_id=${userId}`;
       websocketRef.current = new WebSocket(websocketUrl);
 
       websocketRef.current.onopen = () => {

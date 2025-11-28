@@ -140,6 +140,7 @@ const ShopHomePage = () => {
           }),
         ],
       ]);
+      console.log('shop id', newData.shop_id)
 
       setSubscriptionPlan(newData.plan?.toLowerCase() || null);
       hasFetchedOnceRef.current = true;

@@ -45,8 +45,8 @@ const COLORS = {
   headerBg: "#3A7BD5",
   fabBg: "#4A5ABA",
   youtubeRed: "#FFC107",
-  buyerAccent: "#10B981",
-  sellerAccent: "#8B5CF6",
+  buyerAccent: "#3B82F6",
+  sellerAccent: "#f97316",
 };
 
 const SPACING = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 };

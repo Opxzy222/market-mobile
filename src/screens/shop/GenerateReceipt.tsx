@@ -15,6 +15,7 @@ import {
   StatusBar,
   Linking,
   Image,
+  Modal,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import api from '../../api';
@@ -29,12 +30,12 @@ const GenerateReceipt = () => {
   const [customerName, setCustomerName] = useState("");
   const [items, setItems] = useState([]);
   const [newItem, setNewItem] = useState({ name: "", qty: "", price: "" });
-  const [totalAmount, setTotalAmount] = useState(0);
-  const [receiptData, setReceiptData] = useState({ pdfUrl: null, imageUrls: [], receipt_id: null });
+  const [receipt, setReceipt] = useState({ pdfUrl: null, imageUrls: [], receipt_id: null });
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [shopProducts, setShopProducts] = useState([]);
   const [nameLoading, setNameLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [receiptData, setReceiptData] = useState({ pdfUrl: null, imageUrls: [], receipt_id: null });
   const [editIndex, setEditIndex] = useState(null);
 
   // Subscription state from AsyncStorage
@@ -43,6 +44,9 @@ const GenerateReceipt = () => {
 
   // Modal visibility state
   const [showModal, setShowModal] = useState(false);
+
+  // Full screen image state
+  const [selectedImage, setSelectedImage] = useState(null);
 
   const params = useLocalSearchParams();
   const { shopId, senderId } = params;
@@ -458,7 +462,7 @@ const GenerateReceipt = () => {
               horizontal
               renderItem={({ item }) => (
                 <TouchableOpacity
-                  onPress={() => Linking.openURL(item)}
+                  onPress={() => setSelectedImage(item)}
                   style={styles.imagePreview}
                   activeOpacity={0.7}
                 >
@@ -517,6 +521,28 @@ const GenerateReceipt = () => {
             visible={showModal}
             onClose={() => setShowModal(false)}
           />
+
+          {/* Full Screen Image Modal */}
+          <Modal
+            visible={!!selectedImage}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => setSelectedImage(null)}
+          >
+            <View style={styles.fullScreenContainer}>
+              <TouchableOpacity
+                style={styles.closeFullScreen}
+                onPress={() => setSelectedImage(null)}
+              >
+                <Ionicons name="close" size={32} color="#fff" />
+              </TouchableOpacity>
+              <Image
+                source={{ uri: selectedImage }}
+                style={styles.fullScreenImage}
+                resizeMode="contain"
+              />
+            </View>
+          </Modal>
         </View>
       </TouchableWithoutFeedback>
     </SafeAreaView>
@@ -727,6 +753,22 @@ const styles = StyleSheet.create({
   imageLabel: { fontSize: 16, fontWeight: "700", color: "#1F2937", marginBottom: 8 },
   imagePreview: { marginRight: 8 },
   image: { width: 100, height: 150, borderRadius: 8, borderWidth: 1, borderColor: "#E5E7EB" },
+  fullScreenContainer: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.9)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fullScreenImage: {
+    width: "100%",
+    height: "100%",
+  },
+  closeFullScreen: {
+    position: "absolute",
+    top: 40,
+    right: 20,
+    zIndex: 1,
+  },
 });
 
 export default GenerateReceipt;

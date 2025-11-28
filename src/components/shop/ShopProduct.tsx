@@ -1,6 +1,5 @@
 // components/shop/ShopProduct.tsx
-// FINAL — NO WARNINGS, NO CRASHES, BEAUTIFUL & COLLAPSIBLE
-
+// FINAL — NO SUBSCRIPTION LIMITS, FULL ACCESS FOR EVERYONE, BEAUTIFUL & COLLAPSIBLE
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -12,7 +11,6 @@ import {
   TouchableOpacity,
   Image,
   Modal,
-  Alert,
   Dimensions,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -50,9 +48,11 @@ type Props = {
 
 const ShopProduct = ({ products = [], shopId, shopName }: Props) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [fullScreenImage, setFullScreenImage] = useState<{ visible: boolean; url: string }>({ visible: false, url: '' });
+  const [fullScreenImage, setFullScreenImage] = useState<{ visible: boolean; url: string }>({
+    visible: false,
+    url: '',
+  });
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
   const router = useRouter();
@@ -63,24 +63,10 @@ const ShopProduct = ({ products = [], shopId, shopName }: Props) => {
   const currentShopName = shopName || params.name || `Shop #${currentShopId}`;
 
   useEffect(() => {
-    const loadSubscription = async () => {
-      try {
-        const cache = await AsyncStorage.getItem('subscription_cache');
-        if (cache) {
-          const parsed = JSON.parse(cache);
-          const plan = parsed.plan?.trim().toLowerCase();
-          setSubscriptionStatus(plan);
-        }
-      } catch (error) {
-        console.error('Failed to load subscription_cache:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadSubscription();
+    // Just simulate loading briefly — no subscription check anymore
+    const timer = setTimeout(() => setLoading(false), 300);
+    return () => clearTimeout(timer);
   }, []);
-
-  const isSubscribed = subscriptionStatus && ['regular', 'standard', 'premium'].includes(subscriptionStatus);
 
   const toggleCategory = (categoryName: string) => {
     setExpandedCategories(prev => {
@@ -92,21 +78,16 @@ const ShopProduct = ({ products = [], shopId, shopName }: Props) => {
   };
 
   const openFullScreen = (url: string) => {
-    if (isSubscribed) setFullScreenImage({ visible: true, url });
-    else Alert.alert('Upgrade Required', 'Upgrade to Standard plan to view full-screen images.');
+    setFullScreenImage({ visible: true, url });
   };
 
   const handleAddToCart = (product: Product) => {
-    if (!isSubscribed) {
-      Alert.alert('Upgrade Required', 'Upgrade to Standard plan to add items to cart.');
-      return;
-    }
     if (!product.is_available) {
-      Alert.alert('Unavailable', 'This item is currently not available.');
+      alert('Unavailable', 'This item is currently not available.');
       return;
     }
     if (!currentShopId) {
-      Alert.alert('Error', 'Shop ID is missing.');
+      alert('Error', 'Shop ID is missing.');
       return;
     }
 
@@ -121,7 +102,7 @@ const ShopProduct = ({ products = [], shopId, shopName }: Props) => {
       is_custom: false,
     });
 
-    Alert.alert('Added!', `"${product.product_name}" added to cart`);
+    alert('Added!', `"${product.product_name}" added to cart`);
   };
 
   if (loading) {
@@ -132,33 +113,14 @@ const ShopProduct = ({ products = [], shopId, shopName }: Props) => {
     );
   }
 
-  if (!isSubscribed) {
-    return (
-      <LinearGradient colors={['#F0F9FF', '#E0F2FE']} style={styles.container}>
-        <View style={styles.lockedScreen}>
-          <Ionicons name="lock-closed" size={64} color="#0EA5E9" />
-          <Text style={styles.lockTitle}>Premium Access Required</Text>
-          <Text style={styles.lockSubtitle}>Upgrade to Standard plan to view all products</Text>
-          <TouchableOpacity
-            style={styles.upgradeBtn}
-            onPress={() => router.push('/shop/Subscription')}
-          >
-            <LinearGradient colors={['#0EA5E9', '#38BDF8']} style={styles.upgradeGradient}>
-              <Text style={styles.upgradeText}>Upgrade Now</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-      </LinearGradient>
-    );
-  }
-
-  // SAFE: products is now guaranteed to be array
+  // No subscription check — everyone sees the full shop
   const safeProducts = Array.isArray(products) ? products : [];
 
   // Filter products by search
   const filteredData = safeProducts
     .map(category => {
       if (!category?.category || !Array.isArray(category.subcategories)) return null;
+
       const filteredSubs = category.subcategories
         .map(sub => {
           if (!sub?.subcategory || !Array.isArray(sub.products)) return null;
@@ -202,7 +164,7 @@ const ShopProduct = ({ products = [], shopId, shopName }: Props) => {
           keyExtractor={item => item.category}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
-          nestedScrollEnabled={true} // THIS FIXES THE VIRTUALIZATION WARNING
+          nestedScrollEnabled={true}
           renderItem={({ item: category }) => {
             const isExpanded = expandedCategories.has(category.category);
 
@@ -236,11 +198,13 @@ const ShopProduct = ({ products = [], shopId, shopName }: Props) => {
                     {category.subcategories.map(sub => (
                       <View key={sub.subcategory} style={styles.subcategoryBlock}>
                         <Text style={styles.subcategoryTitle}>{sub.subcategory}</Text>
-
                         {sub.products.map(product => (
                           <View key={product.id} style={styles.productCard}>
-                            {/* YOUR ORIGINAL PRODUCT CARD — 100% UNTOUCHED */}
-                            <TouchableOpacity onPress={() => product.image && openFullScreen(product.image)} style={styles.imageWrapper}>
+                            {/* Product Image — full-screen always allowed */}
+                            <TouchableOpacity
+                              onPress={() => product.image && openFullScreen(product.image)}
+                              style={styles.imageWrapper}
+                            >
                               {product.image ? (
                                 <Image source={{ uri: product.image }} style={styles.productImg} resizeMode="cover" />
                               ) : (
@@ -253,10 +217,14 @@ const ShopProduct = ({ products = [], shopId, shopName }: Props) => {
 
                             <View style={styles.textColumn}>
                               <Text style={styles.productName}>{product.product_name}</Text>
-
                               <View style={styles.priceRow}>
                                 <View style={styles.availabilityBadge}>
-                                  <Text style={[styles.availability, product.is_available ? styles.available : styles.notAvailable]}>
+                                  <Text
+                                    style={[
+                                      styles.availability,
+                                      product.is_available ? styles.available : styles.notAvailable,
+                                    ]}
+                                  >
                                     {product.is_available ? 'Available' : 'Unavailable'}
                                   </Text>
                                 </View>
@@ -293,7 +261,7 @@ const ShopProduct = ({ products = [], shopId, shopName }: Props) => {
         />
       </LinearGradient>
 
-      {/* Full Screen Image */}
+      {/* Full Screen Image Modal — always accessible */}
       <Modal visible={fullScreenImage.visible} transparent animationType="fade">
         <View style={styles.fullScreenOverlay}>
           <Image source={{ uri: fullScreenImage.url }} style={styles.fullScreenImage} resizeMode="contain" />
@@ -314,7 +282,6 @@ const ShopProduct = ({ products = [], shopId, shopName }: Props) => {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   loader: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F0F9FF' },
-
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -334,9 +301,7 @@ const styles = StyleSheet.create({
     borderColor: '#E0F2FE',
   },
   searchInput: { flex: 1, fontSize: 16, color: '#1E293B', marginLeft: 12 },
-
   listContent: { paddingBottom: 40 },
-
   categoryBlock: { marginBottom: 12 },
   categoryHeader: {
     flexDirection: 'row',
@@ -363,7 +328,6 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
   itemCountText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-
   subcategoriesContainer: { marginTop: 12 },
   subcategoryBlock: { marginBottom: 20, paddingHorizontal: 16 },
   subcategoryTitle: {
@@ -373,8 +337,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     marginLeft: 8,
   },
-
-  // YOUR ORIGINAL PRODUCT CARD — 100% UNCHANGED
   productCard: {
     flexDirection: 'row',
     backgroundColor: '#fff',
@@ -425,18 +387,9 @@ const styles = StyleSheet.create({
   },
   addToCartBtnDisabled: { backgroundColor: '#94a3b8' },
   addToCartText: { color: '#fff', fontSize: 12, fontWeight: '600' },
-
   emptyState: { alignItems: 'center', marginTop: 100 },
   emptyTitle: { fontSize: 20, fontWeight: '700', color: '#475569', marginTop: 16 },
   emptyText: { fontSize: 15, color: '#94A3B8', marginTop: 8 },
-
-  lockedScreen: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
-  lockTitle: { fontSize: 28, fontWeight: '800', color: '#0C4A6B', marginTop: 24 },
-  lockSubtitle: { fontSize: 16, color: '#64748B', marginTop: 8, textAlign: 'center' },
-  upgradeBtn: { marginTop: 32, borderRadius: 16, overflow: 'hidden' },
-  upgradeGradient: { paddingVertical: 16, paddingHorizontal: 40 },
-  upgradeText: { color: '#fff', fontSize: 17, fontWeight: '700' },
-
   fullScreenOverlay: { flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' },
   fullScreenImage: { width: '100%', height: '100%' },
   closeFullScreen: { position: 'absolute', top: 50, right: 20 },

@@ -1,7 +1,7 @@
 // components/cart/SellerFloatingOrb.tsx
-// NOVEMBER 22, 2025 — FINAL PERFECTION: ONLY SHOWS WHEN THERE IS A PENDING PO
+// NOVEMBER 28, 2025 — FINAL VICTORY EDITION: SELLER ORB WORKS 100%
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useContext } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
 import { PanGestureHandler } from 'react-native-gesture-handler';
 import Animated, {
@@ -15,10 +15,10 @@ import Animated, {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import api from '../../api';
+import { AppResetContext } from '@/context/AppResetContext';
 
 const { width, height } = Dimensions.get('window');
-const ORB_SIZE = 72;
+const ORB_SIZE = 65;
 const SNAP_MARGIN = 20;
 const SAFE_TOP = 100;
 const SAFE_BOTTOM = 150;
@@ -27,9 +27,7 @@ export const SellerFloatingOrb = () => {
   const [activePOs, setActivePOs] = useState(0);
   const [isSeller, setIsSeller] = useState(false);
   const [shopId, setShopId] = useState<string | null>(null);
-  const [sessionToken, setSessionToken] = useState<string | null>(null);
 
-  // Only render orb if we have pending POs AND are a seller
   const shouldRenderOrb = isSeller && activePOs > 0;
 
   const translateX = useSharedValue(SNAP_MARGIN);
@@ -39,23 +37,24 @@ export const SellerFloatingOrb = () => {
   const router = useRouter();
   const wsRef = useRef<WebSocket | null>(null);
 
-  // Load session + shop
+  const { resetAppState } = useContext(AppResetContext);
+
+  // Load shop_id only
   useEffect(() => {
     const load = async () => {
       try {
-        const [token, sid] = await Promise.all([
-          AsyncStorage.getItem('sessionToken'),
-          AsyncStorage.getItem('shop_id'),
-        ]);
-
-        if (sid && token) {
+        const sid = await AsyncStorage.getItem('shop_id');
+        if (sid) {
           setShopId(sid);
-          setSessionToken(token);
           setIsSeller(true);
+          console.log('SELLER MODE: shop_id loaded →', sid);
         } else {
           setIsSeller(false);
+          setShopId(null);
+          console.log('SELLER MODE: no shop_id found');
         }
       } catch (err) {
+        console.error('Failed to load shop_id:', err);
         setIsSeller(false);
       }
     };
@@ -63,78 +62,84 @@ export const SellerFloatingOrb = () => {
     load();
     const interval = setInterval(load, 15000);
     return () => clearInterval(interval);
-  }, []);
+  }, [resetAppState]);
 
-  // Pulse animation when new order arrives
+  // Pulse when count increases
   useEffect(() => {
     if (activePOs > 0) {
       pulse.value = withSequence(
-        withTiming(1.4, { duration: 200 }),
+        withTiming(1.5, { duration: 200 }),
         withTiming(1.0, { duration: 400 })
       );
     }
   }, [activePOs]);
 
-  // WebSocket: Real-time PO updates
+  // WebSocket — FULL LOGGING + CLEAN URL
   useEffect(() => {
-    if (!isSeller || !shopId || !sessionToken) {
+    if (!isSeller || !shopId) {
+      console.log('SELLER WS: Not a seller or no shopId → disabled');
       setActivePOs(0);
       return;
     }
 
-    const protocol = __DEV__ ? 'ws' : 'wss';
-    const url = `${protocol}://retail-alvinia-goza-f6a0e4f7.koyeb.app/ws/po/updates/${shopId}/?token=${sessionToken}`;
+    const connect = () => {
+      const protocol = __DEV__ ? 'ws' : 'wss';
+      const url = `${protocol}://api.gogo-digital.com/ws/po/updates/${shopId}/`;
 
-    const ws = new WebSocket(url);
-    ws.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data.type === 'po_update' && Array.isArray(data.pos)) {
-          const count = data.pos.filter((po: any) =>
-            ['proposed', 'countered', 'pickup_pending'].includes(po.status)
-          ).length;
-          setActivePOs(count);
+      console.log('SELLER WS: CONNECTING TO →', url);
+
+      wsRef.current = new WebSocket(url);
+
+      wsRef.current.onopen = () => {
+        console.log('SELLER WS: CONNECTED');
+      };
+
+      wsRef.current.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          console.log('SELLER WS: RECEIVED ←', data);
+
+          if (data.type === 'po_update') {
+            const backendCount = data.active_count || 0;
+            const posArrayLength = Array.isArray(data.pos) ? data.pos.length : 0;
+
+            console.log(`SELLER WS: Backend says active_count = ${backendCount}`);
+            console.log(`SELLER WS: pos array has ${posArrayLength} items`);
+
+            // TRUST THE BACKEND — IT KNOWS BEST
+            setActivePOs(backendCount);
+
+            // Extra debug: show what statuses are in the list
+            if (Array.isArray(data.pos)) {
+              const statuses = data.pos.map((p: any) => p.status).join(', ');
+              console.log(`SELLER WS: Statuses received: [${statuses || 'none'}]`);
+            }
+          }
+        } catch (err) {
+          console.error('SELLER WS: Failed to parse message:', err, e.data);
         }
-      } catch (err) {
-        // Silent
-      }
+      };
+
+      wsRef.current.onerror = (e) => {
+        console.error('SELLER WS: ERROR →', e);
+      };
+
+      wsRef.current.onclose = (event) => {
+        console.log('SELLER WS: CLOSED →', event.code, event.reason || 'no reason');
+        // Reconnect after 2s
+        setTimeout(connect, 2000);
+      };
     };
 
-    ws.onerror = () => setActivePOs(prev => prev); // Keep current
-    ws.onclose = () => setTimeout(() => wsRef.current?.close(), 5000);
+    connect();
 
-    wsRef.current = ws;
-    return () => ws.close();
-  }, [isSeller, shopId, sessionToken]);
-
-  // HTTP Fallback: Poll every 30s
-  useEffect(() => {
-    if (!isSeller || !sessionToken) {
-      setActivePOs(0);
-      return;
-    }
-
-    const fetchPOs = async () => {
-      try {
-        const res = await api.get('/po/seller/list/', {
-          headers: { Authorization: sessionToken },
-          timeout: 8000,
-        });
-        const count = (res.data.pos || []).filter((po: any) =>
-          ['proposed', 'countered', 'pickup_pending'].includes(po.status)
-        ).length;
-        setActivePOs(count);
-      } catch (err) {
-        // Silent fail — keep previous count
-      }
+    return () => {
+      console.log('SELLER WS: Cleaning up');
+      wsRef.current?.close();
+      wsRef.current = null;
     };
+  }, [isSeller, shopId]);
 
-    fetchPOs();
-    const interval = setInterval(fetchPOs, 30000);
-    return () => clearInterval(interval);
-  }, [isSeller, sessionToken]);
-
-  // Gesture handler — only active when orb is visible
   const gestureHandler = useAnimatedGestureHandler({
     onStart: (_, ctx: any) => {
       ctx.startX = translateX.value;
@@ -168,10 +173,12 @@ export const SellerFloatingOrb = () => {
     pointerEvents: shouldRenderOrb ? 'auto' : 'none',
   }));
 
-  // FINAL: Do NOT render anything if no pending POs
   if (!shouldRenderOrb) {
+    console.log('SELLER ORB: Hidden → activePOs =', activePOs, 'isSeller =', isSeller);
     return null;
   }
+
+  console.log('SELLER ORB: RENDERED WITH COUNT →', activePOs);
 
   return (
     <PanGestureHandler onGestureEvent={gestureHandler}>
@@ -210,7 +217,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.7,
     shadowRadius: 20,
     elevation: 40,
-    borderWidth: 6,
+    borderWidth: 1,
     borderColor: '#fff',
   },
   badge: {

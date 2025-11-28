@@ -1,4 +1,3 @@
-// components/ProductImageManager.tsx
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -14,6 +13,8 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '@react-navigation/native'; // optional – safe to remove
+import SubscriptionRequiredModal from "@/components/RequiredSubscription";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 type ProductImageManagerProps = {
   /** Unique key for the product – e.g. "suggestion_123" or "custom_0" */
@@ -41,6 +42,8 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
   const [previewUri, setPreviewUri] = useState<string | null>(currentImageUrl);
   const [pendingFile, setPendingFile] = useState<any>(null); // new file picked this session
   const [isProcessing, setIsProcessing] = useState(false);
+  const [subscriptionModalVisible, setSubscriptionModalVisible] = useState(false);
+  const [isSubscribed, setIsSubscribed] = useState<boolean | null>(null);
 
   // -----------------------------------------------------------------
   // Sync preview when the server URL changes (e.g. after reload)
@@ -50,6 +53,29 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
     // If server URL changes, clear any pending file (user replaced it)
     if (currentImageUrl) setPendingFile(null);
   }, [currentImageUrl]);
+
+  // Load subscription once when modal opens
+  React.useEffect(() => {
+    if (modalVisible) {
+      checkSubscription();
+    }
+  }, [modalVisible]);
+
+  const checkSubscription = async () => {
+    try {
+      const cache = await AsyncStorage.getItem('subscription_cache');
+      if (cache) {
+        const parsed = JSON.parse(cache);
+        const plan = parsed.plan?.trim().toLowerCase();
+        setIsSubscribed([ 'standard', 'premium'].includes(plan));
+      } else {
+        setIsSubscribed(false);
+      }
+    } catch (error) {
+      console.error('Failed to check subscription:', error);
+      setIsSubscribed(false);
+    }
+  };
 
   // -----------------------------------------------------------------
   // Permission helper
@@ -74,15 +100,24 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
   // Open picker
   // -----------------------------------------------------------------
   const openPicker = async (source: 'camera' | 'library') => {
+    if (isSubscribed === null) {
+      Alert.alert('Loading', 'Checking subscription status...');
+      return;
+    }
+
+    if (!isSubscribed) {
+      setSubscriptionModalVisible(true);
+      return;
+    }
+
     const hasPermission = await requestPermission(source);
     if (!hasPermission) return;
 
     setIsProcessing(true);
     try {
       const pickerOpts: ImagePicker.ImagePickerOptions = {
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
+        mediaTypes: ['images'],
+        allowsEditing: false,
         quality: 0.8,
         base64: false,
       };
@@ -202,7 +237,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
               <TouchableOpacity
                 style={[styles.actionButton, styles.cameraButton]}
                 onPress={() => openPicker('camera')}
-                disabled={isProcessing}
+                disabled={isProcessing || isSubscribed === null}
               >
                 <MaterialCommunityIcons name="camera" size={24} color="#fff" />
                 <Text style={styles.actionButtonText}>Take Photo</Text>
@@ -211,7 +246,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
               <TouchableOpacity
                 style={[styles.actionButton, styles.galleryButton]}
                 onPress={() => openPicker('library')}
-                disabled={isProcessing}
+                disabled={isProcessing || isSubscribed === null}
               >
                 <MaterialCommunityIcons name="image-multiple" size={24} color="#fff" />
                 <Text style={styles.actionButtonText}>Choose from Gallery</Text>
@@ -241,6 +276,11 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
           </View>
         </View>
       </Modal>
+
+      <SubscriptionRequiredModal
+        visible={subscriptionModalVisible}
+        onClose={() => setSubscriptionModalVisible(false)}
+      />
     </>
   );
 };
@@ -351,6 +391,11 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 12,
     marginHorizontal: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
 
   cameraButton: {
@@ -366,6 +411,9 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     fontWeight: '600',
     fontSize: 15,
+    flexShrink: 1,
+    numberOfLines: 1,
+    ellipsizeMode: 'tail',
   },
 
   removeButton: {

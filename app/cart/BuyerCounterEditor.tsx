@@ -1,5 +1,5 @@
 // cart/BuyerCounterEditor.tsx
-// DECEMBER 1, 2025 — FINAL PERFECTION: Animated Message + Max Items
+// DECEMBER 5, 2025 — BUYER COUNTER: 100% MIRROR OF SELLER LUXURY
 
 import React, { useState, useEffect, useMemo } from 'react';
 import {
@@ -15,22 +15,12 @@ import {
   TextInput,
   Platform,
   Image,
-  Modal,
-  TouchableWithoutFeedback,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  withRepeat,
-  withSequence,
-  withSpring,
-} from 'react-native-reanimated';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../../src/api';
-import { useCart } from '@/context/CartContext';
 import AddCustomItemModal from '@/components/cart/AddCustomItemModal';
 
 interface POItem {
@@ -45,17 +35,109 @@ interface POItem {
   _source: 'server' | 'local_cart';
   note?: string;
   is_custom?: boolean;
-  _from_cart?: boolean;
 }
+
+const LuxeItemCard = ({ item, onUpdateQuantity, onUpdatePrice, onRemove }: {
+  item: POItem;
+  onUpdateQuantity: (qty: number) => void;
+  onUpdatePrice: (price: number) => void;
+  onRemove: () => void;
+}) => {
+  const [editingPrice, setEditingPrice] = useState(false);
+  const [priceInput, setPriceInput] = useState(item.proposed_price.toString());
+
+  const handleSave = () => {
+    const price = parseFloat(priceInput) || item.original_price;
+    onUpdatePrice(price);
+    setEditingPrice(false);
+  };
+
+  const priceChanged = item.proposed_price !== item.original_price;
+  const displayImage = item.custom_image_url || item.image_url;
+
+  const getChangeInfo = () => {
+    if (item.is_custom) return { text: 'Custom Item', color: '#7C3AED', icon: 'create-outline' };
+    if (priceChanged && item.added_by === 'seller') return { text: 'Seller changed', color: '#DC2626', icon: 'arrow-down-outline' };
+    if (priceChanged && item.added_by === 'buyer') return { text: 'You changed', color: '#3B82F6', icon: 'arrow-up-outline' };
+    return null;
+  };
+
+  const change = getChangeInfo();
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.imageWrapper}>
+        {displayImage ? (
+          <Image source={{ uri: displayImage }} style={styles.image} resizeMode="cover" />
+        ) : (
+          <View style={styles.placeholder}>
+            <Ionicons name="image-outline" size={28} color="#94A3B8" />
+          </View>
+        )}
+      </View>
+
+      <View style={styles.content}>
+        <Text style={styles.name} numberOfLines={2}>{item.name}</Text>
+        {item.note && <Text style={styles.note}>Note: {item.note}</Text>}
+
+        <View style={styles.priceSection}>
+          {editingPrice ? (
+            <View style={styles.editRow}>
+              <TextInput
+                style={styles.priceInput}
+                value={priceInput}
+                onChangeText={setPriceInput}
+                keyboardType="numeric"
+                autoFocus
+                onBlur={handleSave}
+                onSubmitEditing={handleSave}
+              />
+              <TouchableOpacity onPress={handleSave}>
+                <Ionicons name="checkmark-circle" size={26} color="#10B981" />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity onPress={() => setEditingPrice(true)} style={styles.priceRow}>
+              {priceChanged && (
+                <Text style={styles.oldPrice}>₦{item.original_price.toLocaleString()}</Text>
+              )}
+              <Text style={styles.newPrice}>₦{item.proposed_price.toLocaleString()}</Text>
+              {change && (
+                <View style={styles.tag}>
+                  <Ionicons name={change.icon as any} size={14} color={change.color} />
+                  <Text style={[styles.tagText, { color: change.color }]}>{change.text}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={styles.bottomRow}>
+          <View style={styles.quantityBox}>
+            <TouchableOpacity onPress={() => onUpdateQuantity(Math.max(1, item.quantity - 1))}>
+              <Ionicons name="remove" size={22} color={item.quantity <= 1 ? '#CBD5E1' : '#3B82F6'} />
+            </TouchableOpacity>
+            <Text style={styles.quantity}>{item.quantity}</Text>
+            <TouchableOpacity onPress={() => onUpdateQuantity(item.quantity + 1)}>
+              <Ionicons name="add" size={22} color="#3B82F6" />
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity onPress={onRemove} style={styles.removeBtn}>
+            <Ionicons name="trash-outline" size={20} color="#EF4444" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+};
 
 export default function BuyerCounterEditor() {
   const { po_id } = useLocalSearchParams<{ po_id: string }>();
   const router = useRouter();
-  const cart = useCart();
 
   const [items, setItems] = useState<POItem[]>([]);
   const [shopName, setShopName] = useState('Shop');
-  const [shopId, setShopId] = useState<number | null>(null);
   const [version, setVersion] = useState(1);
   const [sellerMessage, setSellerMessage] = useState('');
   const [loading, setLoading] = useState(true);
@@ -63,46 +145,23 @@ export default function BuyerCounterEditor() {
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [customModalVisible, setCustomModalVisible] = useState(false);
-  const [showMessageModal, setShowMessageModal] = useState(false);
 
   const opacity = useSharedValue(0);
   const translateY = useSharedValue(20);
-  const pulse = useSharedValue(1);
-
-  const pulseStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: pulse.value }],
-  }));
-
   const animatedStyle = useAnimatedStyle(() => ({
-  opacity: opacity.value,
-  transform: [{ translateY: translateY.value }],
-}))
-
-  const fadeStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
     transform: [{ translateY: translateY.value }],
   }));
 
   useEffect(() => {
-    opacity.value = withTiming(1, { duration: 700 });
-    translateY.value = withTiming(0, { duration: 700 });
-    if (sellerMessage) {
-      pulse.value = withRepeat(
-        withSequence(
-          withSpring(1.35),
-          withSpring(1)
-        ),
-        -1,
-        true
-      );
-    }
-  }, [sellerMessage]);
+    opacity.value = withTiming(1, { duration: 800 });
+    translateY.value = withTiming(0, { duration: 800 });
+  }, []);
 
   useEffect(() => {
     AsyncStorage.getItem('sessionToken').then(setSessionToken);
   }, []);
 
-  // FETCH + MERGE WITH CART
   useEffect(() => {
     if (!po_id || !sessionToken) return;
 
@@ -114,21 +173,13 @@ export default function BuyerCounterEditor() {
         });
 
         const po = res.data.po;
-        const versions = res.data.versions || [];
-        const latest = versions.find((v: any) => v.is_latest) || versions[0];
-
-        if (!latest) return router.back();
-        if (po_id !== latest.id.toString()) {
-          router.replace(`/cart/BuyerCounterEditor?po_id=${latest.id}`);
-          return;
-        }
+        const latest = res.data.versions.reduce((a: any, b: any) => (a.version > b.version ? a : b));
 
         setShopName(po.shop_name || 'Shop');
-        setShopId(po.shop_id);
         setVersion(latest.version);
         setSellerMessage(latest.message || '');
 
-        const serverItems: POItem[] = latest.items.map((i: any, idx: number) => ({
+        const fetched: POItem[] = latest.items.map((i: any, idx: number) => ({
           id: i.id?.toString() || `server-${idx}`,
           name: i.custom_name || i.product_name || 'Item',
           image_url: i.image_url || null,
@@ -137,40 +188,12 @@ export default function BuyerCounterEditor() {
           original_price: Number(i.original_price) || 0,
           proposed_price: Number(i.proposed_price) || 0,
           added_by: i.added_by,
-          _source: 'server' as const,
+          _source: 'server',
           note: i.note,
           is_custom: !!i.custom_name,
         }));
 
-        const merged: POItem[] = [...serverItems];
-        const localCartItems = cart.getShopItems(po.shop_id);
-
-        localCartItems.forEach(cartItem => {
-          const exists = merged.some(serverItem => {
-            const serverName = serverItem.custom_name || serverItem.name;
-            const cartName = cartItem.custom_name || cartItem.product_name;
-            return serverName === cartName;
-          });
-
-          if (!exists) {
-            merged.push({
-              id: `cart-${cartItem.id}`,
-              name: cartItem.custom_name || cartItem.product_name || 'Item',
-              image_url: cartItem.image || null,
-              custom_image_url: null,
-              quantity: cartItem.quantity,
-              original_price: cartItem.original_price,
-              proposed_price: cartItem.price,
-              added_by: 'buyer',
-              _source: 'local_cart' as const,
-              note: cartItem.note,
-              is_custom: cartItem.is_custom,
-              _from_cart: true,
-            });
-          }
-        });
-
-        setItems(merged);
+        setItems(fetched);
       } catch (err: any) {
         Alert.alert('Error', err.response?.data?.error || 'Failed to load offer');
         router.back();
@@ -180,7 +203,7 @@ export default function BuyerCounterEditor() {
     };
 
     loadPO();
-  }, [po_id, sessionToken, router, cart]);
+  }, [po_id, sessionToken, router]);
 
   const handleAddCustomItem = (itemData: any) => {
     const newItem: POItem = {
@@ -195,7 +218,6 @@ export default function BuyerCounterEditor() {
       _source: 'local_cart',
       note: itemData.note,
       is_custom: true,
-      _from_cart: true,
     };
     setItems(prev => [...prev, newItem]);
     setCustomModalVisible(false);
@@ -208,7 +230,7 @@ export default function BuyerCounterEditor() {
   const removeItem = (id: string) => setItems(prev => prev.filter(it => it.id !== id));
 
   const sendCounter = async () => {
-    if (items.length === 0) return Alert.alert('Empty Order', 'Please add at least one item');
+    if (items.length === 0) return Alert.alert('Empty Offer', 'Add at least one item');
 
     setSending(true);
     const form = new FormData();
@@ -216,16 +238,16 @@ export default function BuyerCounterEditor() {
     if (message.trim()) form.append('message', message.trim());
 
     items.forEach((it, i) => {
-      const prefix = `items[${i}]`;
-      form.append(`${prefix}[product_name]`, it.name);
-      if (it.is_custom) form.append(`${prefix}[custom_name]`, it.name);
-      form.append(`${prefix}[quantity]`, it.quantity.toString());
-      form.append(`${prefix}[proposed_price]`, it.proposed_price.toString());
-      form.append(`${prefix}[original_price]`, it.original_price.toString());
-      if (it.note) form.append(`${prefix}[note]`, it.note);
+      const p = `items[${i}]`;
+      form.append(`${p}[product_name]`, it.name);
+      if (it.is_custom) form.append(`${p}[custom_name]`, it.name);
+      form.append(`${p}[quantity]`, it.quantity.toString());
+      form.append(`${p}[proposed_price]`, it.proposed_price.toString());
+      form.append(`${p}[original_price]`, it.original_price.toString());
+      if (it.note) form.append(`${p}[note]`, it.note);
 
       if (it.image_url && it._source === 'server') {
-        form.append(`${prefix}[image_url]`, it.image_url);
+        form.append(`${p}[image_url]`, it.image_url);
       }
 
       if (it.custom_image_url && it._source === 'local_cart') {
@@ -233,20 +255,23 @@ export default function BuyerCounterEditor() {
         const filename = uri.split('/').pop() || `custom_${i}.jpg`;
         const match = /\.(\w+)$/.exec(filename);
         const type = match ? `image/${match[1]}` : 'image/jpeg';
-        (form as any).append(`${prefix}[custom_image]`, { uri, name: filename, type });
+        (form as any).append(`${p}[custom_image]`, { uri, name: filename, type });
       }
     });
 
     try {
       await api.post('/po/counter/', form, {
-        headers: { Authorization: sessionToken! },
+        headers: {
+          Authorization: sessionToken!,
+          'Content-Type': 'multipart/form-data',
+        },
       });
 
-      Alert.alert('Counter Sent!', 'Your counter offer has been sent.', [
+      Alert.alert('Sent!', 'Your counter offer has been sent!', [
         { text: 'OK', onPress: () => router.replace('/cart/BuyerPODashboard') }
       ]);
     } catch (err: any) {
-      Alert.alert('Failed', err.response?.data?.error || 'Try again.');
+      Alert.alert('Failed', err.message || 'Could not send');
     } finally {
       setSending(false);
     }
@@ -260,7 +285,7 @@ export default function BuyerCounterEditor() {
         <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
         <View style={styles.loader}>
           <ActivityIndicator size="large" color="#60A5FA" />
-          <Text style={styles.loaderText}>Preparing your counter...</Text>
+          <Text style={styles.loaderText}>Loading shop offer...</Text>
         </View>
       </SafeAreaView>
     );
@@ -270,9 +295,9 @@ export default function BuyerCounterEditor() {
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
 
-      {/* HEADER */}
+      {/* LUXURY BLUE HEADER */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => router.push(`/cart/BuyerPOEditor?po_id=${po_id}`)} style={styles.backBtn}>
           <MaterialIcons name="arrow-back-ios" size={26} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{shopName}</Text>
@@ -281,27 +306,30 @@ export default function BuyerCounterEditor() {
         </View>
       </View>
 
-      {/* SELLER MESSAGE — ANIMATED ICON + POPUP */}
+      {/* SELLER MESSAGE */}
       {sellerMessage ? (
-        <TouchableOpacity style={styles.messageTrigger} onPress={() => setShowMessageModal(true)}>
-          <Animated.View style={[styles.messageIcon, pulseStyle]}>
-            <Ionicons name="chatbubble-ellipses" size={28} color="#3B82F6" />
-          </Animated.View>
-          <Text style={styles.messageHint}>Seller sent a message</Text>
-        </TouchableOpacity>
+        <View style={styles.messageCard}>
+          <Text style={styles.messageText}>“{sellerMessage}”</Text>
+        </View>
       ) : null}
 
       <Animated.View style={[animatedStyle, { flex: 1 }]}>
-        <ScrollView contentContainerStyle={{ paddingBottom: 340 }}>
+        <ScrollView contentContainerStyle={{ paddingBottom: 360 }}>
           {items.length === 0 ? (
             <View style={styles.empty}>
-              <Ionicons name="cart-outline" size={84} color="#CBD5E1" />
-              <Text style={styles.emptyText}>No items yet</Text>
-              <Text style={styles.emptySub}>Add items from shop or create custom ones</Text>
+              <Ionicons name="cart-outline" size={88} color="#CBD5E1" />
+              <Text style={styles.emptyText}>No items in this offer</Text>
+              <Text style={styles.emptySub}>Shop will see your response</Text>
             </View>
           ) : (
             items.map(item => (
-              <UltraCompactItem key={item.id} item={item} onUpdateQuantity={q => updateItem(item.id, 'quantity', q)} onUpdatePrice={p => updateItem(item.id, 'proposed_price', p)} onRemove={() => removeItem(item.id)} />
+              <LuxeItemCard
+                key={item.id}
+                item={item}
+                onUpdateQuantity={q => updateItem(item.id, 'quantity', q)}
+                onUpdatePrice={p => updateItem(item.id, 'proposed_price', p)}
+                onRemove={() => removeItem(item.id)}
+              />
             ))
           )}
 
@@ -311,10 +339,10 @@ export default function BuyerCounterEditor() {
           </TouchableOpacity>
 
           <View style={styles.messageSection}>
-            <Text style={styles.messageLabel}>Your message (optional)</Text>
+            <Text style={styles.messageLabel}>Your message to shop (optional)</Text>
             <TextInput
               style={styles.messageInput}
-              placeholder="E.g. Can you do better on the price?"
+              placeholder="E.g. Abeg reduce small, I dey your side"
               value={message}
               onChangeText={setMessage}
               multiline
@@ -347,24 +375,10 @@ export default function BuyerCounterEditor() {
         </TouchableOpacity>
       </View>
 
-      {/* FULL MESSAGE MODAL */}
-      <Modal visible={showMessageModal} transparent animationType="fade">
-        <TouchableWithoutFeedback onPress={() => setShowMessageModal(false)}>
-          <View style={styles.modalOverlay}>
-            <View style={styles.messageModal}>
-              <Text style={styles.modalMessage}>“{sellerMessage}”</Text>
-              <TouchableOpacity style={styles.closeModalBtn} onPress={() => setShowMessageModal(false)}>
-                <Ionicons name="close-circle" size={40} color="#3B82F6" />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
-
       <AddCustomItemModal
         visible={customModalVisible}
         onClose={() => setCustomModalVisible(false)}
-        shopId={shopId || 0}
+        shopId={0}
         shopName={shopName}
         onAddItem={handleAddCustomItem}
       />
@@ -372,74 +386,9 @@ export default function BuyerCounterEditor() {
   );
 }
 
-const UltraCompactItem = ({ item, onUpdateQuantity, onUpdatePrice, onRemove }: {
-  item: POItem;
-  onUpdateQuantity: (qty: number) => void;
-  onUpdatePrice: (price: number) => void;
-  onRemove: () => void;
-}) => {
-  const [editingPrice, setEditingPrice] = useState(false);
-  const [priceInput, setPriceInput] = useState(item.proposed_price.toString());
-
-  const handleSave = () => {
-    const price = parseFloat(priceInput) || item.original_price;
-    onUpdatePrice(price);
-    setEditingPrice(false);
-  };
-
-  const priceChanged = item.proposed_price !== item.original_price;
-  const displayImage = item.custom_image_url || item.image_url;
-
-  const getChangeInfo = () => {
-    if (item._from_cart) return { text: 'Added from cart', color: '#166534', icon: 'cart-outline' };
-    if (item.is_custom && item._source === 'local_cart') return { text: 'New custom', color: '#7C3AED', icon: 'sparkles' };
-    if (item.is_custom) return { text: 'Custom item', color: '#7C3AED', icon: 'create-outline' };
-    if (priceChanged && item.added_by === 'buyer') return { text: 'You changed', color: '#3B82F6', icon: 'arrow-up-outline' };
-    if (priceChanged && item.added_by === 'seller') return { text: 'Seller changed', color: '#EA580C', icon: 'arrow-down-outline' };
-    return null;
-  };
-
-  const change = getChangeInfo();
-
-  return (
-    <View style={styles.compactCard}>
-      <View style={styles.compactImageWrapper}>
-        {displayImage ? (
-          <Image source={{ uri: displayImage }} style={styles.compactImage} />
-        ) : (
-          <View style={styles.compactPlaceholder}>
-            <Ionicons name="image-outline" size={24} color="#94A3B8" />
-          </View>
-        )}
-      </View>
-
-      <View style={styles.compactContent}>
-        <Text style={styles.compactName} numberOfLines={2}>{item.name}</Text>
-
-        <View style={styles.compactPriceRow}>
-          {priceChanged && (
-            <Text style={styles.compactOldPrice}>₦{item.original_price.toLocaleString()}</Text>
-          )}
-          <Text style={styles.compactNewPrice}>₦{item.proposed_price.toLocaleString()}</Text>
-          <Text style={styles.compactQuantity}>× {item.quantity}</Text>
-        </View>
-
-        {change && (
-          <View style={[styles.compactBadge, { backgroundColor: change.bg + '30' }]}>
-            <Text style={[styles.compactBadgeText, { color: change.color }]}>{change.text}</Text>
-          </View>
-        )}
-      </View>
-
-      <TouchableOpacity style={styles.compactRemoveBtn} onPress={onRemove}>
-        <Ionicons name="trash-outline" size={20} color="#EF4444" />
-      </TouchableOpacity>
-    </View>
-  );
-};
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8FAFC' },
+  // IDENTICAL TO SELLER — COPY-PASTED 100%
+  container: { flex: 1, backgroundColor: '#FFFBF5' },
 
   header: {
     flexDirection: 'row',
@@ -450,101 +399,77 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 40,
     borderBottomRightRadius: 40,
     elevation: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
   },
   backBtn: { padding: 10, backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 16 },
-  headerTitle: { fontSize: 22, fontWeight: '900', color: '#FFF', flex: 1, textAlign: 'center', marginRight: -60 },
+  headerTitle: { fontSize: 17, fontWeight: '600', color: '#FFF', flex: 1, textAlign: 'center', marginRight: 6 },
   versionBadge: { backgroundColor: 'rgba(255,255,255,0.3)', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 28 },
   versionText: { color: '#FFF', fontWeight: '900', fontSize: 16 },
 
-  // ANIMATED MESSAGE TRIGGER
-  messageTrigger: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 20,
-    marginTop: 18,
-    padding: 12,
-    backgroundColor: '#EFF6FF',
-    borderRadius: 24,
-    borderWidth: 2,
-    borderColor: '#BFDBFE',
-    elevation: 8,
-  },
-  messageIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 24,
-    backgroundColor: '#DBEAFE',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
-  },
-  messageHint: { fontSize: 16.5, fontWeight: '800', color: '#1E40AF' },
+  messageCard: { marginHorizontal: 22, marginTop: 20, padding: 22, backgroundColor: '#FFF4 0xFFF4E5', borderRadius: 28, borderWidth: 2, borderColor: '#FDBA74', elevation: 10 },
+  messageText: { fontSize: 18, color: '#C2410C', lineHeight: 30, fontWeight: '600' },
 
-  // ULTRA COMPACT CARD
-  compactCard: {
+  card: {
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
     marginHorizontal: 20,
-    marginVertical: 6,
-    borderRadius: 20,
-    padding: 12,
-    elevation: 6,
+    marginVertical: 8,
+    borderRadius: 26,
+    padding: 16,
+    elevation: 10,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    borderWidth: 1.2,
-    borderColor: '#E0E7FF',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#FED7AA',
   },
-  compactImageWrapper: { marginRight: 14 },
-  compactImage: { width: 64, height: 64, borderRadius: 16 },
-  compactPlaceholder: { width: 64, height: 64, borderRadius: 16, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: '#E2E8F0', borderStyle: 'dashed' },
+  imageWrapper: { marginRight: 18 },
+  image: { width: 80, height: 80, borderRadius: 20 },
+  placeholder: { width: 80, height: 80, borderRadius: 20, backgroundColor: '#FFF4E5', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#FDBA74', borderStyle: 'dashed' },
 
-  compactContent: { flex: 1 },
-  compactName: { fontSize: 15.5, fontWeight: '800', color: '#1E293B', lineHeight: 20, flexShrink: 1 },
-  compactPriceRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 6 },
-  compactOldPrice: { fontSize: 12.5, color: '#94A3B8', textDecorationLine: 'line-through' },
-  compactNewPrice: { fontSize: 16.5, fontWeight: '900', color: '#3B82F6' },
-  compactQuantity: { fontSize: 13.5, color: '#475569', fontWeight: '700' },
+  content: { flex: 1 },
+  name: { fontSize: 17, fontWeight: '800', color: '#1E293B', lineHeight: 24 },
+  note: { fontSize: 13, color: '#64748B', fontStyle: 'italic', marginTop: 4 },
 
-  compactBadge: {
-    marginTop: 6,
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  compactBadgeText: { fontSize: 11, fontWeight: '800' },
+  priceSection: { marginTop: 10 },
+  priceRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 12 },
+  oldPrice: { fontSize: 14, color: '#94A3B8', textDecorationLine: 'line-through' },
+  newPrice: { fontSize: 20, fontWeight: '900', color: '#3B82F6' },
+  tag: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EFF6FF', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, gap: 6 },
+  tagText: { fontSize: 12, fontWeight: '800' },
 
-  compactRemoveBtn: { padding: 8 },
+  editRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  priceInput: { fontSize: 20, fontWeight: '900', color: '#3B82F6', borderBottomWidth: 3, borderColor: '#3B82F6', paddingBottom: 6, width: 140 },
 
-  addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginHorizontal: 20, marginVertical: 20, padding: 20, backgroundColor: '#EFF6FF', borderRadius: 24, borderWidth: 2.5, borderColor: '#3B82F6', borderStyle: 'dashed' },
-  addText: { fontSize: 17.5, fontWeight: '800', color: '#3B82F6', marginLeft: 12 },
+  bottomRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 },
+  quantityBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EFF6FF', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, gap: 16 },
+  quantity: { fontSize: 18, fontWeight: '900', minWidth: 36, textAlign: 'center', color: '#1E293B' },
+  removeBtn: { padding: 12 },
 
-  messageSection: { marginHorizontal: 20, marginTop: 8, backgroundColor: '#FFF', padding: 20, borderRadius: 24, elevation: 8, borderWidth: 1.8, borderColor: '#BFDBFE' },
-  messageLabel: { fontSize: 16.5, fontWeight: '800', color: '#1E40AF', marginBottom: 12 },
-  messageInput: { backgroundColor: '#F8FAFC', borderRadius: 18, padding: 16, fontSize: 16, height: 110, textAlignVertical: 'top', borderWidth: 1.8, borderColor: '#E2E8F0' },
-  charCount: { fontSize: 12.5, color: '#64748B', textAlign: 'right', marginTop: 8 },
+  addBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginHorizontal: 20, marginVertical: 22, padding: 22, backgroundColor: '#EFF6FF', borderRadius: 28, borderWidth: 3, borderColor: '#3B82F6', borderStyle: 'dashed' },
+  addText: { fontSize: 18, fontWeight: '900', color: '#3B82F6', marginLeft: 14 },
 
-  totalCard: { margin: 20, marginTop: 32, backgroundColor: '#FFF', paddingVertical: 34, paddingHorizontal: 28, borderRadius: 30, alignItems: 'center', elevation: 24, shadowColor: '#3B82F6', shadowOpacity: 0.3, shadowRadius: 25, borderWidth: 3.5, borderColor: '#3B82F6' },
-  totalLabel: { fontSize: 19, fontWeight: '800', color: '#1E40AF' },
-  totalPrice: { fontSize: 46, fontWeight: '900', color: '#3B82F6', marginTop: 8 },
+  messageSection: { marginHorizontal: 20, marginTop: 10, backgroundColor: '#FFF', padding: 24, borderRadius: 28, elevation: 12, borderWidth: 2, borderColor: '#BFDBFE' },
+  messageLabel: { fontSize: 17, fontWeight: '900', color: '#1E40AF', marginBottom: 14 },
+  messageInput: { backgroundColor: '#EFF6FF', borderRadius: 20, padding: 18, fontSize: 16.5, height: 120, textAlignVertical: 'top', borderWidth: 2, borderColor: '#BFDBFE' },
+  charCount: { fontSize: 13, color: '#1E40AF', textAlign: 'right', marginTop: 10 },
 
-  footer: { padding: 20, backgroundColor: '#FFF', borderTopWidth: 1.8, borderColor: '#E2E8F0', paddingBottom: Platform.OS === 'ios' ? 44 : 24, elevation: 24 },
-  sendBtn: { backgroundColor: '#3B82F6', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 24, borderRadius: 24, gap: 14, elevation: 12 },
+  totalCard: { margin: 20, marginTop: 36, backgroundColor: '#FFF', paddingVertical: 38, paddingHorizontal: 32, borderRadius: 34, alignItems: 'center', elevation: 28, shadowColor: '#3B82F6', shadowOpacity: 0.35, shadowRadius: 30, borderWidth: 4, borderColor: '#3B82F6' },
+  totalLabel: { fontSize: 20, fontWeight: '900', color: '#1E40AF' },
+  totalPrice: { fontSize: 50, fontWeight: '900', color: '#3B82F6', marginTop: 10, letterSpacing: 1 },
+
+  footer: { padding: 22, backgroundColor: '#FFF', borderTopWidth: 2, borderColor: '#FED7AA', paddingBottom: Platform.OS === 'ios' ? 44 : 24, elevation: 28 },
+  sendBtn: { backgroundColor: '#3B82F6', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 26, borderRadius: 28, gap: 16, elevation: 16 },
   sendBtnDisabled: { backgroundColor: '#94A3B8', opacity: 0.7 },
-  sendText: { color: '#FFF', fontSize: 19, fontWeight: '900' },
+  sendText: { color: '#FFF', fontSize: 20, fontWeight: '900' },
 
-  // MESSAGE MODAL
-  modalOverlay: { flex: 1, backgroundColor: '#000000CC', justifyContent: 'center', alignItems: 'center' },
-  messageModal: { backgroundColor: '#FFF', marginHorizontal: 30, padding: 32, borderRadius: 32, elevation: 20, maxHeight: '80%' },
-  modalMessage: { fontSize: 20, color: '#1E293B', lineHeight: 32, textAlign: 'center' },
-  closeModalBtn: { position: 'absolute', top: 16, right: 16 },
-
-  empty: { paddingTop: 80, alignItems: 'center' },
-  emptyText: { fontSize: 20, fontWeight: '700', color: '#64748B', marginTop: 16 },
-  emptySub: { fontSize: 15, color: '#94A3B8', marginTop: 6 },
+  empty: { paddingTop: 90, alignItems: 'center' },
+  emptyText: { fontSize: 21, fontWeight: '800', color: '#64748B', marginTop: 18 },
+  emptySub: { fontSize: 15.5, color: '#94A3B8', marginTop: 8 },
 
   loader: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loaderText: { marginTop: 24, fontSize: 18, color: '#64748B', fontWeight: '700' },
+  loaderText: { marginTop: 28, fontSize: 19, color: '#64748B', fontWeight: '700' },
 });

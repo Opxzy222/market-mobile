@@ -234,7 +234,7 @@ const NotificationModal = () => {
 
   const connectWebSocket = useCallback(() => {
     if (socketRef.current || !userId) return;
-    const wsUrl = `wss://retail-alvinia-goza-f6a0e4f7.koyeb.app/ws/notifications/?user_id=${userId}`;
+    const wsUrl = `wss://api.gogo-digital.com/ws/notifications/?user_id=${userId}`;
     console.log('Connecting to WebSocket:', wsUrl);
     socketRef.current = new WebSocket(wsUrl);
 
@@ -357,7 +357,7 @@ const NotificationModal = () => {
     updatedNotifications = updatedNotifications.filter(
       (n) => n.id && n.type.toLowerCase() !== 'chat_message' && n.type.toLowerCase() !== 'unknown'
     );
-    AsyncStorage.setItem('notifications', JSON.stringify(updatedNotifications)).catch(() => {});
+    AsyncStorage.setItem('notifications', JSON.stringify(updatedNotifications)).catch(() => { });
     updateUnreadCount(updatedNotifications);
     return updatedNotifications;
   }, []);
@@ -389,72 +389,78 @@ const NotificationModal = () => {
   }, [notifications]);
 
   const handleNotificationPress = useCallback(
-    (item) => {
-      setMenuVisible(false);
-      if (item.type.toLowerCase() !== 'chat_message' && item.type.toLowerCase() !== 'unknown') {
-        markNotificationAsRead();
-      }
+  (item) => {
+    setMenuVisible(false);
+    if (item.type.toLowerCase() !== 'chat_message' && item.type.toLowerCase() !== 'unknown') {
+      markNotificationAsRead();
+    }
 
-      const type = item.type?.toLowerCase() || '';
+    // === PO NOTIFICATION — PERFECT ROLE DETECTION + NAVIGATION ===
+    if (item.type === 'po_notification' && item.po_id) {
       const message = (item.message || '').toLowerCase();
 
-      // PO NOTIFICATION — DETERMINE ROLE FROM MESSAGE CONTENT
-      if (type === 'po_notification' && item.po_id) {
-        const isSeller = 
-          message.includes('new order from') ||
-          message.includes('countered your offer') ||
-          message.includes('accepted your counter') ||
-          message.includes('cancelled their counter');
+      const isSeller =
+        message.includes("new order from") ||
+        message.includes("countered your offer") ||
+        message.includes("accepted your offer") ||
+        message.includes("is coming to pick up") ||
+        message.includes("cancelled the order");
 
-        router.push({
-          pathname: isSeller ? '/cart/SellerPOEditor' : '/cart/BuyerPOEditor',
-          params: { poId: item.po_id }
-        });
-        return;
-      }
+      const route = isSeller
+        ? `/cart/SellerPOEditor?poId=${item.po_id}`
+        : `/cart/BuyerPOEditor?poId=${item.po_id}`;
 
-      // ALL OTHER NOTIFICATIONS — UNCHANGED
-      switch (type) {
-        case 'shop_post':
-        case 'shop_review':
-        case 'shop_follower':
-          if (item.shop_id) {
-            router.push({ pathname: '/shop/shop-page', params: { shopId: item.shop_id } });
-          }
-          break;
-        case 'receipt_created':
-        case 'receipt_status':
-          if (item.receipt_id) {
-            router.push({
-              pathname: item.type === 'receipt_status' && item.meta_data?.status === 'voided' 
-                ? '/shop/CustomerReceipts' 
+      router.push(route);
+      return; // ← Stop here — no need to check other types
+    }
+
+    // === ALL OTHER NOTIFICATIONS — UNCHANGED ===
+    const type = item.type?.toLowerCase() || '';
+
+    switch (type) {
+      case 'shop_post':
+      case 'shop_review':
+      case 'shop_follower':
+        if (item.shop_id) {
+          router.push({ pathname: '/shop/shop-page', params: { shopId: item.shop_id } });
+        }
+        break;
+
+      case 'receipt_created':
+      case 'receipt_status':
+        if (item.receipt_id) {
+          router.push({
+            pathname:
+              item.type === 'receipt_status' && item.meta_data?.status === 'voided'
+                ? '/shop/CustomerReceipts'
                 : '/shop/ShopReceipts',
-              params: { receiptId: item.receipt_id, shopId: item.shop_id },
-            });
-          }
-          break;
-        case 'chat_message':
-          if (item.conversation_id) {
-            router.push({
-              pathname: 'shop/Conversation',
-              params: {
-                name: item.meta_data.name,
-                conversation_id: item.conversation_id,
-                shop_id: item.meta_data.shop_id,
-                shop_is_active: item.meta_data.shop_is_active,
-                role: item.meta_data.role,
-                shopId: item.meta_data.shopId,
-              },
-            });
-          }
-          break;
-        default:
-          break;
-      }
-    },
-    [router, markNotificationAsRead]
-  );
+            params: { receiptId: item.receipt_id, shopId: item.shop_id },
+          });
+        }
+        break;
 
+      case 'chat_message':
+        if (item.conversation_id) {
+          router.push({
+            pathname: 'shop/Conversation',
+            params: {
+              name: item.meta_data.name,
+              conversation_id: item.conversation_id,
+              shop_id: item.meta_data.shop_id,
+              shop_is_active: item.meta_data.shop_is_active,
+              role: item.meta_data.role,
+              shopId: item.meta_data.shopId,
+            },
+          });
+        }
+        break;
+
+      default:
+        break;
+    }
+  },
+  [router, markNotificationAsRead]
+);
   const handleMenuOpen = useCallback(() => {
     setMenuVisible(true);
   }, []);

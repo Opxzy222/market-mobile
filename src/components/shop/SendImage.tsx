@@ -82,46 +82,46 @@ const SendImage = ({ onSend }) => {
   }, [selectedImage]);
 
   const pickImage = async () => {
-    try {
-      console.log("Requesting permissions...");
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert(
-          "Permission Denied",
-          "We need access to your photo library to select images."
-        );
+  try {
+    console.log("Requesting permissions...");
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert(
+        "Permission Denied",
+        "We need access to your photo library to select images."
+      );
+      return;
+    }
+
+    console.log("Launching image picker...");
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 0.5,
+    });
+
+    console.log("Picker result:", JSON.stringify(result, null, 2));
+
+    if (!result.canceled && result.assets?.length > 0) {
+      const { uri, fileName, mimeType } = result.assets[0];
+
+      if (!mimeType?.startsWith("image/")) {
+        Alert.alert("Error", "Please select a valid image file.");
         return;
       }
 
-      console.log("Launching image picker...");
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: false,
-        quality: 0.5,
+      setSelectedImage({
+        uri,
+        name: fileName || `image_${Date.now()}.jpg`,
       });
-
-      console.log("Picker result:", JSON.stringify(result, null, 2));
-
-      if (!result.canceled && result.assets?.length > 0) {
-        const { uri, fileName, mimeType } = result.assets[0];
-
-        if (!mimeType?.startsWith("image/")) {
-          Alert.alert("Error", "Please select a valid image file.");
-          return;
-        }
-
-        setSelectedImage({
-          uri,
-          name: fileName || `image_${Date.now()}.jpg`,
-        });
-      } else {
-        console.log("Picker canceled or no assets selected.");
-      }
-    } catch (error) {
-      console.error("Error picking image:", error);
-      Alert.alert("Error", "Failed to select image. Please try again.");
+    } else {
+      console.log("Picker canceled or no assets selected.");
     }
-  };
+  } catch (error) {
+    console.error("Error picking image:", error);
+    Alert.alert("Error", "Failed to select image. Please try again.");
+  }
+};
 
   const handleRemoveImage = () => {
     console.log("Removing image");

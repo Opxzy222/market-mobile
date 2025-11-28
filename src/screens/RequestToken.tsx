@@ -7,7 +7,11 @@ import {
   Alert,
   ActivityIndicator,
   StatusBar,
-  Pressable, StyleSheet
+  Pressable,
+  StyleSheet,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
 } from "react-native";
 import { useRouter, usePathname } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -71,7 +75,7 @@ const RequestTokenScreen = () => {
   };
 
   const handleRequestVerification = async () => {
-    if (!email.includes("@")) {
+    if (!email.includes("@") || !email.includes(".")) {
       Alert.alert("Invalid Email", "Please enter a valid email address.");
       return;
     }
@@ -100,96 +104,114 @@ const RequestTokenScreen = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
+    <SafeAreaView style={styles.container} edges={["top"]}>
       <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
-      <LinearGradient colors={["#F7FAFC", "#E5E7EB"]} style={styles.container}>
-        {/* ────── ORIGINAL HEADER (UNCHANGED) ────── */}
-        <View style={styles.header}>
-          <Pressable
-            onPress={() => router.push("/login")}
-            style={({ pressed }) => [
-              styles.backButton,
-              pressed && { opacity: 0.7 },
-            ]}
-          >
-            <Ionicons name="arrow-back" size={26} color="white" />
-          </Pressable>
-          <Text style={styles.headerTitle}>Enter Your Email</Text>
-          <View style={styles.headerSpacer} />
-        </View>
 
-        {/* ────── UPGRADED CONTENT ────── */}
-        <View style={styles.contentWrapper}>
-          <Text style={styles.title}>Enter Your Email Address</Text>
-          <Text style={styles.subtitle}>We’ll send a 6-digit code to verify your account</Text>
-
-          {/* ────── GLASS INPUT ────── */}
-          <Animated.View style={[styles.inputWrapper, inputAnim]}>
-            <TextInput
-              placeholder="Email Address"
-              placeholderTextColor="#6B7280"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              style={styles.input}
-              onFocus={() => (inputFocus.value = 1)}
-              onBlur={() => (inputFocus.value = 0)}
-            />
-          </Animated.View>
-
-          {/* ────── ANIMATED GRADIENT BUTTON ────── */}
-          <Animated.View style={[styles.btnWrapper, btnAnim]}>
-            <TouchableOpacity
-              onPressIn={startRipple}
-              onPressOut={endRipple}
-              onPress={handleRequestVerification}
-              disabled={loading || resendDisabled}
-              activeOpacity={1}
-              style={styles.btnTouch}
-            >
-              <LinearGradient
-                colors={["#3B82F6", "#8B5CF6"]}
-                style={styles.btnGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
+      {/* KEYBOARD AVOIDING + SCROLLVIEW */}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+      >
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <LinearGradient colors={["#F7FAFC", "#E5E7EB"]} style={styles.gradient}>
+            {/* HEADER */}
+            <View style={styles.header}>
+              <Pressable
+                onPress={() => router.push("/login")}
+                style={({ pressed }) => [
+                  styles.backButton,
+                  pressed && { opacity: 0.7 },
+                ]}
               >
-                {loading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.btnText}>
-                    {resendDisabled
-                      ? `Resend in ${countdown}s`
-                      : "Send Verification Code"}
-                  </Text>
-                )}
-                <Animated.View style={[styles.ripple, rippleAnim]} />
-              </LinearGradient>
-            </TouchableOpacity>
-          </Animated.View>
+                <Ionicons name="arrow-back" size={26} color="white" />
+              </Pressable>
+              <Text style={styles.headerTitle}>Enter Your Email</Text>
+              <View style={styles.headerSpacer} />
+            </View>
 
-          {/* ────── OPTIONAL LINK ────── */}
-          <Pressable
-            onPress={() =>
-              router.push({ pathname: "/VerifyEmail", params: { email } })
-            }
-            style={({ pressed }) => [pressed && { opacity: 0.7 }]}
-          >
-            <Text style={styles.linkText}>Already have a code? Verify now</Text>
-          </Pressable>
-        </View>
-      </LinearGradient>
+            {/* MAIN CONTENT */}
+            <View style={styles.contentWrapper}>
+              <Text style={styles.title}>Enter Your Email Address</Text>
+              <Text style={styles.subtitle}>
+                We’ll send a 6-digit code to verify your account
+              </Text>
+
+              {/* GLASS INPUT */}
+              <Animated.View style={[styles.inputWrapper, inputAnim]}>
+                <TextInput
+                  placeholder="Email Address"
+                  placeholderTextColor="#6B7280"
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={styles.input}
+                  onFocus={() => (inputFocus.value = 1)}
+                  onBlur={() => (inputFocus.value = 0)}
+                />
+              </Animated.View>
+
+              {/* ANIMATED BUTTON */}
+              <Animated.View style={[styles.btnWrapper, btnAnim]}>
+                <TouchableOpacity
+                  onPressIn={startRipple}
+                  onPressOut={endRipple}
+                  onPress={handleRequestVerification}
+                  disabled={loading || resendDisabled}
+                  activeOpacity={1}
+                  style={styles.btnTouch}
+                >
+                  <LinearGradient
+                    colors={["#3B82F6", "#8B5CF6"]}
+                    style={styles.btnGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                  >
+                    {loading ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.btnText}>
+                        {resendDisabled
+                          ? `Resend in ${countdown}s`
+                          : "Send Verification Code"}
+                      </Text>
+                    )}
+                    <Animated.View style={[styles.ripple, rippleAnim]} />
+                  </LinearGradient>
+                </TouchableOpacity>
+              </Animated.View>
+
+              {/* LINK */}
+              <Pressable
+                onPress={() =>
+                  router.push({ pathname: "/VerifyEmail", params: { email } })
+                }
+                style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+              >
+                <Text style={styles.linkText}>Already have a code? Verify now</Text>
+              </Pressable>
+            </View>
+          </LinearGradient>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };
 
-// ────────────────────── STYLES (HEADER & BG UNCHANGED) ──────────────────────
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: "#F7FAFC",
   },
-
-  // ────── HEADER (EXACTLY AS BEFORE) ──────
+  gradient: {
+    flex: 1,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -216,15 +238,13 @@ const styles = StyleSheet.create({
     textAlign: "center",
     flex: 1,
   },
-  headerSpacer: {
-    width: 42,
-  },
+  headerSpacer: { width: 42 },
 
-  // ────── CONTENT (UPGRADED) ──────
   contentWrapper: {
     flex: 1,
     paddingHorizontal: 24,
-    paddingTop: 32,
+    paddingTop: 40,
+    paddingBottom: 60, // extra space for keyboard
     justifyContent: "center",
   },
   title: {
@@ -233,15 +253,15 @@ const styles = StyleSheet.create({
     color: "#111827",
     marginBottom: 8,
     letterSpacing: -0.3,
+    textAlign: "center",
   },
   subtitle: {
     fontSize: 15,
     color: "#6B7280",
     marginBottom: 32,
     lineHeight: 22,
+    textAlign: "center",
   },
-
-  // ────── INPUT (GLASS + GLOW) ──────
   inputWrapper: {
     width: "100%",
     marginBottom: 24,
@@ -256,12 +276,10 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
   },
   input: {
-    padding: 16,
-    fontSize: 16,
+    padding: 18,
+    fontSize: 17,
     color: "#111827",
   },
-
-  // ────── BUTTON (GRADIENT + RIPPLE) ──────
   btnWrapper: {
     width: "100%",
     marginBottom: 20,
@@ -272,12 +290,12 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   btnGradient: {
-    paddingVertical: 16,
+    paddingVertical: 18,
     alignItems: "center",
     justifyContent: "center",
   },
   btnText: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: "700",
     color: "#FFFFFF",
     letterSpacing: 0.4,
@@ -287,13 +305,12 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.4)",
     borderRadius: 14,
   },
-
-  // ────── LINK ──────
   linkText: {
     textAlign: "center",
     color: "#1E40AF",
     fontSize: 15,
     fontWeight: "500",
+    marginTop: 10,
   },
 });
 

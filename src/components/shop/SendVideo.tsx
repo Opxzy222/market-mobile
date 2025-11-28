@@ -7,7 +7,7 @@ import {
   StyleSheet,
   ActivityIndicator,
 } from "react-native";
-import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
 import { Ionicons } from "@expo/vector-icons";
 import SubscriptionRequiredModal from "@/components/RequiredSubscription";
@@ -100,36 +100,47 @@ const SendVideo = ({ onSend }) => {
   }, [selectedVideo]);
 
   const pickVideo = async () => {
-    try {
-      console.log("Launching document picker...");
-      const result = await DocumentPicker.getDocumentAsync({
-        type: "video/*",
-        copyToCacheDirectory: true,
-      });
-
-      console.log("Picker result:", JSON.stringify(result, null, 2));
-
-      if (!result.canceled && result.assets?.length > 0) {
-        const { uri, name, mimeType } = result.assets[0];
-
-        if (!mimeType?.startsWith("video/")) {
-          Alert.alert("Error", "Please select a valid video file.");
-          return;
-        }
-
-        setSelectedVideo({
-          uri,
-          name: name || `video_${Date.now()}.mp4`,
-        });
-      } else {
-        console.log("Picker canceled or no assets selected.");
-      }
-    } catch (error) {
-      console.error("Error picking video:", error.message, error.stack);
-      Alert.alert("Error", "Failed to select video. Please try again.");
+  try {
+    console.log("Requesting permissions...");
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert(
+        "Permission Denied",
+        "We need access to your photo library to select videos."
+      );
+      return;
     }
-  };
 
+    console.log("Launching image picker...");
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['videos'],
+      allowsEditing: false,
+      quality: 0.5,
+    });
+
+    console.log("Picker result:", JSON.stringify(result, null, 2));
+
+    if (!result.canceled && result.assets?.length > 0) {
+      const { uri, fileName, mimeType } = result.assets[0];
+
+      if (!mimeType?.startsWith("video/")) {
+        Alert.alert("Error", "Please select a valid video file.");
+        return;
+      }
+
+      setSelectedVideo({
+        uri,
+        name: fileName || `video_${Date.now()}.mp4`,
+      });
+    } else {
+      console.log("Picker canceled or no assets selected.");
+    }
+  } catch (error) {
+    console.error("Error picking video:", error.message, error.stack);
+    Alert.alert("Error", "Failed to select video. Please try again.");
+  }
+  };
+  
   const handleRemoveVideo = () => {
     console.log("Removing video");
     setSelectedVideo(null);

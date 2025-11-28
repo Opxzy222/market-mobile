@@ -85,7 +85,7 @@ const DeleteAccountScreen = () => {
                 placeholder="Enter your password"
                 placeholderTextColor="#5A5A5A"
                 autoFocus
-                secureTextEntry={false}
+                secureTextEntry={true}
               />
             </View>
           </View>
@@ -105,6 +105,9 @@ const DeleteAccountScreen = () => {
 };
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+  },
   container: {
     flex: 1,
   },

@@ -137,6 +137,22 @@ const Account = () => {
           <TouchableOpacity
             style={styles.optionCard}
             onPress={() =>
+              router.push({
+                pathname: 'cart/BuyerPODashboard',
+                params: {
+                  prevRoute: pathname,
+                  currentPlan: subscription.plan || 'none',
+                  endDate: subscription.end_date || 'N/A',
+                },
+              })
+            }
+          >
+            <MaterialIcons name="card-membership" size={24} color="#5A8DEE" />
+            <Text style={styles.optionText}>Order</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.optionCard}
+            onPress={() =>
               router.push({ pathname: 'shop/CustomerReceipts', params: { prevRoute: pathname } })
             }
           >
@@ -161,22 +177,6 @@ const Account = () => {
             <Text style={styles.optionText}>Subscription</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.optionCard}
-            onPress={() =>
-              router.push({
-                pathname: 'cart/BuyerPODashboard',
-                params: {
-                  prevRoute: pathname,
-                  currentPlan: subscription.plan || 'none',
-                  endDate: subscription.end_date || 'N/A',
-                },
-              })
-            }
-          >
-            <MaterialIcons name="card-membership" size={24} color="#5A8DEE" />
-            <Text style={styles.optionText}>Order</Text>
-          </TouchableOpacity>
         </View>
 
         {/* Extra bottom padding so last item is fully visible */}

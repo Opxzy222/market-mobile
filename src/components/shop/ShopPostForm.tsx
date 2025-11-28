@@ -16,7 +16,7 @@ import {
   Animated,
   Dimensions,
 } from "react-native";
-import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
 import { Ionicons } from "@expo/vector-icons";
 import api from '../../api';
@@ -99,10 +99,16 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
   const pickMedia = useCallback(async () => {
     console.log("Picking media");
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ["image/*", "video/*"],
-        copyToCacheDirectory: true,
-        multiple: true,
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert("Permission Required", "Please grant access to your media library to select images or videos.");
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images', 'videos'],
+        allowsMultipleSelection: true,
+        quality: 1,
       });
 
       if (!result.canceled && result.assets?.length > 0) {
@@ -118,38 +124,28 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
         }
 
         const newMediaPromises = result.assets.map(async (asset) => {
-          const { uri, name, mimeType, size } = asset;
-          const isVideo = mimeType?.startsWith("video/");
-          const isImage = mimeType?.startsWith("image/");
+          const { uri, fileName: name, mimeType, fileSize: size, type } = asset;
+          const isVideo = type === "video" || mimeType?.startsWith("video/");
+          const isImage = type === "image" || mimeType?.startsWith("image/");
 
           if (!isImage && !isVideo) {
             Alert.alert("Warning", `File "${name || 'unknown'}" is not a valid image or video.`);
             return null;
           }
 
-          try {
-            const info = await FileSystem.getInfoAsync(uri);
-            if (!info.exists || info.isDirectory) {
-              throw new Error("File not found");
-            }
-
-            if (info.size > 10 * 1024 * 1024) {
-              Alert.alert("Warning", `File "${name || 'unknown'}" is too large (max 10 MB).`);
-              return null;
-            }
-
-            return {
-              id: `${uri}_${Date.now()}`,
-              uri,
-              name: name || `media_${Date.now()}.${isVideo ? "mp4" : "jpg"}`,
-              type: isVideo ? "video" : "image",
-              mimeType,
-              valid: true,
-            };
-          } catch (error) {
-            Alert.alert("Warning", `File "${name || 'unknown'}" is invalid and will be skipped.`);
+          if (size > 10 * 1024 * 1024) {
+            Alert.alert("Warning", `File "${name || 'unknown'}" is too large (max 10 MB).`);
             return null;
           }
+
+          return {
+            id: `${uri}_${Date.now()}`,
+            uri,
+            name: name || `media_${Date.now()}.${isVideo ? "mp4" : "jpg"}`,
+            type: isVideo ? "video" : "image",
+            mimeType,
+            valid: true,
+          };
         });
 
         const newMedia = (await Promise.all(newMediaPromises)).filter(
@@ -399,7 +395,7 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
     >
       <ScrollView

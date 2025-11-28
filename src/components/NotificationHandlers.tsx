@@ -5,6 +5,7 @@ import * as Notifications from 'expo-notifications';
 import { Platform, Alert, Linking } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import api from '../api';
 
 // ────────────────────── AUTH GUARD ──────────────────────
 const isLoggedIn = async (): Promise<boolean> => {
@@ -88,7 +89,7 @@ export const setupNotificationHandlers = async () => {
     if (userId && authToken) {
       try {
         // Optional: register device token (comment out if endpoint doesn't exist)
-        // await api.post('/api/register-device/', { user_id: userId, device_token: token.data }, { headers: { Authorization: authToken } });
+        await api.post('/api/register-device/', { user_id: userId, device_token: token.data }, { headers: { Authorization: authToken } });
         await AsyncStorage.setItem('expo_push_token', token.data);
       } catch (error: any) {
         console.error('Device registration skipped (non-critical):', error.message);

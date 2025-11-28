@@ -297,7 +297,7 @@ export default function SellerPOCounter() {
 
       {/* LUXURY BLUE HEADER */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => router.push(`/cart/SellerPOEditor?po_id=${poId}`)} style={styles.backBtn}>
           <MaterialIcons name="arrow-back-ios" size={26} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{buyerName}</Text>
@@ -404,7 +404,7 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
   },
   backBtn: { padding: 10, backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 16 },
-  headerTitle: { fontSize: 20, fontWeight: '900', color: '#FFF', flex: 1, textAlign: 'center', marginRight: 25 },
+  headerTitle: { fontSize: 17, fontWeight: '600', color: '#FFF', flex: 1, textAlign: 'center', marginRight: 6 },
   versionBadge: { backgroundColor: 'rgba(255,255,255,0.3)', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 28 },
   versionText: { color: '#FFF', fontWeight: '900', fontSize: 16 },
 

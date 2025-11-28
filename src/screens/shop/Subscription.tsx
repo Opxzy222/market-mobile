@@ -44,9 +44,9 @@ const Subscription = () => {
       features: [
         'Ad-Free Experience',
         'Advanced Search Filters',
-        'Send Media in Chat',
+        'Send Media in Chat & Order',
         'Interactive Map Access',
-        'View Space Products',
+        'Send Order Request',
       ],
     },
     standard: {
@@ -60,6 +60,7 @@ const Subscription = () => {
         'Receipt Generation',
         'Post Media Content',
         'Update Media Stories',
+        'Attach Image to Listing'
       ],
     },
   };

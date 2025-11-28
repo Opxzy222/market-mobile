@@ -467,20 +467,20 @@ const ShopProfileScreen: React.FC = () => {
   }, [selectedParentCategory, initialSubcategoryIds]);
 
   const pickImage = useCallback(async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 1,
-      });
-      if (!result.canceled) {
-        setImage(result.assets[0].uri);
-      }
-    } catch (error) {
-      console.error("Error picking image:", error);
+  try {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 1,
+    });
+    if (!result.canceled) {
+      setImage(result.assets[0].uri);
     }
-  }, []);
+  } catch (error) {
+    console.error("Error picking image:", error);
+  }
+}, []);
 
   const handleUpdate = useCallback(async () => {
     if (isSubmitting) return;

@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, usePathname } from 'expo-router';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { SafeAreaView } from "react-native-safe-area-context";
-import api from '../api'; // Import axios
+import api from '../api';
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
@@ -36,73 +36,97 @@ export default function ForgotPasswordScreen() {
     setMessage(null);
 
     try {
-      const response = await api.post(
-        '/auth/request-reset-token/',
-        { email },
-        {
-          headers: { 'Content-Type': 'application/json' },
-        }
-      );
+      const response = await api.post('/auth/request-reset-token/', { email });
 
-      const data = response.data;
-
-      if (response.status === 200) {
+      // Success → 200 (or 201 depending on your backend)
+      if (response.status === 200 || response.status === 201) {
         setMessage('A reset link has been sent to your email.');
-        router.push({ pathname: '/EnterOtp', params: { email: email, prevRoute: pathname } });
-      } else {
-        setError(data.error || 'Something went wrong.');
+        router.push({
+          pathname: '/EnterOtp',
+          params: { email, prevRoute: pathname },
+        });
       }
-    } catch (err) {
-      setError('Network error. Please try again.');
-    }
+    } catch (err: any) {
+      // ──────────────────────────────────────────────────────────────
+      // Properly handle all known backend error responses
+      // ──────────────────────────────────────────────────────────────
+      if (err.response) {
+        const data = err.response.data;
+        const status = err.response.status;
 
-    setLoading(false);
+        if (status === 400) {
+          setError(data.error || 'Invalid request. Please check your email.');
+        } else if (status === 404) {
+          setError(data.error || 'No account found with this email address.');
+        } else if (status === 429) {
+          const retryAfter = data.retry_after
+            ? ` Please try again in ${data.retry_after} seconds.`
+            : '';
+          setError(data.error + retryAfter || 'Too many requests. Please wait before trying again.');
+        } else {
+          setError(data.error || `Server error (${status}). Please try again later.`);
+        }
+      } else if (err.request) {
+        // No response received (true network error)
+        setError('Network error. Please check your connection and try again.');
+      } else {
+        setError('An unexpected error occurred. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
       <LinearGradient colors={['#f6f9ff', '#e0e7ff']} style={styles.gradient}>
+
+        {/* === HEADER (kept exactly the same for reuse) === */}
         <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={styles.backButton}
-          >
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <MaterialIcons name="arrow-back" size={26} color="white" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Forgot Password</Text>
           <View style={styles.headerSpacer} />
         </View>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.wrapper}>
-          <View style={styles.card}>
-            <Text style={styles.title}>Forgot Password</Text>
 
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your email"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              placeholderTextColor="#9ca3af"
-            />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.wrapper}
+        >
+          {/* Added top spacing so card doesn't touch the curved header */}
+          <View style={styles.cardContainer}>
+            <View style={styles.card}>
+              <Text style={styles.title}>Forgot Password</Text>
 
-            {message && <Text style={styles.successText}>{message}</Text>}
-            {error && <Text style={styles.errorText}>{error}</Text>}
+              <TextInput
+                style={styles.input}
+                placeholder="Enter your email"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                placeholderTextColor="#9ca3af"
+              />
 
-            <TouchableOpacity
-              onPress={handleSubmit}
-              disabled={loading}
-              style={[styles.button, loading && styles.disabledButton]}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <Ionicons name="send" size={18} color="white" style={styles.icon} />
-                  <Text style={styles.buttonText}>Send Reset Link</Text>
-                </>
-              )}
-            </TouchableOpacity>
+              {message && <Text style={styles.successText}>{message}</Text>}
+              {error && <Text style={styles.errorText}>{error}</Text>}
+
+              <TouchableOpacity
+                onPress={handleSubmit}
+                disabled={loading}
+                style={[styles.button, loading && styles.disabledButton]}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="send" size={18} color="white" style={styles.icon} />
+                    <Text style={styles.buttonText}>Send Reset Link</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </KeyboardAvoidingView>
       </LinearGradient>
@@ -111,9 +135,9 @@ export default function ForgotPasswordScreen() {
 }
 
 const styles = StyleSheet.create({
-  gradient: {
-    flex: 1,
-  },
+  gradient: { flex: 1 },
+  
+  // Header – unchanged (you said you’ll reuse it)
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -140,14 +164,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     flex: 1,
   },
-  headerSpacer: {
-    width: 42,
-  },
+  headerSpacer: { width: 42 },
+
   wrapper: {
-    width: '100%',
     flex: 1,
     paddingHorizontal: 24,
   },
+
+  // New container with generous top margin so card sits below header curve
+  cardContainer: {
+    flex: 1,
+    justifyContent: 'center',   // vertically centers when content is short
+    paddingTop: 40,             // This pushes the card down
+  },
+
   card: {
     backgroundColor: '#fff',
     borderRadius: 20,
@@ -161,6 +191,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 6,
   },
+
   title: {
     fontSize: 26,
     fontWeight: '700',
@@ -204,15 +235,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     elevation: 5,
   },
-  disabledButton: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  icon: {
-    marginRight: 8,
-  },
+  disabledButton: { opacity: 0.6 },
+  buttonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  icon: { marginRight: 8 },
 });

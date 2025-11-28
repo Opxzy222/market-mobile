@@ -303,7 +303,7 @@ export default function BuyerPOEditor() {
 
   const handleCancelOrReject = async () => {
     setActionLoading(true);
-    const action = po?.last_counter === 'buyer' ? 'cancel' : 'reject';
+    const action = po?.last_counter === 'buyer' ? 'cancel' : 'cancel';
     const formData = new FormData();
     formData.append('po_id', selectedVersionId);
 
@@ -353,7 +353,7 @@ export default function BuyerPOEditor() {
 
       {/* HEADER */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => router.push({pathname: 'cart/BuyerPODashboard'})} style={styles.backBtn}>
           <MaterialIcons name="arrow-back-ios" size={26} color="#FFF" />
         </TouchableOpacity>
 
@@ -523,7 +523,7 @@ export default function BuyerPOEditor() {
       {showActionButtons && (
         <View style={styles.modernActions}>
           <TouchableOpacity style={styles.actionBtnCancel} onPress={handleCancelOrReject} disabled={actionLoading}>
-            <Text style={styles.actionBtnText}>{currentVersion.last_counter === 'buyer' ? 'Cancel' : 'Reject'}</Text>
+            <Text style={styles.actionBtnText}>{currentVersion.last_counter === 'buyer' ? 'Cancel' : 'Cancel'}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -567,7 +567,7 @@ const styles = StyleSheet.create({
     elevation: 16,
   },
   backBtn: { padding: 10, backgroundColor: 'rgba(255,255,255,0.22)', borderRadius: 16 },
-  headerTitle: { fontSize: 20, fontWeight: '900', color: '#FFF', flex: 1, textAlign: 'center', marginRight: 25 },
+  headerTitle: { fontSize: 17, fontWeight: '600', color: '#FFF', flex: 1, textAlign: 'center', marginRight: 6 },
   versionBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.3)', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 28 },
   versionText: { color: '#FFF', fontWeight: '900', fontSize: 16 },
 
