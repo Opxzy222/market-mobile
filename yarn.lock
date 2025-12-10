@@ -2435,10 +2435,10 @@
   resolved "https://registry.npmjs.org/@protobufjs/utf8/-/utf8-1.1.0.tgz#a777360b5b39a1a2e5106f8e858f2fd2d060c570"
   integrity sha512-Vvn3zZrhQZkkBE8LSuW3em98c0FwgO4nxzv6OdSxPKJIEKY2bGbHn+mhGIPerzI4twdxaP8/0+06HBpwf345Lw==
 
-"@qore-id/react-native-qoreid-sdk@1.2.5-rc":
-  version "1.2.5-rc"
-  resolved "https://registry.npmjs.org/@qore-id/react-native-qoreid-sdk/-/react-native-qoreid-sdk-1.2.5-rc.tgz#eb9bb5669ab57a560a7a91c98a45bb4e713e802c"
-  integrity sha512-68qaI6RqJpJXKaIaD2DPkXanU7dKMf8hcI9r4/ENtnTJ0eQVFF8oraxFwWn2hQM0PwBhvUu9SyBji4A5Xpg8Dg==
+"@qore-id/react-native-qoreid-sdk@1.2.5":
+  version "1.2.5"
+  resolved "https://registry.npmjs.org/@qore-id/react-native-qoreid-sdk/-/react-native-qoreid-sdk-1.2.5.tgz#b924012abd8c790ccd9df098f130795854d67289"
+  integrity sha512-7opCWkEwGjbAxk0v2ryTA4UER4yX1UXUZuvs24nooXUREgGot0uAJiBiSu9RghIyL+OHUX8ZBMHyCOPk9wySGQ==
 
 "@radix-ui/react-compose-refs@1.1.2":
   version "1.1.2"
