@@ -87,7 +87,7 @@ const ChangePassword = () => {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
-      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+      <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
       <LinearGradient colors={["#F5F5F5", "#E0E0E0"]} style={styles.container}>
         {/* Header */}
         <View style={styles.header}>

@@ -1,357 +1,384 @@
-import React, { useState, useEffect } from "react";
+// app/shop/IDVerificationScreen.tsx — Native QoreID SDK Integration
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
-  TextInput,
-  TouchableOpacity,
   StyleSheet,
-  Pressable,
-  ScrollView,
+  TouchableOpacity,
+  StatusBar,
+  Dimensions,
+  ActivityIndicator,
+  Platform,
   Alert,
-} from "react-native";
-import { SelectList } from "react-native-dropdown-select-list";
-import { MultiSelect } from "react-multi-select-component";
-import * as Location from "expo-location";
+} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from "expo-router";
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import axios from "axios";
+import Toast from 'react-native-toast-message';
+import { useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialIcons } from '@expo/vector-icons';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withTiming,
+  Easing,
+  FadeIn,
+  FadeOut,
+} from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Animatable from 'react-native-animatable';
+import { launchQoreID } from '@qore-id/react-native-qoreid-sdk';
 
-export default function CreateShopScreen({ navigation }) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [geoLocation, setGeoLocation] = useState({ lat: "", lng: "" });
-  const [address, setAddress] = useState("");
-  const [categories, setCategories] = useState([]);
-  const [subcategories, setSubcategories] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState(null);
-  const [selectedSubcategories, setSelectedSubcategories] = useState([]);
-  const [geoError, setGeoError] = useState("");
-  const [formErrors, setFormErrors] = useState({});
-  const [userId, setUserId] = useState(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+const IDVerificationScreen = () => {
   const router = useRouter();
-  
 
+  const [isPending, setIsPending] = useState(false);
+  const [isLaunching, setIsLaunching] = useState(false);
+  const [verificationStatus, setVerificationStatus] = useState<'success' | null>(null);
+
+  const pulse = useSharedValue(1);
+
+  const pulseStyle = useAnimatedStyle(() => ({
+    opacity: 0.6 + 0.4 * Math.sin(Date.now() / 500),
+    transform: [{ scale: pulse.value }],
+  }));
+
+  // Pulse animation when loading or pending
   useEffect(() => {
-    const fetchCategories = async () => {
-      try {
-        const response = await api.post(
-          "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/category/dropdown-options/"
-        );
-        setCategories(
-          response.data.categories.map((cat) => ({
-            key: cat.id,
-            value: cat.name,
-          }))
-        );
-      } catch (error) {
-        console.error("Error fetching categories:", error);
-      }
-    };
-
-    fetchCategories();
-  }, []);
-
-  useEffect(() => {
-    const fetchUserId = async () => {
-      const userIdString = await AsyncStorage.getItem("user_id");
-      setUserId(parseInt(userIdString, 10));
-    };
-
-    fetchUserId();
-  }, []);
-
-  const handleCategoryChange = async (selectedOption) => {
-    setSelectedCategory(selectedOption);
-
-    try {
-      const formData = new FormData();
-      formData.append("parent_id", selectedOption);
-
-      const response = await api.post(
-        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/category/subcategories/",
-        formData,
-        {
-          headers: { "Content-Type": "multipart/form-data" },
-        }
+    if (isLaunching || isPending) {
+      pulse.value = withRepeat(
+        withTiming(1.15, { duration: 1200, easing: Easing.out(Easing.quad) }),
+        -1,
+        true
       );
-
-      setSubcategories(
-        response.data.subcategories.map((subcat) => ({
-          key: subcat.id,
-          value: subcat.name,
-        }))
-      );
-    } catch (error) {
-      console.error("Error fetching subcategories:", error);
+    } else {
+      pulse.value = 1;
     }
+  }, [isLaunching, isPending]);
+
+  // Check if already pending on screen load
+  useEffect(() => {
+    AsyncStorage.getItem('pending_qoreid_verification').then((value) => {
+      if (value === 'true') {
+        setIsPending(true);
+      }
+    });
+  }, []);
+
+  // Listen to QoreID SDK events
+  useEffect(() => {
+    const unsubscribe = launchQoreID.events((result: any) => {
+      console.log('QoreID SDK Event:', result);
+
+      // Any event from SDK means user has started or completed the flow
+      if (result?.status === 'success' || result?.event === 'verification_completed') {
+        // Optional: immediate success (rare for NIN — usually via webhook)
+        setVerificationStatus('success');
+        AsyncStorage.removeItem('pending_qoreid_verification');
+      } else if (result?.event === 'verification_failed' || result?.status === 'failed') {
+        // Handle real failure (not transient)
+        Toast.show({
+          type: 'error',
+          text1: 'Verification Failed',
+          text2: 'Please try again later',
+        });
+        setIsLaunching(false);
+      } else {
+        // Any other event (started, submitted, closed, transient error) → go to pending
+        goToPendingState();
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const goToPendingState = async () => {
+    setIsLaunching(false);
+    setIsPending(true);
+    await AsyncStorage.setItem('pending_qoreid_verification', 'true');
+
+    Toast.show({
+      type: 'info',
+      text1: 'Verification in Progress',
+      text2: 'We are processing your identity with NIMC',
+    });
   };
 
-  const handlePinLocation = async () => {
+  const startVerification = async () => {
+    setIsLaunching(true);
+
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        setGeoError("Permission to access location was denied.");
-        Alert.alert(
-          "Location Access Denied",
-          "Please enable location permissions in your device settings."
-        );
+      const userString = await AsyncStorage.getItem('user'); // Adjust if you store user differently
+      const user = userString ? JSON.parse(userString) : null;
+
+      if (!user) {
+        Toast.show({ type: 'error', text1: 'Error', text2: 'User data not found' });
+        setIsLaunching(false);
         return;
       }
 
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
+      const uniqueRef = `ref_${user.id}_${Date.now()}`;
+
+      await launchQoreID({
+        clientId: 'YOUR_CLIENT_ID_HERE', // Replace with your actual QoreID client ID
+        customerReference: uniqueRef,
+
+        // Use ONE of these based on your QoreID setup
+        // productCode: 12345, // If using workflow mode
+        flowId: '', // Recommended for direct NIN + face
+
+        applicantData: {
+          firstname: user.firstname || '',
+          lastname: user.lastname || '',
+          phone: user.phone || '',
+          email: user.email || '',
+        },
+
+        // Optional: restrict OCR document types
+        ocrAcceptedDocuments: [
+          'DRIVERS_LICENSE_NGA',
+          'VOTERS_CARD_NGA',
+          'NIN_SLIP_NGA',
+          'PASSPORT_NGA',
+        ],
       });
 
-      setGeoLocation({
-        lat: location.coords.latitude.toString(),
-        lng: location.coords.longitude.toString(),
-      });
+      // If launch succeeds without error, go to pending
+      goToPendingState();
+    } catch (error: any) {
+      console.error('QoreID Launch Error:', error);
+      setIsLaunching(false);
 
-      setGeoError(""); // Clear any previous errors
-      Alert.alert("Location Pinned", "Coordinates added successfully.");
-    } catch (error) {
-      console.error("Error fetching geolocation:", error);
-      setGeoError("An error occurred while fetching your location.");
+      // Handle known transient error gracefully
+      if (error?.message?.includes('invalid verification ID 0')) {
+        goToPendingState(); // It's actually progressing!
+      } else {
+        Toast.show({
+          type: 'error',
+          text1: 'Unable to Start Verification',
+          text2: 'Please check your connection and try again',
+        });
+      }
     }
   };
 
-  const handleValidation = () => {
-    const errors = {};
-    if (!name.trim()) errors.name = "Shop name is required.";
-    if (!description.trim()) errors.description = "Description is required.";
-    if (!address.trim()) errors.address = "Address is required.";
-    if (!geoLocation.lat || !geoLocation.lng)
-      errors.geoLocation = "Geolocation is required. Please pin your location.";
+  // === PENDING SCREEN ===
+  if (isPending) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+        <StatusBar barStyle="light-content" />
+        <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.gradient}>
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+              <MaterialIcons name="arrow-back-ios" size={22} color="#FFF" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Verification Pending</Text>
+            <View style={styles.headerSpacer} />
+          </View>
 
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
+          <View style={styles.card}>
+            <Animated.View style={[styles.pulseRing, pulseStyle]} />
+            <ActivityIndicator size="large" color="#60a5fa" />
+            <Text style={styles.title}>Verification in Progress</Text>
+            <Text style={styles.subtitle}>
+              Your identity is being verified with NIMC.
+            </Text>
+            <Text style={{ ...styles.info, marginTop: 20, lineHeight: 24 }}>
+              This can take 10 minutes to a few hours.{'\n'}
+              We'll send you a push notification when it's complete.{'\n'}
+              Please do not retry — it's already processing.
+            </Text>
 
-  const handleSubmit = async () => {
-    if (!handleValidation() || isSubmitting) return;
-  
-    setIsSubmitting(true); // Disable further submissions
-    try {
-      const formData = new FormData();
-      formData.append("shop_name", name);
-      formData.append("description", description);
-      formData.append("geo_location", `POINT(${geoLocation.lng} ${geoLocation.lat})`);
-      formData.append("address", address);
-      formData.append("shop_owner", userId);
-  
-      selectedSubcategories.forEach((sub) =>
-        formData.append("subcategories[]", sub.value)
-      );
-  
-      const response = await api.post(
-        "https://retail-alvinia-goza-f6a0e4f7.koyeb.app/create-shop/",
-        formData,
-        { headers: { "Content-Type": "multipart/form-data" } }
-      );
-  
-      Alert.alert("Success", "Your shop has been created!", [
-        { text: "OK", onPress: () => navigation.navigate("shop") },
-      ]);
-    } catch (error) {
-      console.error("Error creating shop:", error);
-      Alert.alert("Error", "Something went wrong. Please try again.");
-    } finally {
-      setIsSubmitting(false); // Allow future submissions
-    }
-  };
+            <TouchableOpacity
+              onPress={() => router.replace('/home')}
+              style={styles.actionButton}
+            >
+              <LinearGradient colors={['#4F46E5', '#7C3AED']} style={styles.gradientButton}>
+                <Text style={styles.actionButtonText}>Back to Home</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </LinearGradient>
+        <Toast />
+      </SafeAreaView>
+    );
+  }
 
+  // === SUCCESS SCREEN (Triggered by webhook + push notification elsewhere) ===
+  if (verificationStatus === 'success') {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+        <StatusBar barStyle="light-content" />
+        <LinearGradient colors={['#16a34a', '#15803d']} style={styles.gradient}>
+          <View style={styles.header}>
+            <View style={styles.headerSpacer} />
+            <Text style={styles.headerTitle}>Verification Complete</Text>
+            <View style={styles.headerSpacer} />
+          </View>
+
+          <View style={styles.card}>
+            <Animatable.View animation="bounceIn" duration={1200}>
+              <MaterialIcons name="verified" size={130} color="#fff" />
+            </Animatable.View>
+            <Text style={styles.successTitle}>Identity Verified Successfully!</Text>
+            <Text style={styles.successMsg}>You now have full access to all premium features.</Text>
+
+            <TouchableOpacity
+              onPress={() => router.replace('/home')}
+              style={styles.actionButton}
+            >
+              <LinearGradient colors={['#16a34a', '#15803d']} style={styles.gradientButton}>
+                <Text style={styles.actionButtonText}>Continue to App</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </LinearGradient>
+        <Toast />
+      </SafeAreaView>
+    );
+  }
+
+  // === MAIN SCREEN (Start Verification) ===
   return (
-    <View>
-      <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      <StatusBar barStyle="light-content" />
+      <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.gradient}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <MaterialIcons name="arrow-back-ios" size={22} color="#FFF" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Back</Text>
+          <Text style={styles.headerTitle}>Identity Verification</Text>
+          <View style={styles.headerSpacer} />
         </View>
-    <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.card}>
-        <Text style={styles.heading}>Create Your Digital Shop</Text>
 
-        <Text style={styles.label}>Name</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Input shop name"
-          value={name}
-          onChangeText={setName}
-        />
-        {formErrors.name && <Text style={styles.error}>{formErrors.name}</Text>}
+        <View style={styles.card}>
+          {isLaunching && (
+            <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.advancedOverlay}>
+              <View style={styles.overlayCard}>
+                <Animated.View style={[styles.pulseRing, pulseStyle]} />
+                <ActivityIndicator size="large" color="#60a5fa" />
+                <Text style={styles.overlayTitle}>Launching Secure Verification</Text>
+                <Text style={styles.overlaySubtitle}>
+                  Please keep the app open{'\n'}
+                  and allow camera access when prompted
+                </Text>
+              </View>
+            </Animated.View>
+          )}
 
-        <Text style={styles.label}>Description</Text>
-        <TextInput
-          style={[styles.input, styles.description]}
-          placeholder="Input Shop Description"
-          value={description}
-          onChangeText={setDescription}
-          multiline
-        />
-        {formErrors.description && <Text style={styles.error}>{formErrors.description}</Text>}
+          <MaterialIcons name="security" size={90} color="#3b82f6" />
+          <Text style={styles.title}>Secure Identity Verification</Text>
+          <Text style={styles.subtitle}>Verify your identity using QoreID & NIMC</Text>
 
-        <Text style={styles.label}>Category</Text>
-        <SelectList
-          setSelected={handleCategoryChange}
-          data={categories}
-          placeholder="Select Category"
-          save="key"
-          searchPlaceholder="Search categories"
-          boxStyles={styles.dropdown}
-        />
+          <Animated.View style={styles.buttonWrapper}>
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={startVerification}
+              disabled={isLaunching}
+              style={styles.startButton}
+            >
+              <LinearGradient colors={['#4F46E5', '#7C3AED']} style={styles.gradientButton}>
+                <Text style={styles.startButtonText}>
+                  {isLaunching ? 'Launching...' : 'Start Verification'}
+                </Text>
+                {!isLaunching && (
+                  <MaterialIcons name="arrow-forward-ios" size={20} color="#fff" style={{ marginLeft: 8 }} />
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+          </Animated.View>
 
-        {selectedCategory && subcategories.length > 0 && (
-          <>
-            <Text style={styles.label}>Subcategories</Text>
-            <MultiSelect
-              options={subcategories.map((sub) => ({
-                label: sub.value,
-                value: sub.key,
-              }))}
-              value={selectedSubcategories}
-              onChange={setSelectedSubcategories}
-              labelledBy="Select Subcategories"
-            />
-          </>
-        )}
-
-        <Text style={styles.label}>Address</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Input your shop address"
-          value={address}
-          onChangeText={setAddress}
-        />
-        {formErrors.address && <Text style={styles.error}>{formErrors.address}</Text>}
-
-        <View style={styles.geoSection}>
-          <View style={styles.geoInputContainer}>
-            <Text style={styles.geoLabel}>Latitude</Text>
-            <TextInput
-              style={[styles.input, styles.readOnly]}
-              placeholder="Latitude"
-              value={geoLocation.lat}
-              editable={false}
-            />
-          </View>
-          <View style={styles.geoInputContainer}>
-            <Text style={styles.geoLabel}>Longitude</Text>
-            <TextInput
-              style={[styles.input, styles.readOnly]}
-              placeholder="Longitude"
-              value={geoLocation.lng}
-              editable={false}
-            />
-          </View>
-
-          <TouchableOpacity style={styles.pinButton} onPress={handlePinLocation}>
-            <Text style={styles.pinButtonText}>Pin Location</Text>
-          </TouchableOpacity>
+          <Text style={styles.info}>
+            Takes 30–90 seconds • Uses front camera • Good lighting required
+          </Text>
         </View>
-        {geoError && <Text style={styles.error}>{geoError}</Text>}
-        {formErrors.geoLocation && <Text style={styles.error}>{formErrors.geoLocation}</Text>}
-
-        <Pressable
-  style={[
-    styles.submitButton,
-    isSubmitting && styles.disabledButton,
-  ]}
-  onPress={handleSubmit}
-  disabled={isSubmitting}
->
-  <Text style={styles.submitButtonText}>
-    {isSubmitting ? "Submitting..." : "Create Shop"}
-  </Text>
-</Pressable>
-
-      </View>
-    </ScrollView>
-    </View>
+      </LinearGradient>
+      <Toast />
+    </SafeAreaView>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, padding: 20, backgroundColor: "#f9f9f9" },
+  safeArea: { flex: 1 },
+  gradient: { flex: 1 },
+
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: '#3A7BD5',
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 8 },
+      android: { elevation: 6 },
+    }),
   },
-  backButton: {
-    marginRight: 10,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-  },
+  backBtn: { padding: 6, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.25)' },
+  headerTitle: { flex: 1, fontSize: 20, fontWeight: '700', color: '#FFFFFF', textAlign: 'center', letterSpacing: 0.2 },
+  headerSpacer: { width: 40 },
+
   card: {
-    backgroundColor: "#fff",
-    padding: 20,
-    borderRadius: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    elevation: 4,
+    flex: 1,
+    marginHorizontal: 20,
+    marginTop: 24,
+    marginBottom: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.12, shadowRadius: 12 },
+      android: { elevation: 8 },
+    }),
   },
-  subcategoriesContainer: {
-    marginBottom: 15,
-    position: "relative",
-    zIndex: 10, // Ensure dropdown stays above other components
-    width: "100%", // Ensure it takes up the full width of the parent
+
+  title: { fontSize: 28, fontWeight: 'bold', color: '#1e293b', textAlign: 'center', marginTop: 24 },
+  subtitle: { fontSize: 17, color: '#475569', textAlign: 'center', marginTop: 12 },
+  info: { fontSize: 15, color: '#64748b', textAlign: 'center', marginTop: 40, lineHeight: 22 },
+
+  buttonWrapper: { marginTop: 40, alignSelf: 'stretch' },
+  startButton: { borderRadius: 16, overflow: 'hidden' },
+  gradientButton: { paddingVertical: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  startButtonText: { color: '#fff', fontSize: 18, fontWeight: '600' },
+
+  advancedOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(15, 23, 42, 0.97)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 20,
   },
-  
-  heading: { fontSize: 22, fontWeight: "bold", marginBottom: 20, textAlign: "center" },
-  input: {
-    backgroundColor: "#f5f5f5",
-    borderRadius: 8,
-    padding: 12,
-    borderColor: "#ddd",
-    borderWidth: 1,
-    marginBottom: 15,
+  overlayCard: {
+    backgroundColor: '#1e293b',
+    padding: 48,
+    borderRadius: 32,
+    alignItems: 'center',
+    maxWidth: '88%',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.4, shadowRadius: 24 },
+      android: { elevation: 16 },
+    }),
   },
-  description: { height: 100, textAlignVertical: "top" },
-  label: { fontSize: 14, fontWeight: "bold", marginBottom: 5 },
-  labels: { fontSize: 14, fontWeight: "bold", marginBottom: 5, marginTop: 12 },
-  dropdown: {
-    backgroundColor: "#fff",
-    borderColor: "#ddd",
-    borderWidth: 1,
-    borderRadius: 8,
+  pulseRing: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#60a5fa33',
   },
-  
-  geoInputContainer: { flex: 1, marginRight: 10 },
-  geoLabel: { fontSize: 14, fontWeight: "bold", marginBottom: 5 },
-  geoInput: { width: "100%" },
-  readOnly: { backgroundColor: "#e9ecef" },
-  pinButton: {
-    backgroundColor: "#007BFF",
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  pinButtonText: { color: "#fff", fontWeight: "bold" },
-  submitButton: {
-    backgroundColor: "#4CAF50",
-    paddingVertical: 15,
-    borderRadius: 8,
-    alignItems: "center",
-    marginTop: 20, // Ensure spacing between buttons
-  },
-  submitButtonText: { color: "#fff", fontWeight: "bold" },
-  error: {
-    color: '#FF4D4F', // Modern red shade for error
-    backgroundColor: '#FFF2F0', // Subtle red background for better visibility
-    padding: 8, // Add some padding for readability
-    marginVertical: 6, // Add spacing between errors and other elements
-    borderRadius: 5, // Rounded corners for a modern feel
-    fontSize: 14, // Standard font size for legibility
-    fontWeight: '600', // Slightly bold for emphasis
-    borderWidth: 1, // Optional: Add a border for definition
-    borderColor: '#FFCCC7', // Match the border with the background
-  },
+  overlayTitle: { color: '#ffffff', fontSize: 23, fontWeight: '700', marginTop: 28, textAlign: 'center' },
+  overlaySubtitle: { color: '#94a3b8', fontSize: 16, marginTop: 12, textAlign: 'center', lineHeight: 22 },
+
+  actionButton: { borderRadius: 16, overflow: 'hidden', marginTop: 40 },
+  actionButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+
+  successTitle: { fontSize: 30, fontWeight: 'bold', color: '#fff', marginTop: 24, textAlign: 'center' },
+  successMsg: { fontSize: 17, color: '#e0e7ff', textAlign: 'center', marginTop: 12, lineHeight: 24 },
 });
+
+export default IDVerificationScreen;

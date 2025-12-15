@@ -1,5 +1,5 @@
 // src/components/cart/ShopSelectorModal.tsx
-// FINAL — SCROLLABLE, DIFFERENTIATED, PREMIUM 2025 DESIGN
+// FINAL — LONG NAMES FIXED + CLEAN LAYOUT + COMPACT DESIGN
 
 import React from 'react';
 import {
@@ -11,7 +11,6 @@ import {
   ScrollView,
   Pressable,
   Animated,
-  Platform,
   ActivityIndicator,
   Dimensions,
 } from 'react-native';
@@ -118,12 +117,12 @@ export const ShopSelectorModal = ({
     if (visible) {
       Animated.parallel([
         Animated.spring(scale, { toValue: 1, friction: 8.5, tension: 120, useNativeDriver: true }),
-        Animated.timing(opacityAnim, { toValue: 1, duration: 280, useNativeDriver: true }),
+        Animated.timing(opacityAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
       ]).start();
     }
   }, [visible]);
 
-  const cartKey = React.useMemo(() => 
+  const cartKey = React.useMemo(() =>
     JSON.stringify(items.map(i => `${i.shopId}-${i.id}-${i.quantity}-${i.price}`))
   , [items]);
 
@@ -173,7 +172,7 @@ export const ShopSelectorModal = ({
       });
 
     cartShops.forEach(cartShop => {
-      const hasActivePO = buyerPOs.some(po => 
+      const hasActivePO = buyerPOs.some(po =>
         po.shopId === cartShop.shopId && ['proposed', 'countered'].includes(po.status)
       );
       if (!hasActivePO) {
@@ -214,24 +213,31 @@ export const ShopSelectorModal = ({
   return (
     <Modal visible={visible} transparent animationType="none">
       <Pressable style={styles.overlay} onPress={onClose}>
-        <LinearGradient colors={['#000000CC', '#000000EE']} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={['#000000CC', '#000000F0']} style={StyleSheet.absoluteFill} />
 
         <Animated.View style={[styles.modalContainer, { opacity: opacityAnim, transform: [{ scale }] }]}>
-          <Pressable onPress={() => {}}>
+          <Pressable onPress={(e) => e.stopPropagation()} style={{ flex: 1 }}>
             <View style={styles.modalCard}>
+              {/* Header + X Button */}
               <View style={styles.header}>
-                <Text style={styles.title}>Your Active Orders</Text>
-                <Text style={styles.subtitle}>
-                  {totalItems > 0 && `${totalItems} item${totalItems > 1 ? 's' : ''} in cart`}
-                  {totalItems > 0 && activePOs > 0 && ' • '}
-                  {activePOs > 0 && `${activePOs} active negotiation${activePOs > 1 ? 's' : ''}`}
-                </Text>
+                <View style={styles.titleContainer}>
+                  <Text style={styles.title}>Your Active Orders</Text>
+                  <Text style={styles.subtitle}>
+                    {totalItems > 0 && `${totalItems} item${totalItems > 1 ? 's' : ''} in cart`}
+                    {totalItems > 0 && activePOs > 0 && '  •  '}
+                    {activePOs > 0 && `${activePOs} active negotiation${activePOs > 1 ? 's' : ''}`}
+                  </Text>
+                </View>
+                <TouchableOpacity style={styles.closeXButton} onPress={onClose}>
+                  <Ionicons name="close" size={28} color="#475569" />
+                </TouchableOpacity>
               </View>
 
-              <ScrollView 
-                style={styles.scrollView} 
+              {/* FULLY SCROLLABLE LIST */}
+              <ScrollView
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={{ paddingBottom: 20 }}
+                contentContainerStyle={styles.scrollContent}
+                style={{ flex: 1 }}
               >
                 {loadingPOs ? (
                   <View style={styles.loader}>
@@ -240,19 +246,19 @@ export const ShopSelectorModal = ({
                   </View>
                 ) : allShops.length === 0 ? (
                   <View style={styles.empty}>
-                    <Ionicons name="cart-outline" size={80} color="#94A3B8" />
+                    <Ionicons name="cart-outline" size={90} color="#94A3B8" />
                     <Text style={styles.emptyTitle}>All clear!</Text>
                     <Text style={styles.emptySubtitle}>No active orders or cart items</Text>
                   </View>
                 ) : (
                   allShops.map((shop, idx) => (
-                    <ShopRow key={idx} shop={shop} index={idx} onPress={() => openShop(shop)} />
+                    <ShopRow key={`${shop.shopId}-${shop.type}-${idx}`} shop={shop} index={idx} onPress={() => openShop(shop)} />
                   ))
                 )}
               </ScrollView>
 
-              <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-                <Text style={styles.closeButtonText}>Close</Text>
+              <TouchableOpacity style={styles.bottomCloseButton} onPress={onClose}>
+                <Text style={styles.bottomCloseText}>Close</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -263,7 +269,7 @@ export const ShopSelectorModal = ({
 };
 
 const ShopRow = React.memo(({ shop, index, onPress }: { shop: Shop; index: number; onPress: () => void }) => {
-  const translateY = React.useRef(new Animated.Value(50)).current;
+  const translateY = React.useRef(new Animated.Value(60)).current;
   const opacity = React.useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
@@ -274,7 +280,7 @@ const ShopRow = React.memo(({ shop, index, onPress }: { shop: Shop; index: numbe
         Animated.timing(opacity, { toValue: 1, duration: 400, useNativeDriver: true }),
       ]),
     ]).start();
-  }, []);
+  }, [index]);
 
   const isPickup = shop.type === 'po' && shop.status === 'pickup_pending';
   const hasLocalItems = (shop as any)._hasLocalItems;
@@ -310,21 +316,22 @@ const ShopRow = React.memo(({ shop, index, onPress }: { shop: Shop; index: numbe
   return (
     <Animated.View style={{ opacity, transform: [{ translateY }] }}>
       <TouchableOpacity style={styles.shopCard} onPress={onPress} activeOpacity={0.92}>
-        <LinearGradient
-          colors={['#FFFFFF', '#F8FAFC']}
-          style={StyleSheet.absoluteFill}
-        />
+        <LinearGradient colors={['#FFFFFF', '#F8FAFC']} style={StyleSheet.absoluteFill} />
         <View style={styles.cardContent}>
-          {/* Header: Shop Name + Badge */}
-          <View style={styles.cardHeader}>
-            <Text style={styles.shopName} numberOfLines={1}>{shop.shopName}</Text>
+          {/* Shop Name — Full width, no truncation */}
+          <Text style={styles.shopName} numberOfLines={2}>
+            {shop.shopName}
+          </Text>
+
+          {/* Badge moved BELOW name — never squeezes text */}
+          <View style={styles.badgeContainer}>
             <View style={[styles.badge, { backgroundColor: badgeColor }]}>
-              {badgeIcon && <Ionicons name={badgeIcon as any} size={18} color="#FFF" />}
+              {badgeIcon && <Ionicons name={badgeIcon as any} size={16} color="#FFF" />}
               <Text style={styles.badgeText}>{badgeText}</Text>
             </View>
           </View>
 
-          {/* Items + Price */}
+          {/* Price + Item Count */}
           <View style={styles.cardBody}>
             <Text style={styles.itemCount}>
               {shop.itemCount} item{shop.itemCount > 1 ? 's' : ''}
@@ -332,7 +339,6 @@ const ShopRow = React.memo(({ shop, index, onPress }: { shop: Shop; index: numbe
             <Text style={styles.price}>₦{shop.totalAmount.toLocaleString()}</Text>
           </View>
 
-          {/* Pickup Code */}
           {isPickup && shop.pickup_code && (
             <View style={styles.pickupBox}>
               <Ionicons name="shield-checkmark" size={22} color="#10B981" />
@@ -341,13 +347,17 @@ const ShopRow = React.memo(({ shop, index, onPress }: { shop: Shop; index: numbe
             </View>
           )}
 
-          {/* Status Hint */}
           {!isPickup && (
             <Text style={styles.statusHint}>
-              {hasLocalItems ? 'New items added • Tap to continue' :
-               shop.last_counter === 'seller' ? 'Seller countered • Your turn to respond' :
-               shop.last_counter === 'buyer' ? 'You countered • Waiting for seller' :
-               'Waiting for seller response'}
+              {shop.type === 'cart'
+                ? 'Ready to send • Tap to review & send'
+                : hasLocalItems
+                ? 'New items added • Tap to continue'
+                : shop.last_counter === 'seller'
+                ? 'Seller countered • Your turn to respond'
+                : shop.last_counter === 'buyer'
+                ? 'You countered • Waiting for seller'
+                : 'Waiting for seller response'}
             </Text>
           )}
         </View>
@@ -357,125 +367,113 @@ const ShopRow = React.memo(({ shop, index, onPress }: { shop: Shop; index: numbe
 });
 
 const styles = StyleSheet.create({
-  overlay: { 
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    backgroundColor: 'rgba(0,0,0,0.85)' 
+  overlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.9)',
   },
 
   modalContainer: {
     width: '94%',
-    maxWidth: 480,
-    maxHeight: height * 0.88,
-    borderRadius: 36,
+    maxWidth: 500,
+    height: height * 0.88,
+    maxHeight: height * 0.9,
+    borderRadius: 38,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.45,
+    shadowOpacity: 0.5,
     shadowRadius: 50,
-    elevation: 40,
+    elevation: 50,
   },
-  modalCard: { 
-    backgroundColor: '#FFFFFF', 
-    borderRadius: 36,
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 38,
+    flex: 1,
   },
 
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 28,
     paddingHorizontal: 32,
-    borderBottomWidth: 2,
-    borderColor: '#E0F2FE',
+    paddingVertical: 28,
     backgroundColor: '#F0F9FF',
+    borderBottomWidth: 2,
+    borderColor: '#BAE6FD',
   },
-  title: { 
-    fontSize: 30, 
-    fontWeight: '900', 
-    color: '#0C4A6B',
-    letterSpacing: -0.8 
-  },
-  subtitle: { 
-    marginTop: 10, 
-    fontSize: 16, 
-    color: '#64748B', 
-    fontWeight: '600' 
+  titleContainer: { flex: 1, paddingRight: 20 },
+  title: { fontSize: 30, fontWeight: '900', color: '#0C4A6B', letterSpacing: -0.8 },
+  subtitle: { marginTop: 10, fontSize: 16, color: '#64748B', fontWeight: '600' },
+
+  closeXButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#E2E8F0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 12,
   },
 
-  scrollView: { 
-    flexGrow: 1,
-    maxHeight: height * 0.65,
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 20,
   },
 
-  loader: { 
-    alignItems: 'center', 
-    paddingVertical: 80 
-  },
-  loaderText: { 
-    marginTop: 20, 
-    fontSize: 18, 
-    color: '#64748B', 
-    fontWeight: '600' 
-  },
+  loader: { alignItems: 'center', paddingVertical: 100 },
+  loaderText: { marginTop: 20, fontSize: 18, color: '#64748B', fontWeight: '600' },
 
-  empty: { 
-    alignItems: 'center', 
-    paddingVertical: 100 
-  },
-  emptyTitle: { 
-    marginTop: 24, 
-    fontSize: 24, 
-    fontWeight: '800', 
-    color: '#1E293B' 
-  },
-  emptySubtitle: { 
-    marginTop: 12, 
-    fontSize: 16, 
-    color: '#64748B' 
-  },
+  empty: { alignItems: 'center', paddingVertical: 120 },
+  emptyTitle: { marginTop: 28, fontSize: 26, fontWeight: '800', color: '#1E293B' },
+  emptySubtitle: { marginTop: 12, fontSize: 16, color: '#64748B' },
 
-  // Each shop is now a distinct, elevated card
   shopCard: {
-    marginHorizontal: 20,
-    marginTop: 20,
-    borderRadius: 24,
+    marginBottom: 14, // Reduced from 20
+    borderRadius: 26,
     overflow: 'hidden',
     elevation: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.16,
     shadowRadius: 20,
     borderWidth: 1.5,
     borderColor: '#E0F2FE',
   },
-  cardContent: {
-    padding: 22,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
+  cardContent: { padding: 18 }, // Reduced from 24
+
+  // Shop name — full width, wraps cleanly
   shopName: {
     fontSize: 21,
-    fontWeight: '800',
+    fontWeight: '900',
     color: '#1E293B',
-    flex: 1,
-    paddingRight: 12,
+    lineHeight: 26,
+    marginBottom: 6,
+  },
+
+  // Badge now below name — no more squeezing
+  badgeContainer: {
+    alignSelf: 'flex-start',
+    marginBottom: 10,
   },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 9,
     borderRadius: 30,
     gap: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 10,
-    elevation: 12,
+    elevation: 14,
   },
   badgeText: {
     color: '#FFF',
@@ -488,21 +486,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 6,
   },
-  itemCount: {
-    fontSize: 16,
-    color: '#64748B',
-    fontWeight: '600',
-  },
-  price: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: '#DC2626',
-  },
+  itemCount: { fontSize: 16, color: '#64748B', fontWeight: '600' },
+  price: { fontSize: 25, fontWeight: '900', color: '#DC2626' },
 
   statusHint: {
-    marginTop: 16,
+    marginTop: 14,
     fontSize: 14.5,
     color: '#64748B',
     fontStyle: 'italic',
@@ -516,39 +506,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderRadius: 24,
-    marginTop: 16,
+    marginTop: 14,
     alignSelf: 'flex-start',
     borderWidth: 3,
     borderColor: '#10B981',
   },
-  pickupLabel: { 
-    marginLeft: 12, 
-    fontSize: 15, 
-    fontWeight: '800', 
-    color: '#166534' 
-  },
-  pickupCode: { 
-    marginLeft: 14, 
-    fontSize: 30, 
-    fontWeight: '900', 
-    color: '#10B981', 
-    letterSpacing: 6 
-  },
+  pickupLabel: { marginLeft: 10, fontSize: 15, fontWeight: '800', color: '#166534' },
+  pickupCode: { marginLeft: 12, fontSize: 30, fontWeight: '900', color: '#10B981', letterSpacing: 6 },
 
-  closeButton: {
-    marginTop: 24,
+  bottomCloseButton: {
+    marginTop: 8,
     marginBottom: 20,
     alignSelf: 'center',
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 56,
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 64,
     paddingVertical: 20,
-    borderRadius: 30,
-    borderWidth: 2.5,
+    borderRadius: 32,
+    borderWidth: 3,
     borderColor: '#CBD5E1',
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 10,
   },
-  closeButtonText: { 
-    fontSize: 18, 
-    fontWeight: '800', 
-    color: '#475569' 
-  },
+  bottomCloseText: { fontSize: 19, fontWeight: '800', color: '#475569' },
 });
+
+export default ShopSelectorModal;

@@ -29,16 +29,35 @@ const PhoneVerificationScreen = () => {
         return;
       }
 
-      const formattedPhoneNo = phoneNo.trim().startsWith('+') ? phoneNo.trim() : `+234${phoneNo.trim()}`;
-      if (!validatePhoneNumber(formattedPhoneNo)) {
-        Toast.show({
-          type: 'error',
-          text1: 'Invalid phone number',
-          text2: 'Please enter a valid phone number (e.g., +2348012345678)',
-        });
-        setLoading(false);
-        return;
-      }
+      const formattedPhoneNo = (() => {
+  let input = phoneNo.trim();
+
+  // If already has +, just clean it
+  if (input.startsWith('+')) {
+    const cleaned = input.replace(/\D/g, '');
+    const withoutLeadingZero = cleaned.replace(/^0+/, '');
+    return `+${withoutLeadingZero}`;
+  }
+
+  // Otherwise, assume local Nigerian format
+  const digitsOnly = input.replace(/\D/g, '');
+
+  // Handle common cases: 08012345678, 8012345678, +2348012345678 → all become +234812345678
+  if (digitsOnly.startsWith('0') && digitsOnly.length === 11) {
+    return `+234${digitsOnly.slice(1)}`; // Remove the 0, add +234
+  }
+
+  if (digitsOnly.startsWith('234') && digitsOnly.length === 13) {
+    return `+${digitsOnly}`;
+  }
+
+  if (digitsOnly.length === 10) {
+    return `+234${digitsOnly}`;
+  }
+
+  // Fallback (shouldn't reach here if validation passes)
+  return `+234${digitsOnly.replace(/^0+/, '')}`;
+})();
 
       const requestBody = { phone_no: formattedPhoneNo };
       console.log('Request body:', requestBody);
@@ -62,7 +81,7 @@ const PhoneVerificationScreen = () => {
       if (response.status === 200) {
         Toast.show({ type: 'success', text1: 'OTP sent to your phone number' });
         router.push({
-          pathname: '/OTPVerificationScreen',
+          pathname: '/OTPVerification',
           params: { phoneNo: formattedPhoneNo },
         });
       } else {
@@ -94,12 +113,12 @@ const PhoneVerificationScreen = () => {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+      <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={() => router.push('/VerificationStatus')}
             style={styles.backButton}
           >
             <MaterialIcons name="arrow-back" size={26} color="white" />
@@ -119,7 +138,7 @@ const PhoneVerificationScreen = () => {
           <Animated.View style={styles.card} entering={FadeInDown.duration(500).delay(300)}>
             <TextInput
               style={styles.input}
-              placeholder="e.g., +2348012345678"
+              placeholder="e.g., 08012345678"
               placeholderTextColor="#A3A3A3"
               value={phoneNo}
               onChangeText={setPhoneNo}

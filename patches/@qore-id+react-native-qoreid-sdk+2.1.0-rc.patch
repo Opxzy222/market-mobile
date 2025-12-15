@@ -1,0 +1,20 @@
+diff --git a/node_modules/@qore-id/react-native-qoreid-sdk/src/NativeRNQoreIdSdk.ts b/node_modules/@qore-id/react-native-qoreid-sdk/src/NativeRNQoreIdSdk.ts
+index 6daecd5..b9f3985 100644
+--- a/node_modules/@qore-id/react-native-qoreid-sdk/src/NativeRNQoreIdSdk.ts
++++ b/node_modules/@qore-id/react-native-qoreid-sdk/src/NativeRNQoreIdSdk.ts
+@@ -1,12 +1,12 @@
+ import {
+   TurboModuleRegistry,
+-  type CodegenTypes,
+   type TurboModule,
+ } from 'react-native';
++import { EventEmitter } from 'react-native/Libraries/Types/CodegenTypes';
+ 
+ export interface Spec extends TurboModule {
+   launchQoreidSdk: (arg: Object) => void;
+-  readonly onResult: CodegenTypes.EventEmitter<Object>;
++  readonly onResult: EventEmitter<Object>;
+ }
+ 
+ export default TurboModuleRegistry.getEnforcing<Spec>('RNQoreIdSdk');
+\ No newline at end of file

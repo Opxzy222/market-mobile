@@ -8,9 +8,8 @@ import {
   TouchableOpacity,
   Dimensions,
   FlatList,
-  Alert,
-} from "react-native";
-import { Image } from "expo-image"; // Use expo-image for consistency
+  Alert, Image
+} from "react-native"; // Use expo-image for consistency
 import { useVideoPlayer, VideoView } from "expo-video";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -47,17 +46,16 @@ const Thumbnail = ({ media, isVideo }) => {
         </View>
       )}
       <Image
-        source={{ uri: thumbnailUri }}
-        style={[styles.thumbnail, isThumbnailLoading && { opacity: 0 }]}
-        contentFit="cover"
-        cachePolicy="memory-disk"
-        onLoadStart={() => setIsThumbnailLoading(true)}
-        onLoad={() => setIsThumbnailLoading(false)}
-        onError={(e) => {
-          console.error("Thumbnail load error:", thumbnailUri, e.error);
-          setIsThumbnailLoading(false);
-        }}
-      />
+  source={{ uri: thumbnailUri }}
+  style={[styles.thumbnail, isThumbnailLoading && { opacity: 0 }]}
+  resizeMode="cover"
+  onLoadStart={() => setIsThumbnailLoading(true)}
+  onLoadEnd={() => setIsThumbnailLoading(false)}   // ← Fires on success OR error
+  onError={(e) => {
+    console.error("Thumbnail load error:", thumbnailUri, e.nativeEvent.error);
+    setIsThumbnailLoading(false);
+  }}
+/>
     </View>
   );
 };
@@ -202,25 +200,24 @@ const AdminShopPosts = ({ posts, shopId, onPostDeleted }) => {
               </View>
             )}
             <Image
-              source={{ uri: fullUrl }}
-              style={[styles.media, isImageLoading && { opacity: 0 }]}
-              contentFit="contain"
-              cachePolicy="memory-disk"
-              onLoadStart={() => setIsImageLoading(true)}
-              onLoad={() => {
-                setIsImageLoading(false);
-                if (timeoutRef.current) {
-                  clearTimeout(timeoutRef.current);
-                }
-              }}
-              onError={(e) => {
-                console.error("Image load error:", fullUrl, e.error);
-                setIsImageLoading(false);
-                if (timeoutRef.current) {
-                  clearTimeout(timeoutRef.current);
-                }
-              }}
-            />
+  source={{ uri: fullUrl }}
+  style={[styles.media, isImageLoading && { opacity: 0 }]}
+  resizeMode="contain"
+  onLoadStart={() => setIsImageLoading(true)}
+  onLoadEnd={() => {
+    setIsImageLoading(false);
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+  }}
+  onError={(e) => {
+    console.error("Image load error:", fullUrl, e.nativeEvent.error);
+    setIsImageLoading(false);
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+  }}
+/>
           </>
         )}
       </View>

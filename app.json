@@ -43,6 +43,7 @@
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.INTERNET",
         "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.RECORD_AUDIO",
         "android.permission.SYSTEM_ALERT_WINDOW",
@@ -68,7 +69,6 @@
         }
       ],
       "buildProperties": {
-        "android.enableR8.fullMode": true,
         "android.enableProguardInReleaseBuilds": true
       },
       "runtimeVersion": "2.0.0"
@@ -80,7 +80,6 @@
     },
     "plugins": [
       "expo-router",
-      "expo-dev-client",
       "expo-updates",
       [
         "expo-image-picker",
@@ -106,6 +105,7 @@
       "expo-secure-store",
       "expo-video",
       "expo-web-browser",
+      "@qore-id/react-native-qoreid-sdk/plugin",
       [
         "@react-native-firebase/app"
       ],
@@ -164,7 +164,9 @@
             "buildToolsVersion": "35.0.0",
             "minSdkVersion": 24,
             "ndkVersion": "25.2.9519653",
-            "enableProguardInReleaseBuilds": true
+            "enableProguardInReleaseBuilds": true,
+            "newArchEnabled": false,
+            "enableR8FullMode": false
           },
           "ios": {
             "deploymentTarget": "15.1",
@@ -216,9 +218,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "b260054f-57f1-4c96-8a85-e4886d1dd0ce"
+        "projectId": "11a350ba-590c-4271-9e5a-a2ba71d36ffc"
       }
     },
-    "owner": "timejet"
+    "owner": "opxzy"
   }
 }

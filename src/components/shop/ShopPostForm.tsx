@@ -15,6 +15,7 @@ import {
   ScrollView,
   Animated,
   Dimensions,
+  SafeAreaView,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system";
@@ -32,11 +33,13 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
   const [isFocused, setIsFocused] = useState(false);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const uploadProgressAnim = useRef(new Animated.Value(0)); // Keep full ref
+  const uploadProgressAnim = useRef(new Animated.Value(0)).current;
   const textInputRef = useRef(null);
   const scrollViewRef = useRef(null);
   const containerViewRef = useRef(null);
   const renderCountRef = useRef(0);
+
+  // REMOVED: keyboardVisible state & listeners — no longer needed
 
   // Subscription from AsyncStorage
   const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null);
@@ -71,30 +74,6 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
       console.log("ShopPostForm unmounted");
     };
   }, []);
-
-  // Keyboard scroll
-  useEffect(() => {
-    const keyboardDidShowListener = Keyboard.addListener(
-      "keyboardDidShow",
-      () => {
-        if (isFocused && textInputRef.current && containerViewRef.current) {
-          textInputRef.current.measureLayout(
-            containerViewRef.current,
-            (x, y, width, height) => {
-              scrollViewRef.current?.scrollTo({ y: y - 20, animated: true });
-            },
-            () => {
-              console.warn("Failed to measure TextInput layout");
-            }
-          );
-        }
-      }
-    );
-
-    return () => {
-      keyboardDidShowListener.remove();
-    };
-  }, [isFocused]);
 
   const pickMedia = useCallback(async () => {
     console.log("Picking media");
@@ -148,9 +127,7 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
           };
         });
 
-        const newMedia = (await Promise.all(newMediaPromises)).filter(
-          (item) => item !== null
-        );
+        const newMedia = (await Promise.all(newMediaPromises)).filter((item) => item !== null);
         setMedia((prevMedia) => [...prevMedia, ...newMedia]);
       }
     } catch (error) {
@@ -171,7 +148,6 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
       setIsFocused(false);
     }
 
-    // Check subscription
     if (!['standard', 'premium'].includes(subscriptionStatus || '')) {
       setShowSubscriptionModal(true);
       return;
@@ -205,7 +181,7 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
 
     setLoading(true);
     setUploadProgress(0);
-    Animated.timing(uploadProgressAnim.current, {
+    Animated.timing(uploadProgressAnim, {
       toValue: 0,
       duration: 0,
       useNativeDriver: false,
@@ -262,7 +238,7 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
               );
               console.log(`Upload progress: ${progress.toFixed(2)}%`);
               setUploadProgress(progress);
-              Animated.timing(uploadProgressAnim.current, {
+              Animated.timing(uploadProgressAnim, {
                 toValue: Math.min(progress / 100, 1),
                 duration: 200,
                 useNativeDriver: false,
@@ -307,28 +283,17 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
     } finally {
       setLoading(false);
       setUploadProgress(0);
-      Animated.timing(uploadProgressAnim.current, {
+      Animated.timing(uploadProgressAnim, {
         toValue: 0,
         duration: 0,
         useNativeDriver: false,
       }).start();
     }
-  }, [description, media, shopId, onPostCreated, subscriptionStatus]);
+  }, [description, media, shopId, onPostCreated, subscriptionStatus, uploadProgressAnim]);
 
   const handleFocus = useCallback(() => {
     console.log("Description input focused");
     setIsFocused(true);
-    if (textInputRef.current && containerViewRef.current) {
-      textInputRef.current.measureLayout(
-        containerViewRef.current,
-        (x, y, width, height) => {
-          scrollViewRef.current?.scrollTo({ y: y - 20, animated: true });
-        },
-        () => {
-          console.warn("Failed to measure TextInput layout");
-        }
-      );
-    }
   }, []);
 
   const handleBlur = useCallback(() => {
@@ -382,7 +347,6 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
     [removeMedia]
   );
 
-  // Loading UI
   if (subscriptionLoading) {
     return (
       <View style={styles.loader}>
@@ -393,125 +357,122 @@ const ShopPostForm = ({ shopId, onPostCreated }) => {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
-    >
-      <ScrollView
-        ref={scrollViewRef}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#f9f9f9" }}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
       >
-        <View ref={containerViewRef}>
-          <Text style={styles.title}>Create a Post</Text>
+        <ScrollView
+          ref={scrollViewRef}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View ref={containerViewRef}>
+            <Text style={styles.title}>Create a Post</Text>
 
-          <Text style={styles.subtitle}>Select Media (Images or Videos)</Text>
-          <TouchableOpacity
-            onPress={pickMedia}
-            style={styles.optionCard}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name="image-outline"
-              size={24}
-              color="#e67e22"
-              style={styles.optionIcon}
+            <Text style={styles.subtitle}>Select Media (Images or Videos)</Text>
+            <TouchableOpacity
+              onPress={pickMedia}
+              style={styles.optionCard}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="image-outline"
+                size={24}
+                color="#e67e22"
+                style={styles.optionIcon}
+              />
+              <Text style={styles.optionText}>Add Images or Videos</Text>
+            </TouchableOpacity>
+
+            <FlatList
+              data={media}
+              renderItem={renderMediaItem}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.mediaPreviewContainer}
+              numColumns={3}
+              scrollEnabled={false}
+              keyboardShouldPersistTaps="always"
             />
-            <Text style={styles.optionText}>Add Images or Videos</Text>
-          </TouchableOpacity>
 
-          <FlatList
-            data={media}
-            renderItem={renderMediaItem}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.mediaPreviewContainer}
-            numColumns={3}
-            scrollEnabled={false}
-            keyboardShouldPersistTaps="always"
-          />
+            <TextInput
+              ref={textInputRef}
+              style={[styles.input, isFocused && styles.inputFocused]}
+              placeholder="Enter post description"
+              placeholderTextColor="#888"
+              value={description}
+              onChangeText={setDescription}
+              multiline
+              numberOfLines={4}
+              returnKeyType="done"
+              blurOnSubmit={true}
+              onSubmitEditing={() => {
+                console.log("Description input submitted");
+                Keyboard.dismiss();
+                if (textInputRef.current) {
+                  textInputRef.current.blur();
+                  setIsFocused(false);
+                }
+              }}
+              onFocus={handleFocus}
+              onBlur={handleBlur}
+              accessible={true}
+              accessibilityLabel="Post description input"
+            />
 
-          <TextInput
-            ref={textInputRef}
-            style={[styles.input, isFocused && styles.inputFocused]}
-            placeholder="Enter post description"
-            placeholderTextColor="#888"
-            value={description}
-            onChangeText={setDescription}
-            multiline
-            numberOfLines={4}
-            returnKeyType="done"
-            blurOnSubmit={true}
-            onSubmitEditing={() => {
-              console.log("Description input submitted");
-              Keyboard.dismiss();
-              if (textInputRef.current) {
-                textInputRef.current.blur();
-                setIsFocused(false);
-              }
-            }}
-            onFocus={handleFocus}
-            onBlur={handleBlur}
-            accessible={true}
-            accessibilityLabel="Post description input"
-          />
-
-          {loading && (
-            <View style={styles.progressContainer}>
-              <View style={styles.progressBarBackground}>
-                <Animated.View
-                  style={[
-                    styles.progressBar,
-                    {
-                      width: uploadProgressAnim.current.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: ["0%", "100%"],
-                      }),
-                    },
-                  ]}
-                />
+            {loading && (
+              <View style={styles.progressContainer}>
+                <View style={styles.progressBarBackground}>
+                  <Animated.View
+                    style={[
+                      styles.progressBar,
+                      {
+                        width: uploadProgressAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: ["0%", "100%"],
+                        }),
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={styles.progressText}>
+                  Uploading: {Math.min(uploadProgress, 100).toFixed(0)}%
+                </Text>
               </View>
-              <Text style={styles.progressText}>
-                Uploading: {Math.min(uploadProgress, 100).toFixed(0)}%
-              </Text>
-            </View>
-          )}
-
-          <TouchableOpacity
-            onPress={handleSubmit}
-            disabled={loading}
-            activeOpacity={0.7}
-            style={[styles.button, loading && styles.buttonDisabled]}
-            accessible={true}
-            accessibilityLabel="Submit post"
-          >
-            {loading ? (
-              <Ionicons name="cloud-upload-outline" size={24} color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Post</Text>
             )}
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
 
-      {/* JUST CALL THE MODAL DIRECTLY */}
+            <TouchableOpacity
+              onPress={handleSubmit}
+              disabled={loading}
+              activeOpacity={0.7}
+              style={[styles.button, loading && styles.buttonDisabled]}
+              accessible={true}
+              accessibilityLabel="Submit post"
+            >
+              {loading ? (
+                <Ionicons name="cloud-upload-outline" size={24} color="#fff" />
+              ) : (
+                <Text style={styles.buttonText}>Post</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+
       <SubscriptionRequiredModal
         visible={showSubscriptionModal}
         onClose={() => setShowSubscriptionModal(false)}
       />
-    </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    backgroundColor: "#f9f9f9",
-    flex: 1,
-  },
   scrollContent: {
     padding: 20,
-    paddingBottom: screenHeight * 0.1,
+    paddingBottom: 30, // Increased fixed padding → no more dynamic changes → no shaking!
   },
   title: {
     fontSize: 24,

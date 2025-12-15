@@ -6,7 +6,7 @@ buildscript {
     mavenCentral()
   }
   dependencies {
-        classpath 'com.google.gms:google-services:4.4.1'
+    classpath 'com.google.gms:google-services:4.4.1'
     classpath('com.android.tools.build:gradle')
     classpath('com.facebook.react:react-native-gradle-plugin')
     classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
@@ -30,7 +30,11 @@ allprojects {
 
     google()
     mavenCentral()
-    maven { url 'https://www.jitpack.io' }
+
+    // === QOREID REQUIRED REPOSITORIES ===
+    maven { url "https://repo.qoreid.com/repository/maven-releases/" }
+    maven { url 'https://jitpack.io' }
+    // ================================
   }
 }
 

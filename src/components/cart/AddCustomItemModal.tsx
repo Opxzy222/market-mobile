@@ -1,4 +1,6 @@
 // components/cart/AddCustomItemModal.tsx
+// FINAL: Buyer adds to cart, Seller does NOT
+
 import React, { useState } from 'react';
 import {
   Modal,
@@ -14,17 +16,30 @@ import {
   Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useCart } from '@/context/CartContext';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import SubscriptionRequiredModal from "@/components/RequiredSubscription";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useCart } from '@/context/CartContext'; // Only needed for buyer
 
 type Props = {
   visible: boolean;
   onClose: () => void;
   shopId: number;
   shopName: string;
+  /**
+   * Called when user confirms adding the item
+   */
+  onAdd?: (item: {
+    product_name: string;
+    price: number;
+    note?: string;
+    image?: string;
+  }) => void;
+  /**
+   * IMPORTANT: If true → we are on seller side → do NOT add to global cart
+   */
+  isSeller?: boolean;
 };
 
 export default function AddCustomItemModal({
@@ -32,8 +47,11 @@ export default function AddCustomItemModal({
   onClose,
   shopId,
   shopName,
+  onAdd,
+  isSeller = false, // ← default = buyer
 }: Props) {
-  const { addItem } = useCart();
+  const { addItem } = useCart(); // Only used by buyer
+
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
   const [note, setNote] = useState('');
@@ -44,7 +62,6 @@ export default function AddCustomItemModal({
   const [subscriptionModalVisible, setSubscriptionModalVisible] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState<boolean | null>(null);
 
-  // Load subscription once when modal opens
   React.useEffect(() => {
     if (visible) {
       checkSubscription();
@@ -62,7 +79,6 @@ export default function AddCustomItemModal({
         setIsSubscribed(false);
       }
     } catch (error) {
-      console.error('Failed to check subscription:', error);
       setIsSubscribed(false);
     }
   };
@@ -96,7 +112,6 @@ export default function AddCustomItemModal({
   };
 
   const pickImage = async (source: 'camera' | 'library') => {
-    // BLOCK IMAGE PICKER IF NOT SUBSCRIBED
     if (isSubscribed === false) {
       setSubscriptionModalVisible(true);
       return;
@@ -141,21 +156,34 @@ export default function AddCustomItemModal({
     setLoading(true);
 
     try {
-      addItem({
-        shopId,
-        shopName,
-        shopProductId: null,
+      const itemData = {
         product_name: name.trim(),
         price: priceNum,
-        original_price: priceNum,
-        quantity: 1,
-        note: note.trim(),
+        note: note.trim() || undefined,
         image: imageUri || undefined,
-        is_custom: true,
-      });
+      };
+
+      // ONLY BUYER ADDS TO GLOBAL CART
+      if (!isSeller) {
+        addItem({
+          shopId,
+          shopName,
+          shopProductId: null,
+          product_name: itemData.product_name,
+          price: itemData.price,
+          original_price: Math.round(itemData.price),
+          quantity: 1,
+          note: itemData.note,
+          image: itemData.image,
+          is_custom: true,
+        });
+      }
+
+      // ALWAYS notify parent (both buyer and seller)
+      onAdd?.(itemData);
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Added!', `"${name}" has been added to your order.`);
+      Alert.alert('Added!', `"${name.trim()}" has been added to your order.`);
       handleClose();
     } catch (error) {
       console.error('Failed to add custom item:', error);
@@ -275,7 +303,6 @@ export default function AddCustomItemModal({
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Subscription Required Modal — Clean, no nesting */}
       <SubscriptionRequiredModal
         visible={subscriptionModalVisible}
         onClose={() => setSubscriptionModalVisible(false)}

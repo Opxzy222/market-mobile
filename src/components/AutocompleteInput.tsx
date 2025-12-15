@@ -46,7 +46,7 @@ const AutocompleteInput = ({
         await initializeDatabase();
         console.log('Database initialized, checking suggestions');
         const count = await getSuggestionsCount();
-        if (count < 160000) {
+        if (count < 140000) {
           console.log('Populating initial suggestions');
           await populateInitialSuggestions();
         } else {

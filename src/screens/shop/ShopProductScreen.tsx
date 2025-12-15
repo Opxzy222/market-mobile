@@ -275,7 +275,7 @@ const ShopProduct = () => {
   if (error) {
     return (
       <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
-        <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+        <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
         <LinearGradient colors={["#F7FAFC", "#E3F2FD"]} style={styles.container}>
           <View style={styles.header}>
             <TouchableOpacity onPress={() => router.navigate("(tabs)/myshop")} style={styles.backButton}>
@@ -302,7 +302,7 @@ const ShopProduct = () => {
   return (
     <>
       <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
-        <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+        <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
         <LinearGradient colors={["#F7FAFC", "#E3F2FD"]} style={styles.container}>
           <View style={styles.header}>
             <TouchableOpacity onPress={() => router.navigate("(tabs)/myshop")} style={styles.backButton}>

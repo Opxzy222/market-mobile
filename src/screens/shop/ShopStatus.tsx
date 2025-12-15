@@ -550,7 +550,7 @@ const StatusScreen = () => {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "left", "right"]}>
-      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+      <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
       <View style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity

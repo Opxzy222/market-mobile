@@ -13,7 +13,7 @@ import {
   Alert,
   Keyboard,
   TouchableWithoutFeedback,
-  ScrollView,
+  ScrollView, Image
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -27,7 +27,6 @@ import Animated, {
   withTiming,
   Easing,
 } from "react-native-reanimated";
-import { Image } from "expo-image";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const { width, height } = Dimensions.get("window");
@@ -216,11 +215,10 @@ const SignUp = () => {
               <Animated.View style={[styles.logoWrapper, logoAnim]}>
                 <View style={styles.logoContainer}>
                   <Image
-                    source={require("../../assets/images/icon1.png")}
-                    style={styles.logoImage}
-                    contentFit="contain"
-                    transition={200}
-                  />
+  source={require("../../assets/images/icon1.png")}
+  style={styles.logoImage}
+  resizeMode="contain"
+/>
                 </View>
                 <Text style={styles.title}>Create Account</Text>
                 <Text style={styles.subtitle}>Join Gogo to explore local businesses</Text>

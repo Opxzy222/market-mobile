@@ -389,12 +389,8 @@ const AdminShopPage = () => {
 
  return (
  <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
- <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
- <KeyboardAvoidingView
- style={{ flex: 1 }}
- behavior={Platform.OS === "ios" ? "padding" : undefined}
- keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
- >
+ <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
+ 
  <View style={styles.container}>
  <View style={styles.header}>
  <TouchableOpacity
@@ -433,7 +429,7 @@ const AdminShopPage = () => {
  scrollEnabled={true}
  />
  </View>
- </KeyboardAvoidingView>
+
  </SafeAreaView>
  );
 };

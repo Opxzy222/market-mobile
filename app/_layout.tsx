@@ -229,7 +229,8 @@ const RootLayout = () => {
     }
 
     const ws = new WebSocket(
-      `wss://retail-alvinia-goza-f6a0e4f7.koyeb.app/ws/unread-messages/?userId=${userId}`
+      
+      `wss://api.gogo-digital.com/ws/unread-messages/?userId=${userId}`
     );
 
     ws.onopen = () => {

@@ -17,7 +17,7 @@ import {
   KeyboardAvoidingView,
   Pressable,
   Keyboard,
-  TouchableWithoutFeedback,
+  TouchableWithoutFeedback, Image
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -31,7 +31,6 @@ import Animated, {
   withSpring,
   withTiming,
 } from "react-native-reanimated";
-import { Image } from "expo-image";
 import { AppResetContext } from "@/context/AppResetContext";
 
 const { width, height } = Dimensions.get("window");
@@ -248,7 +247,7 @@ const SignIn = () => {
               <Image
                 source={require("../../assets/images/icon1.png")}
                 style={styles.logoImage}
-                contentFit="contain"
+                resizeMode="contain"
               />
               <Text style={styles.title}>Welcome Back</Text>
               <Text style={styles.subtitle}>Sign in to explore local businesses</Text>

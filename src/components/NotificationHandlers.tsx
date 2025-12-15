@@ -135,8 +135,8 @@ export const setupNotificationHandlers = async () => {
 
           router.push({
             pathname: role === 'seller'
-              ? '/cart/SellerPOEditor'
-              : '/cart/BuyerPOEditor',
+              ? `/cart/SellerPOEditor?poId=${data.po_id}`
+              : `/cart/BuyerPOEditor?poId=${data.po_id}`,
             params: { poId: data.po_id },
           });
           return;

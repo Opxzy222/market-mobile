@@ -14,7 +14,7 @@ const ReceiptActions = () => {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
-      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+      <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
       <LinearGradient colors={["#F7FAFC", "#E3F2FD"]} style={styles.container}>
         <Animated.View entering={FadeInDown.duration(300)} style={styles.header}>
           <TouchableOpacity
@@ -45,7 +45,7 @@ const ReceiptActions = () => {
                 style={styles.buttonGradient}
               >
                 <MaterialIcons name="shopping-cart-checkout" size={30} color="#FFFFFF" />
-                <Text style={styles.buttonText}>My Orders</Text>
+                <Text style={styles.buttonText}>Orders</Text>
               </LinearGradient>
             </TouchableOpacity>
           </Animated.View>

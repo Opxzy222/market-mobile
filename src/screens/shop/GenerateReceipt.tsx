@@ -25,12 +25,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
 import { getFullUrl } from "../../utils/imageUtils";
 import SubscriptionRequiredModal from "../../components/RequiredSubscription";
+import { Ionicons } from "@expo/vector-icons";
 
 const GenerateReceipt = () => {
   const [customerName, setCustomerName] = useState("");
   const [items, setItems] = useState([]);
   const [newItem, setNewItem] = useState({ name: "", qty: "", price: "" });
   const [receipt, setReceipt] = useState({ pdfUrl: null, imageUrls: [], receipt_id: null });
+  const [totalAmount, setTotalAmount] = useState(0);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [shopProducts, setShopProducts] = useState([]);
   const [nameLoading, setNameLoading] = useState(false);
@@ -490,7 +492,7 @@ const GenerateReceipt = () => {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
-      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+      <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={{ flex: 1 }}>
           <View style={styles.header}>

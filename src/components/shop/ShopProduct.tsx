@@ -1,6 +1,5 @@
 // components/shop/ShopProduct.tsx
-// FINAL — NO SUBSCRIPTION LIMITS, FULL ACCESS FOR EVERYONE, BEAUTIFUL & COLLAPSIBLE
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,7 +12,6 @@ import {
   Modal,
   Dimensions,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,7 +22,6 @@ const { width } = Dimensions.get('window');
 type Product = {
   id: number | string;
   product_name: string;
-  typography: string;
   price: number | null;
   is_available: boolean;
   image?: string;
@@ -39,6 +36,11 @@ type Category = {
   category: string;
   subcategories: Subcategory[];
 };
+
+type FlatListItem =
+  | { type: 'category'; data: Category }
+  | { type: 'subcategory'; data: Subcategory; category: string }
+  | { type: 'product'; data: Product; category: string; subcategory: string };
 
 type Props = {
   products?: Category[] | null;
@@ -63,7 +65,6 @@ const ShopProduct = ({ products = [], shopId, shopName }: Props) => {
   const currentShopName = shopName || params.name || `Shop #${currentShopId}`;
 
   useEffect(() => {
-    // Just simulate loading briefly — no subscription check anymore
     const timer = setTimeout(() => setLoading(false), 300);
     return () => clearTimeout(timer);
   }, []);
@@ -105,6 +106,117 @@ const ShopProduct = ({ products = [], shopId, shopName }: Props) => {
     alert('Added!', `"${product.product_name}" added to cart`);
   };
 
+  const flatData = useMemo(() => {
+    const result: FlatListItem[] = [];
+    const query = searchQuery.toLowerCase();
+    const safeProducts = Array.isArray(products) ? products : [];
+
+    safeProducts.forEach(category => {
+      if (!category?.category || !Array.isArray(category.subcategories)) return;
+
+      result.push({ type: 'category', data: category });
+
+      const hasMatch = category.subcategories.some(sub =>
+        sub.products.some(p => p.product_name?.toLowerCase().includes(query))
+      );
+
+      if (!hasMatch) return;
+
+      const isExpanded = expandedCategories.has(category.category) || query.length > 0;
+      if (!isExpanded) return;
+
+      category.subcategories.forEach(sub => {
+        const filtered = sub.products.filter(p =>
+          p.product_name?.toLowerCase().includes(query)
+        );
+        if (filtered.length === 0) return;
+
+        result.push({ type: 'subcategory', data: sub, category: category.category });
+        filtered.forEach(p => {
+          result.push({
+            type: 'product',
+            data: p,
+            category: category.category,
+            subcategory: sub.subcategory,
+          });
+        });
+      });
+    });
+
+    return result;
+  }, [products, searchQuery, expandedCategories]);
+
+  const renderItem = ({ item }: { item: FlatListItem }) => {
+    if (item.type === 'category') {
+      const cat = item.data;
+      const isExpanded = expandedCategories.has(cat.category);
+      const count = cat.subcategories.reduce((s, sub) => s + sub.products.length, 0);
+
+      return (
+        <TouchableOpacity style={styles.categoryHeader} onPress={() => toggleCategory(cat.category)}>
+          <View style={styles.categoryTitleRow}>
+            <Text style={styles.categoryTitle}>{cat.category}</Text>
+            <View style={styles.itemCountBadge}>
+              <Text style={styles.itemCountText}>{count}</Text>
+            </View>
+          </View>
+          <Ionicons
+            name="chevron-down"
+            size={24}
+            color="#0EA5E9"
+            style={{ transform: [{ rotate: isExpanded ? '180deg' : '0deg' }] }}
+          />
+        </TouchableOpacity>
+      );
+    }
+
+    if (item.type === 'subcategory') {
+      return <Text style={styles.subcategoryTitle}>{item.data.subcategory}</Text>;
+    }
+
+    if (item.type === 'product') {
+      const p = item.data;
+
+      return (
+        <View style={styles.productCard}>
+          <TouchableOpacity onPress={() => p.image && openFullScreen(p.image)} style={styles.imageWrapper}>
+            {p.image ? (
+              <Image source={{ uri: p.image }} style={styles.productImg} resizeMode="cover" />
+            ) : (
+              <View style={styles.placeholderContainer}>
+                <Ionicons name="image-outline" size={28} color="#94A3B8" />
+                <Text style={styles.placeholderText}>No Image</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.textColumn}>
+            <Text style={styles.productName}>{p.product_name}</Text>
+            <View style={styles.priceRow}>
+              <Text style={[styles.availability, p.is_available ? styles.available : styles.notAvailable]}>
+                {p.is_available ? 'Available' : 'Unavailable'}
+              </Text>
+              <Text style={styles.priceText}>
+                {p.price != null ? `₦${Math.floor(p.price).toLocaleString()}` : 'N/A'}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.addToCartBtn, !p.is_available && styles.addToCartBtnDisabled]}
+              onPress={() => handleAddToCart(p)}
+              disabled={!p.is_available}
+            >
+              <Ionicons name="cart-outline" size={14} color="#fff" />
+              <Text style={styles.addToCartText}>Add</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
+
+    return null;
+  };
+
   if (loading) {
     return (
       <View style={styles.loader}>
@@ -113,36 +225,10 @@ const ShopProduct = ({ products = [], shopId, shopName }: Props) => {
     );
   }
 
-  // No subscription check — everyone sees the full shop
-  const safeProducts = Array.isArray(products) ? products : [];
-
-  // Filter products by search
-  const filteredData = safeProducts
-    .map(category => {
-      if (!category?.category || !Array.isArray(category.subcategories)) return null;
-
-      const filteredSubs = category.subcategories
-        .map(sub => {
-          if (!sub?.subcategory || !Array.isArray(sub.products)) return null;
-          return {
-            ...sub,
-            products: sub.products.filter(p => {
-              const name = p.product_name?.toLowerCase() || '';
-              const q = searchQuery.toLowerCase();
-              return !q || name.includes(q);
-            }),
-          };
-        })
-        .filter(sub => sub && sub.products.length > 0);
-
-      return filteredSubs.length > 0 ? { ...category, subcategories: filteredSubs } : null;
-    })
-    .filter(Boolean);
-
   return (
     <>
       <LinearGradient colors={['#F0F9FF', '#E0F2FE']} style={styles.container}>
-        {/* Modern Floating Search */}
+        {/* Search Bar */}
         <View style={styles.searchContainer}>
           <Ionicons name="search" size={20} color="#64748B" />
           <TextInput
@@ -159,98 +245,19 @@ const ShopProduct = ({ products = [], shopId, shopName }: Props) => {
           )}
         </View>
 
+        {/* MAIN FLATLIST — THIS IS THE ONLY ONE */}
         <FlatList
-          data={filteredData}
-          keyExtractor={item => item.category}
+          data={flatData}
+          keyExtractor={(_, i) => i.toString()}
+          renderItem={renderItem}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
-          nestedScrollEnabled={true}
-          renderItem={({ item: category }) => {
-            const isExpanded = expandedCategories.has(category.category);
-
-            return (
-              <View style={styles.categoryBlock}>
-                {/* Category Header */}
-                <TouchableOpacity
-                  style={styles.categoryHeader}
-                  onPress={() => toggleCategory(category.category)}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.categoryTitleRow}>
-                    <Text style={styles.categoryTitle}>{category.category}</Text>
-                    <View style={styles.itemCountBadge}>
-                      <Text style={styles.itemCountText}>
-                        {category.subcategories.reduce((sum, sub) => sum + sub.products.length, 0)}
-                      </Text>
-                    </View>
-                  </View>
-                  <Ionicons
-                    name="chevron-down"
-                    size={24}
-                    color="#0EA5E9"
-                    style={{ transform: [{ rotate: isExpanded ? '180deg' : '0deg' }] }}
-                  />
-                </TouchableOpacity>
-
-                {/* Subcategories (only show if expanded) */}
-                {isExpanded && (
-                  <View style={styles.subcategoriesContainer}>
-                    {category.subcategories.map(sub => (
-                      <View key={sub.subcategory} style={styles.subcategoryBlock}>
-                        <Text style={styles.subcategoryTitle}>{sub.subcategory}</Text>
-                        {sub.products.map(product => (
-                          <View key={product.id} style={styles.productCard}>
-                            {/* Product Image — full-screen always allowed */}
-                            <TouchableOpacity
-                              onPress={() => product.image && openFullScreen(product.image)}
-                              style={styles.imageWrapper}
-                            >
-                              {product.image ? (
-                                <Image source={{ uri: product.image }} style={styles.productImg} resizeMode="cover" />
-                              ) : (
-                                <View style={styles.placeholderContainer}>
-                                  <Ionicons name="image-outline" size={28} color="#94A3B8" />
-                                  <Text style={styles.placeholderText}>No Image</Text>
-                                </View>
-                              )}
-                            </TouchableOpacity>
-
-                            <View style={styles.textColumn}>
-                              <Text style={styles.productName}>{product.product_name}</Text>
-                              <View style={styles.priceRow}>
-                                <View style={styles.availabilityBadge}>
-                                  <Text
-                                    style={[
-                                      styles.availability,
-                                      product.is_available ? styles.available : styles.notAvailable,
-                                    ]}
-                                  >
-                                    {product.is_available ? 'Available' : 'Unavailable'}
-                                  </Text>
-                                </View>
-                                <Text style={styles.priceText}>
-                                  {product.price != null ? `₦${Math.floor(product.price).toLocaleString()}` : 'N/A'}
-                                </Text>
-                              </View>
-
-                              <TouchableOpacity
-                                style={[styles.addToCartBtn, !product.is_available && styles.addToCartBtnDisabled]}
-                                onPress={() => handleAddToCart(product)}
-                                disabled={!product.is_available}
-                              >
-                                <Ionicons name="cart-outline" size={14} color="#fff" />
-                                <Text style={styles.addToCartText}>Add</Text>
-                              </TouchableOpacity>
-                            </View>
-                          </View>
-                        ))}
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </View>
-            );
-          }}
+          nestedScrollEnabled={true}   
+          removeClippedSubviews={true}
+          windowSize={11}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          updateCellsBatchingPeriod={50}
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Ionicons name="search-outline" size={64} color="#CBD5E1" />
@@ -261,7 +268,7 @@ const ShopProduct = ({ products = [], shopId, shopName }: Props) => {
         />
       </LinearGradient>
 
-      {/* Full Screen Image Modal — always accessible */}
+      {/* Full Screen Image Modal */}
       <Modal visible={fullScreenImage.visible} transparent animationType="fade">
         <View style={styles.fullScreenOverlay}>
           <Image source={{ uri: fullScreenImage.url }} style={styles.fullScreenImage} resizeMode="contain" />
@@ -301,8 +308,7 @@ const styles = StyleSheet.create({
     borderColor: '#E0F2FE',
   },
   searchInput: { flex: 1, fontSize: 16, color: '#1E293B', marginLeft: 12 },
-  listContent: { paddingBottom: 40 },
-  categoryBlock: { marginBottom: 12 },
+  listContent: { paddingBottom: 100 },
   categoryHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -311,6 +317,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 18,
     marginHorizontal: 16,
+    marginBottom: 8,
     borderRadius: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -328,20 +335,19 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
   itemCountText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  subcategoriesContainer: { marginTop: 12 },
-  subcategoryBlock: { marginBottom: 20, paddingHorizontal: 16 },
   subcategoryTitle: {
     fontSize: 17,
     fontWeight: '700',
     color: '#0369A1',
+    marginLeft: 24,
     marginBottom: 10,
-    marginLeft: 8,
   },
   productCard: {
     flexDirection: 'row',
     backgroundColor: '#fff',
     borderRadius: 12,
     padding: 12,
+    marginHorizontal: 16,
     marginBottom: 12,
     alignItems: 'center',
     shadowColor: '#000',
@@ -362,9 +368,8 @@ const styles = StyleSheet.create({
   },
   placeholderText: { marginTop: 4, fontSize: 10, color: '#94A3B8' },
   textColumn: { flex: 1, justifyContent: 'space-between' },
-  productName: { fontSize: 16, fontWeight: 'bold', color: '#1e293b', marginBottom: 6, flexShrink: 1 },
+  productName: { fontSize: 16, fontWeight: 'bold', color: '#1e293b', marginBottom: 6 },
   priceRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
-  availabilityBadge: {},
   availability: {
     fontSize: 13,
     fontWeight: '500',

@@ -427,17 +427,31 @@ const NotificationModal = () => {
         break;
 
       case 'receipt_created':
-      case 'receipt_status':
-        if (item.receipt_id) {
-          router.push({
-            pathname:
-              item.type === 'receipt_status' && item.meta_data?.status === 'voided'
-                ? '/shop/CustomerReceipts'
-                : '/shop/ShopReceipts',
-            params: { receiptId: item.receipt_id, shopId: item.shop_id },
-          });
-        }
-        break;
+      // New receipt → always go to CustomerReceipts (for the buyer)
+      if (item.receipt_id) {
+        router.push({
+          pathname: '/shop/CustomerReceipts',
+          params: { receiptId: item.receipt_id, shopId: item.shop_id },
+        });
+      }
+      break;
+
+    case 'receipt_status':
+      if (item.receipt_id) {
+        const isVoided = item.meta_data?.status === 'voided' || item.status === 'voided';
+    
+        // If receipt was voided → notify customer → go to CustomerReceipts
+        // Otherwise: accept/reject → notify shop owner → go to ShopReceipts
+        const pathname = isVoided 
+          ? '/shop/CustomerReceipts' 
+          : '/shop/ShopReceipts';
+
+        router.push({
+          pathname,
+          params: { receiptId: item.receipt_id, shopId: item.shop_id },
+        });
+      }
+      break;
 
       case 'chat_message':
         if (item.conversation_id) {

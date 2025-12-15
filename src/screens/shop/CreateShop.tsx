@@ -624,7 +624,7 @@ export default function CreateShopScreen() {
         keyboardVerticalOffset={80}
       >
         <View style={styles.container}>
-          <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+          <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
           <View style={styles.header}>
             <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
               <MaterialIcons name="arrow-back" size={26} color="white" />

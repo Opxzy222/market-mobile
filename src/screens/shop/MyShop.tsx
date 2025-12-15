@@ -471,7 +471,7 @@ const MyShop = () => {
   if (showAd || (loading && shops.length === 0 && !hasFetched)) {
     return (
       <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
-        <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+        <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#007bff" />
           <Text style={styles.loadingText}>
@@ -484,7 +484,7 @@ const MyShop = () => {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
-      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+      <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
       <LinearGradient colors={["#E3F2FD", "#BBDEFB"]} style={styles.container}>
         {error && shops.length === 0 && (
           <View style={styles.errorContainer}>
@@ -555,8 +555,8 @@ const MyShop = () => {
                         onPress={() => navigateToReceiptActions(item.id)}
                         activeOpacity={0.7}
                       >
-                        <MaterialIcons name="receipt" size={28} color="#795548" />
-                        <Text style={styles.actionText}>Receipt</Text>
+                        <MaterialIcons name="bar-chart" size={28} color="#795548" />
+                        <Text style={styles.actionText}>Sales</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         onPress={() => navigateToDetails(item.id)}

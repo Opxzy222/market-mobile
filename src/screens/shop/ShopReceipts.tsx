@@ -64,7 +64,8 @@ const ReceiptCard = React.memo(({ item, handleAction }) => {
                   </View>
                   <View style={styles.statusContainer}>
                     <Chip
-                      style={[styles.statusChip, { backgroundColor: status.color || "#6B7280" }]}
+                    style={[styles.statusChip, { backgroundColor: status.color || "#6B7280" }]}
+                      textStyle={styles.statusChipText}   // ← ADD THIS
                     >
                       <Ionicons name={status.icon || "help-circle-outline"} size={14} color="#FFF" />
                       <Text style={styles.statusText}>{status.label || "Unknown"}</Text>
@@ -81,10 +82,10 @@ const ReceiptCard = React.memo(({ item, handleAction }) => {
                     onPress={() => handleAction(receipt.id, "void")}
                   >
                     <LinearGradient colors={["#6B7280", "#4B5563"]} style={styles.buttonGradient}>
-                      <Ionicons name="remove-outline" size={16} color="#FFF" />
-                      <Text style={styles.actionButtonText}>Void</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
+                    <Ionicons name="remove-outline" size={16} color="#FFF" />
+                    <Text style={styles.actionButtonText}>Void</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
                 )}
               </View>
             </LinearGradient>
@@ -318,26 +319,27 @@ const ShopReceipts = () => {
   );
 
   // Filter receipts
+    // Filter receipts by selected month/year AND active tab status
   const filteredReceipts = useMemo(() => {
+    const startOfMonth = new Date(salesYear, salesMonth, 1);
+    const endOfMonth = new Date(salesYear, salesMonth + 1, 0, 23, 59, 59, 999); // Last day of month
+
     const filtered = receipts.filter((receipt) => {
-      if (!receipt?.id || !receipt?.created_at) {
-        console.warn("Invalid receipt:", receipt);
-        return false;
-      }
+      if (!receipt?.id || !receipt?.created_at) return false;
+
       const receiptDate = new Date(receipt.created_at);
       const receiptStatus = receipt.status?.toLowerCase() || "";
       const tabStatus = activeTab.toLowerCase();
+
       const matchesStatus = tabStatus === "all" || receiptStatus === tabStatus;
-      let matchesDate = true;
-      if (startDate)
-        matchesDate = matchesDate && receiptDate >= new Date(startDate.setHours(0, 0, 0, 0));
-      if (endDate)
-        matchesDate = matchesDate && receiptDate <= new Date(endDate.setHours(23, 59, 59, 999));
-      return matchesStatus && matchesDate;
+      const matchesMonth =
+        receiptDate >= startOfMonth && receiptDate <= endOfMonth;
+
+      return matchesStatus && matchesMonth;
     });
-    console.log("Filtered receipts:", filtered.length);
+
     return filtered.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  }, [receipts, activeTab, startDate, endDate]);
+  }, [receipts, activeTab, salesMonth, salesYear]);
 
   // Prepare FlatList data
   const flatData = useMemo(() => {
@@ -601,7 +603,7 @@ const ShopReceipts = () => {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+        <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <MaterialIcons name="arrow-back" size={24} color="#FFF" />
@@ -619,7 +621,7 @@ const ShopReceipts = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+      <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
@@ -698,7 +700,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 12,
     paddingHorizontal: 16,
-    backgroundColor: "#2563EB",
+    backgroundColor: "#3A7BD5",
     borderBottomLeftRadius: 16,
     borderBottomRightRadius: 16,
   },
@@ -891,9 +893,19 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   statusChip: {
-    borderRadius: 16,
-    maxWidth: 120,
-    paddingHorizontal: 8,
+  borderRadius: 20,
+  paddingHorizontal: 12,
+  paddingVertical: 6,
+  maxWidth: 140,           // ← Increased from 120
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "center",
+  },
+  statusChipText: {
+  fontSize: 13,
+  fontWeight: "700",
+  color: "#FFF",
+  marginLeft: 4,
   },
   statusText: {
     color: "#FFF",
@@ -912,23 +924,24 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   actionButton: {
-    borderRadius: 8,
-  },
-  actionButtonText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#FFF",
-    marginLeft: 4,
-    fontFamily: "System",
-    alignSelf: "center",
-    flexShrink: 0,
+  flex: 1,
+  borderRadius: 12,
+  overflow: "hidden",
+},
+actionButtonText: {
+  color: "#FFF",
+  fontSize: 14,
+  fontWeight: "600",
+  textAlign: "center",
   },
   buttonGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    borderRadius: 8,
+  flexDirection: "row",           // ← Critical fix!
+  alignItems: "center",
+  justifyContent: "center",
+  paddingVertical: 10,
+  paddingHorizontal: 16,
+  borderRadius: 12,
+  gap: 8,                         // ← Space between icon and text
   },
   modalOverlay: {
     flex: 1,
@@ -1010,7 +1023,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   picker: {
-    backgroundColor: "#F9FAFB",
+    backgroundColor: "#607B8F",
     borderRadius: 8,
     marginBottom: 12,
   },

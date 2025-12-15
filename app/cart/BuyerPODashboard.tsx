@@ -1,7 +1,7 @@
 // screens/BuyerPODashboard.tsx
-// DECEMBER 5, 2025 — FINAL PERFECTION: Always Fresh Once + Perfect Status + No Caching
+// DECEMBER 6, 2025 — FINAL PERFECTION: Real-time Pending + Full History + pickup_pending in Pending
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,9 +11,8 @@ import {
   RefreshControl,
   ActivityIndicator,
   StatusBar,
-  Image,
+  Image, Platform,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
   useSharedValue,
@@ -23,10 +22,11 @@ import Animated, {
   withSequence,
   withSpring,
 } from 'react-native-reanimated';
-import { useRouter, useFocusEffect } from 'expo-router'; // ← Added useFocusEffect
+import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../../src/api';
 import { format, isToday, isYesterday, parseISO } from 'date-fns';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 
 type PO = {
   id: string;
@@ -41,23 +41,21 @@ type PO = {
   pickup_expires_at?: string | null;
   pickup_code?: string | null;
   show_pickup_code: boolean;
-  requires_action?: boolean;
+  requires_action: boolean;
   updated_at: string;
 };
 
 type TabType = 'all' | 'pending' | 'completed' | 'cancelled';
 
-// PERFECT STATUS + TIMER LOGIC — DEFINED EARLY
 const getStatusConfig = (po: PO) => {
   if (po.status === 'completed') return { text: 'Completed', color: '#10B981' };
   if (po.status === 'cancelled') return { text: 'Cancelled by you', color: '#6B7280' };
   if (po.status === 'cancelled_by_seller') return { text: 'Seller cancelled', color: '#EF4444' };
   if (po.status === 'rejected') return { text: 'Seller rejected', color: '#EF4444' };
   if (po.status === 'expired') return { text: 'Offer expired', color: '#6B7280' };
-  //if (po.status === 'cancelled') return { text: 'Cancelled', color: '#6B7280' };
 
   if (po.status === 'pickup_pending') return { text: 'Ready for Pickup', color: '#10B981' };
-  if (po.requires_action) return { text: 'Your Turn!', color: '#DC2626', pulse: true };
+  if (po.requires_action && po.status !== 'expired') return { text: 'Your Turn!', color: '#DC2626', pulse: true };
   if (po.last_counter === 'buyer') return { text: 'You countered', color: '#7C3AED' };
   if (po.last_counter === 'seller') return { text: 'Seller countered', color: '#EA580C' };
   return { text: 'Waiting for seller', color: '#2563EB' };
@@ -79,11 +77,14 @@ const getTimerText = (po: PO): string | null => {
 };
 
 export default function BuyerPODashboard() {
-  const [allPos, setAllPos] = useState<PO[]>([]);
-  const [activePos, setActivePos] = useState<PO[]>([]);
+  const [allPos, setAllPos] = useState<PO[]>([]);           // Full history from API
+  const [pendingPos, setPendingPos] = useState<PO[]>([]);   // Real-time from WebSocket (pending + pickup_pending)
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  const wsRef = useRef<WebSocket | null>(null);
   const router = useRouter();
 
   const opacity = useSharedValue(0);
@@ -102,7 +103,54 @@ export default function BuyerPODashboard() {
     pulse.value = withRepeat(withSequence(withSpring(1.32), withSpring(1)), -1, true);
   }, []);
 
-  // ALWAYS FETCH FRESH DATA — EVERY TIME SCREEN IS FOCUSED (mount or return)
+  // Load userId
+  useEffect(() => {
+    const fetchUserId = async () => {
+      const id = await AsyncStorage.getItem('user_id');
+      setUserId(id);
+    };
+    fetchUserId();
+  }, []);
+
+  // WEBSOCKET: ONLY PENDING + pickup_pending — NEVER TOUCHES allPos
+  useEffect(() => {
+    if (!userId) return;
+
+    const connect = () => {
+      const protocol = __DEV__ ? 'ws' : 'wss';
+      const url = `${protocol}://api.gogo-digital.com/ws/po/buyer/${userId}/`;
+
+      console.log('BUYER WS: Connecting →', url);
+      wsRef.current = new WebSocket(url);
+
+      wsRef.current.onopen = () => console.log('BUYER WS: Connected');
+
+      wsRef.current.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.type === 'po_update' && Array.isArray(data.pos)) {
+            const sorted = data.pos.sort((a: any, b: any) =>
+              new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+            );
+            setPendingPos(sorted);
+            setLoading(false);
+          }
+        } catch (err) {
+          console.error('BUYER WS Parse error:', err);
+        }
+      };
+
+      wsRef.current.onclose = () => {
+        console.log('BUYER WS: Reconnecting...');
+        setTimeout(connect, 2000);
+      };
+    };
+
+    connect();
+    return () => wsRef.current?.close();
+  }, [userId]);
+
+  // API: FULL HISTORY — EVERY TIME SCREEN FOCUSED
   useFocusEffect(
     useCallback(() => {
       let isMounted = true;
@@ -132,7 +180,7 @@ export default function BuyerPODashboard() {
             pickup_expires_at: p.pickup_expires_at,
             pickup_code: p.pickup_code,
             show_pickup_code: p.show_pickup_code || false,
-            requires_action: p.requires_action || false,
+            requires_action: p.requires_action === true,
             updated_at: p.updated_at || new Date().toISOString(),
           }));
 
@@ -142,9 +190,6 @@ export default function BuyerPODashboard() {
 
           if (isMounted) {
             setAllPos(sortedAll);
-            setActivePos(sortedAll.filter(p => 
-              ['proposed', 'countered', 'pickup_pending'].includes(p.status)
-            ));
           }
         } catch (err) {
           console.error('Load failed:', err);
@@ -166,11 +211,40 @@ export default function BuyerPODashboard() {
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    // Reuse the same logic as above
-    loadPOs(); // This will trigger again
+    // Trigger API reload
+    const trigger = async () => {
+      try {
+        const token = await AsyncStorage.getItem('sessionToken');
+        if (!token) return;
+        const res = await api.get('/po/buyer/list/', { headers: { Authorization: token } });
+        const formatted = (res.data.pos || []).map((p: any): PO => ({
+          id: p.id,
+          shop_name: p.shop_name || 'Unknown Shop',
+          shop_image_url: p.shop_image_url || null,
+          total: p.total || '0',
+          item_count: p.item_count || 0,
+          status: p.status || 'proposed',
+          version: p.version || 1,
+          last_counter: p.last_counter || null,
+          expires_at: p.expires_at,
+          pickup_expires_at: p.pickup_expires_at,
+          pickup_code: p.pickup_code,
+          show_pickup_code: p.show_pickup_code || false,
+          requires_action: p.requires_action === true,
+          updated_at: p.updated_at || new Date().toISOString(),
+        }));
+        const sorted = formatted.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+        setAllPos(sorted);
+      } catch (err) {
+        console.error('Refresh failed:', err);
+      } finally {
+        setRefreshing(false);
+      }
+    };
+    trigger();
   }, []);
 
-  const activeCount = activePos.filter(p => p.requires_action).length;
+  const activeCount = pendingPos.filter(p => p.requires_action && p.status !== 'expired').length;
 
   const groupedPos = React.useMemo(() => {
     if (activeTab !== 'all') return null;
@@ -192,7 +266,7 @@ export default function BuyerPODashboard() {
   }, [allPos, activeTab]);
 
   const filteredPos = activeTab === 'all' ? allPos :
-                     activeTab === 'pending' ? activePos :
+                     activeTab === 'pending' ? pendingPos :
                      activeTab === 'completed' ? allPos.filter(p => p.status === 'completed') :
                      allPos.filter(p => [
                        'cancelled_by_buyer',
@@ -202,7 +276,7 @@ export default function BuyerPODashboard() {
                        'cancelled'
                      ].includes(p.status));
 
-  if (loading && allPos.length === 0) {
+  if (loading && allPos.length === 0 && pendingPos.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
@@ -218,22 +292,21 @@ export default function BuyerPODashboard() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
 
-      {/* BLUE HEADER */}
       <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.navigate("(tabs)/account")} style={styles.backButton}>
+          <MaterialIcons name="arrow-back-ios" size={26} color="#FFF" />
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>Your Orders</Text>
       </View>
 
-      {/* ACTION ORB */}
       {activeCount > 0 && (
         <View style={styles.actionOrbContainer}>
           <Animated.View style={[styles.actionOrb, pulseStyle]}>
             <Text style={styles.actionOrbNumber}>{activeCount}</Text>
           </Animated.View>
-          <Text style={styles.actionOrbText}>Action Required</Text>
         </View>
       )}
 
-      {/* TABS */}
       <View style={styles.tabBar}>
         {(['all', 'pending', 'completed', 'cancelled'] as TabType[]).map(tab => (
           <TouchableOpacity
@@ -286,7 +359,10 @@ export default function BuyerPODashboard() {
 
 const UltraCompactCard = ({ po, router }: { po: PO; router: any }) => {
   const status = getStatusConfig(po);
-  const timerText = getTimerText(po); // ← Now uses clean logic
+  const timerText = getTimerText(po);
+
+  // ACTION REQUIRED ONLY IF NOT EXPIRED OR TERMINAL
+  const showActionBadge = po.requires_action && !['expired', 'completed', 'cancelled', 'cancelled_by_seller', 'rejected'].includes(po.status);
 
   return (
     <TouchableOpacity
@@ -294,7 +370,6 @@ const UltraCompactCard = ({ po, router }: { po: PO; router: any }) => {
       activeOpacity={0.95}
       onPress={() => router.push(`/cart/BuyerPOEditor?poId=${po.id}`)}
     >
-      {/* TOP ROW */}
       <View style={styles.topRow}>
         <View style={styles.shopRow}>
           <View style={styles.shopAvatar}>
@@ -313,7 +388,6 @@ const UltraCompactCard = ({ po, router }: { po: PO; router: any }) => {
         <Text style={styles.price}>₦{parseFloat(po.total).toLocaleString()}</Text>
       </View>
 
-      {/* MIDDLE ROW */}
       <View style={styles.middleRow}>
         <View style={styles.statusBox}>
           <View style={[styles.dot, { backgroundColor: status.color }]} />
@@ -330,7 +404,6 @@ const UltraCompactCard = ({ po, router }: { po: PO; router: any }) => {
         )}
       </View>
 
-      {/* PICKUP CODE */}
       {po.status === 'pickup_pending' && po.show_pickup_code && po.pickup_code && (
         <View style={styles.pickupBadge}>
           <Ionicons name="shield-checkmark" size={15} color="#3B82F6" />
@@ -339,8 +412,7 @@ const UltraCompactCard = ({ po, router }: { po: PO; router: any }) => {
         </View>
       )}
 
-      {/* ACTION REQUIRED */}
-      {po.requires_action && (
+      {showActionBadge && (
         <View style={styles.actionBadge}>
           <Text style={styles.actionText}>ACTION REQUIRED</Text>
         </View>
@@ -349,19 +421,40 @@ const UltraCompactCard = ({ po, router }: { po: PO; router: any }) => {
   );
 };
 
-// YOUR ORIGINAL STYLES — 100% UNTOUCHED (only fixed blue → #3B82F6)
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F8FAFC' },
 
   header: {
-    paddingVertical: 22,
-    paddingHorizontal: 20,
-    backgroundColor: '#3A7BD5',
-    borderBottomLeftRadius: 36,
-    borderBottomRightRadius: 36,
-    elevation: 12,
-  },
-  headerTitle: { fontSize: 23, fontWeight: '900', color: '#FFF', textAlign: 'center' },
+      flexDirection: "row",
+      alignItems: "center",
+      paddingVertical: 16,
+      paddingHorizontal: 12,
+      backgroundColor: "#3A7BD5",
+      borderBottomLeftRadius: 35,
+      borderBottomRightRadius: 35,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.2,
+      shadowRadius: 6,
+      elevation: 6,
+    },
+    backButton: {
+      padding: 5,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    },
+    headerTitle: {
+      fontSize: 22,
+      fontWeight: "700",
+      color: "#FFFFFF",
+      flex: 1,
+      textAlign: "center",
+      fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
+      letterSpacing: 0.5,
+    },
+    headerSpacer: {
+      width: 50,
+    },
 
   actionOrbContainer: {
     position: 'absolute',
@@ -371,16 +464,15 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   actionOrb: {
-    width: 23,
-    height: 23,
-    borderRadius: 29,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: '#3B82F6',
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 16,
   },
-  actionOrbNumber: { fontSize: 16, fontWeight: '900', color: '#FFF' },
-  actionOrbText: { marginTop: 6, fontSize: 10, fontWeight: '800', color: '#3B82F6' },
+  actionOrbNumber: { fontSize: 24, fontWeight: '900', color: '#FFF' },
 
   tabBar: {
     flexDirection: 'row',

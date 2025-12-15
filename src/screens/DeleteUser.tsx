@@ -61,7 +61,7 @@ const DeleteAccountScreen = () => {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+      <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
       <LinearGradient colors={['#F7FAFC', '#E5E7EB']} style={styles.linearContainer}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.navigate("(tabs)/profile")} style={styles.backButton}>

@@ -1,12 +1,5 @@
 package com.timeflies.gogomarket
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.content.Context
-import android.os.Build
-import com.google.firebase.messaging.FirebaseMessagingService
-
-
 import android.app.Application
 import android.content.res.Configuration
 
@@ -61,22 +54,4 @@ class MainApplication : Application(), ReactApplication {
     super.onConfigurationChanged(newConfig)
     ApplicationLifecycleDispatcher.onConfigurationChanged(this, newConfig)
   }
-}
-
-class MyFirebaseMessagingService : FirebaseMessagingService() {
-    override fun onCreate() {
-        super.onCreate()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                "high_priority_channel",
-                "High Priority Notifications",
-                NotificationManager.IMPORTANCE_HIGH
-            )
-            channel.description = "High priority channel for banners"
-            channel.enableVibration(true)
-            channel.vibrationPattern = longArrayOf(100, 200, 300, 400)
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            manager.createNotificationChannel(channel)
-        }
-    }
 }

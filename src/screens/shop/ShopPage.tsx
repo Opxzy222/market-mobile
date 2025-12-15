@@ -68,14 +68,14 @@ const ShopPage = () => {
   const { shopId } = params;
   const router = useRouter();
 
-  const [shop, setShop] = useState(null);
+  const [shop, setShop] = useState<any>(null);
   const [reviews, setReviews] = useState([]);
   const [followerCount, setFollowerCount] = useState(0);
   const [followers, setFollowers] = useState([]);
   const [posts, setPosts] = useState([]);
   const [activeTab, setActiveTab] = useState('posts');
   const [error, setError] = useState('');
-  const [sessionId, setSessionId] = useState(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [plan, setPlan] = useState<string | null>(null);
   const [subscriptionLoading, setSubscriptionLoading] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -84,6 +84,7 @@ const ShopPage = () => {
   const [descriptionAnim] = useState(new Animated.Value(0));
   const [statusAnim] = useState(new Animated.Value(0));
   const [isImageModalVisible, setIsImageModalVisible] = useState(false);
+  const [errorType, setErrorType] = useState<'not_found' | 'deactivated' | 'generic'>('generic');
 
   // Load subscription from AsyncStorage
   const loadSubscription = async () => {
@@ -103,7 +104,6 @@ const ShopPage = () => {
     }
   };
 
-  // Re-load subscription every time screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
       loadSubscription();
@@ -123,8 +123,8 @@ const ShopPage = () => {
       const response = await api.get(`/shops/${shopId}/combined/`, {
         headers: { Authorization: sessionId },
       });
+
       const data = response.data;
-      console.log('Shop image from API:', data.shop.image);
 
       setShop({
         name: data.shop.name,
@@ -138,29 +138,38 @@ const ShopPage = () => {
         latitude: data.shop.geo_location?.latitude,
         longitude: data.shop.geo_location?.longitude,
         is_open: data.shop.is_open,
-        average_rating:
-          typeof data.shop.average_rating === 'number'
-            ? data.shop.average_rating
-            : null,
+        average_rating: typeof data.shop.average_rating === 'number' ? data.shop.average_rating : null,
         owner_is_verified: data.shop.owner_is_verified || false,
         created_at: data.shop.created_at,
       });
+
       setReviews(data.reviews);
       setFollowerCount(data.follower_count);
       setFollowers(data.followers || []);
       setPosts(data.posts);
       setError('');
+      setErrorType('generic');
+
       if (data.shop.image) {
-        const imageUrl = getFullUrl(data.shop.image);
-        console.log('Prefetching shop image:', imageUrl);
-        Image.prefetch(imageUrl);
+        Image.prefetch(getFullUrl(data.shop.image));
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching shop data:', error);
-      if (error.response && error.response.status === 404) {
-        setError('This space no longer exists or has been removed.');
+
+      if (error.response) {
+        if (error.response.status === 404) {
+          setError('This space no longer exists or has been removed.');
+          setErrorType('not_found');
+        } else if (error.response.status === 410) {
+          setError('This shop has been closed by the owner.');
+          setErrorType('deactivated');
+        } else {
+          setError('Failed to load space. Please try again later.');
+          setErrorType('generic');
+        }
       } else {
-        setError('Failed to fetch space data. Please try again later.');
+        setError('Network error. Please check your connection.');
+        setErrorType('generic');
       }
     }
   };
@@ -324,42 +333,61 @@ const ShopPage = () => {
     );
   }
 
-  if (error) {
-    return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.background }}>
-        <StatusBar barStyle="light-content" backgroundColor={COLORS.statusBar} />
-        <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.errorContainer}>
-          <MaterialIcons name="error-outline" size={48} color="#EF4444" />
-          <Text style={styles.errorText}>{error}</Text>
-          {error !== 'This space no longer exists or has been removed.' ? (
-            <TouchableOpacity style={styles.reloadButton} onPress={fetchShopData}>
-              <LinearGradient
-                colors={['#3B82F6', '#1D4ED8']}
-                style={styles.reloadButtonGradient}
-              >
-                <MaterialIcons name="refresh" size={24} color="#FFF" />
-                <Text style={styles.reloadButtonText}>Retry</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={styles.backButtonError}
-              onPress={() => router.back()}
-            >
-              <LinearGradient
-                colors={['#3B82F6', '#1D4ED8']}
-                style={styles.backButtonGradient}
-              >
-                <MaterialIcons name="arrow-back" size={24} color="#FFF" />
-                <Text style={styles.backButtonText}>Go Back</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          )}
-        </LinearGradient>
-      </SafeAreaView>
-    );
-  }
+    {error && (
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#FFF' }}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFF" />
 
+      {/* Shop Truly Gone (404) */}
+      {errorType === 'not_found' && (
+        <LinearGradient colors={['#FEF3C7', '#FDE68A']} style={styles.errorContainer}>
+          <MaterialIcons name="search-off" size={72} color="#DC2626" />
+          <Text style={styles.errorTitle}>Space Not Found</Text>
+          <Text style={styles.errorText}>
+            This space no longer exists or has been permanently removed.
+          </Text>
+          <TouchableOpacity style={styles.homeButton} onPress={() => router.replace('/(tabs)/shop')}>
+            <LinearGradient colors={['#DC2626', '#B91C1C']} style={styles.homeButtonGradient}>
+              <MaterialIcons name="home" size={24} color="#FFF" />
+              <Text style={styles.homeButtonText}>Go Home</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </LinearGradient>
+      )}
+
+      {/* Shop Closed / Soft-Deleted (410) */}
+      {errorType === 'deactivated' && (
+        <LinearGradient colors={['#FEFCE8', '#FEF08A']} style={styles.errorContainer}>
+          <MaterialIcons name="storefront" size={72} color="#92400E" />
+          <Text style={styles.errorTitle}>Space Closed</Text>
+          <Text style={styles.errorText}>
+            This space has been closed by the owner.
+          </Text>
+          
+          <TouchableOpacity style={styles.homeButton} onPress={() => router.replace("/(tabs)/shop")}>
+            <LinearGradient colors={['#D97706', '#F59E0B']} style={styles.homeButtonGradient}>
+              <MaterialIcons name="home" size={24} color="#FFF" />
+              <Text style={styles.homeButtonText}>Go Home</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </LinearGradient>
+      )}
+
+      {/* Network / Other Errors */}
+      {errorType === 'generic' && (
+        <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.errorContainer}>
+          <MaterialIcons name="wifi-off" size={64} color="#3B82F6" />
+          <Text style={styles.errorTitle}>Connection Issue</Text>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.reloadButton} onPress={fetchShopData}>
+            <LinearGradient colors={['#3B82F6', '#1D4ED8']} style={styles.reloadButtonGradient}>
+              <MaterialIcons name="refresh" size={24} color="#FFF" />
+              <Text style={styles.reloadButtonText}>Try Again</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </LinearGradient>
+      )}
+    </SafeAreaView>
+  )}
   // Free user = not standard or premium
   const isFreeUser = !['standard', 'premium'].includes(plan || '');
 
@@ -1030,10 +1058,10 @@ const styles = StyleSheet.create({
     elevation: 5,
     borderWidth: 1,
     borderColor: 'rgba(0, 0, 0, 0.05)',
-    shadowColor: COLORS.white,
-    shadowOffset: { width: -4, height: -4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
+    //shadowColor: COLORS.white,
+    //shadowOffset: { width: -4, height: -4 },
+    //shadowOpacity: 0.5,
+    //shadowRadius: 8,
   },
   descriptionHeader: {
     flexDirection: 'row',
@@ -1257,10 +1285,10 @@ const styles = StyleSheet.create({
     elevation: 5,
     borderWidth: 1,
     borderColor: 'rgba(0, 0, 0, 0.05)',
-    shadowColor: COLORS.white,
-    shadowOffset: { width: -4, height: -4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
+    //shadowColor: COLORS.white,
+    //shadowOffset: { width: -4, height: -4 },
+    //shadowOpacity: 0.5,
+    //shadowRadius: 8,
   },
   loadingLogoContainer: {
     marginBottom: SPACING.lg,
@@ -1355,6 +1383,43 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
     borderRadius: SPACING.lg,
     zIndex: 20,
+  },
+    errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+  },
+  errorTitle: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#1F2937',
+    marginTop: 20,
+    marginBottom: 12,
+  },
+  errorSubtitle: {
+    fontSize: 16,
+    color: '#92400E',
+    textAlign: 'center',
+    marginBottom: 32,
+    lineHeight: 24,
+  },
+  homeButton: {
+    marginTop: 20,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  homeButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    gap: 12,
+  },
+  homeButtonText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '700',
   },
 });
 

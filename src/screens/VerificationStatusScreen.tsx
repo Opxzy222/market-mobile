@@ -104,7 +104,7 @@ const VerificationStatusScreen = () => {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+      <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>

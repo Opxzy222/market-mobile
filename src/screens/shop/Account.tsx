@@ -64,7 +64,7 @@ const Account = () => {
 
   return (
     <>
-      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+      <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
       
       {/* LinearGradient as absolute background */}
       <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={StyleSheet.absoluteFillObject} />
@@ -147,8 +147,8 @@ const Account = () => {
               })
             }
           >
-            <MaterialIcons name="card-membership" size={24} color="#5A8DEE" />
-            <Text style={styles.optionText}>Order</Text>
+            <MaterialIcons name="shopping-cart-checkout" size={24} color="#5A8DEE" />
+            <Text style={styles.optionText}>My Orders</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.optionCard}

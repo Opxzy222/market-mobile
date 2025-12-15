@@ -248,7 +248,7 @@ const ShopHomePage = () => {
   if (subscriptionLoading || isLoading) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: '#F7FAFC' }]}>
-        <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+        <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
         <View style={styles.loadingContainer}>
           <MaterialIcons name="store" size={40} color="#2563EB" />
           <Text style={styles.loadingText}>Loading your dashboard...</Text>
@@ -260,7 +260,7 @@ const ShopHomePage = () => {
   if (networkError) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: '#F7FAFC' }]}>
-        <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+        <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>Failed to load data due to a network issue.</Text>
           <TouchableOpacity style={styles.reloadButton} onPress={handleReload}>
@@ -277,7 +277,7 @@ const ShopHomePage = () => {
   // ───── Main Render ─────
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: '#F7FAFC' }]} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#2563EB" />
+      <StatusBar barStyle="dark-content" backgroundColor="#3A7BD5" />
       <View style={styles.headerContainer}>
         <Header />
       </View>

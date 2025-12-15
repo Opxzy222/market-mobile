@@ -1,4 +1,12 @@
 # -------------------------------------------------
+# QoreID SDK (REQUIRED - prevents crashes in release)
+# -------------------------------------------------
+-keep class com.qoreid.sdk.** { *; }
+-dontshrink
+-dontobfuscate
+-dontoptimize
+
+# -------------------------------------------------
 # React Native core
 # -------------------------------------------------
 -keep class com.facebook.react.** { *; }
@@ -47,3 +55,29 @@
 -keepattributes InnerClasses
 -dontwarn okio.**
 -dontwarn okhttp3.**
+
+# expo-image full protection - fixes enum conversion crash in release builds
+-keep class expo.modules.image.** { *; }
+-keepclassmembers class expo.modules.image.** { *; }
+-keep enum expo.modules.image.** { *; }
+-keepclassmembers enum expo.modules.image.** { *; }
+-keepattributes *Annotation*
+-keepattributes Signature
+-keepattributes InnerClasses
+-keepattributes EnclosingMethod
+-keepattributes RuntimeVisibleAnnotations
+-dontwarn expo.modules.image.**
+-dontoptimize
+-dontshrink
+
+# ADDITIONAL RULES TO FIX expo-modules-kotlin enum type converter crash (e.g., EnumTypeConverter primary constructor issue) in R8 full mode
+-keep class expo.modules.kotlin.** { *; }
+-keepclassmembers class expo.modules.kotlin.** { *; }
+-keepclassmembers enum expo.modules.** { *; }
+-keepclassmembers enum ** {
+    public <init>(...);
+}
+-dontoptimize
+-dontshrink
+-dontwarn expo.modules.kotlin.**
+-dontwarn expo.modules.kotlin.types.**

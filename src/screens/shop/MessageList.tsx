@@ -388,7 +388,7 @@ const MessageList = () => {
 
   return (
     <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+      <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
       <LinearGradient
         colors={['#3A7BD5', '#3A6073']}
         style={styles.headerContainer}

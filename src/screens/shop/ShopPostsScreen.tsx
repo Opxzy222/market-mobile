@@ -10,9 +10,8 @@ import {
   FlatList,
   TouchableOpacity,
   Modal,
-  Dimensions,
+  Dimensions, Image
 } from "react-native";
-import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import ImageViewer from "react-native-image-zoom-viewer";
 import { Ionicons } from "@expo/vector-icons";
@@ -60,17 +59,16 @@ const Thumbnail = ({ media, isVideo }) => {
         </View>
       )}
       <Image
-        source={{ uri: thumbnailUri }}
-        style={[styles.thumbnail, isThumbnailLoading && { opacity: 0 }]}
-        contentFit="cover"
-        cachePolicy="memory-disk"
-        onLoadStart={() => setIsThumbnailLoading(true)}
-        onLoad={() => setIsThumbnailLoading(false)}
-        onError={(e) => {
-          console.error("Thumbnail load error:", thumbnailUri, e.error);
-          setIsThumbnailLoading(false);
-        }}
-      />
+  source={{ uri: thumbnailUri }}
+  style={[styles.thumbnail, isThumbnailLoading && { opacity: 0 }]}
+  resizeMode="cover"           // ← native equivalent
+  onLoadStart={() => setIsThumbnailLoading(true)}
+  onLoadEnd={() => setIsThumbnailLoading(false)}   // ← use onLoadEnd (fires on success or error)
+  onError={(e) => {
+    console.error("Thumbnail load error:", thumbnailUri, e.nativeEvent.error);
+    setIsThumbnailLoading(false);
+  }}
+/>
     </View>
   );
 };
@@ -114,23 +112,18 @@ const CustomImageViewer = ({ imageUrls, index, onChange, isFullscreen }) => {
       />
       {imageUrls[index] && (
         <Image
-          source={{ uri: imageUrls[index].url }}
-          style={{ width: 0, height: 0, position: "absolute" }}
-          cachePolicy="none" // Disable caching for hidden Image to ensure onLoad fires
-          onLoad={() => {
-            setIsImageLoading(false);
-            if (timeoutRef.current) {
-              clearTimeout(timeoutRef.current);
-            }
-          }}
-          onError={(e) => {
-            setIsImageLoading(false);
-            console.error("Image preload error:", imageUrls[index].url, e.error);
-            if (timeoutRef.current) {
-              clearTimeout(timeoutRef.current);
-            }
-          }}
-        />
+  source={{ uri: imageUrls[index].url }}
+  style={{ width: 0, height: 0, position: "absolute" }}
+  onLoadEnd={() => {
+    setIsImageLoading(false);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  }}
+  onError={(e) => {
+    setIsImageLoading(false);
+    console.error("Image preload error:", imageUrls[index].url, e.nativeEvent.error);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  }}
+/>
       )}
     </View>
   );
@@ -549,7 +542,7 @@ const ShopPostsScreen = () => {
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
       >
-        <StatusBar barStyle="light-content" backgroundColor="#2563EB" translucent={true} />
+        <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" translucent={true} />
         <View style={styles.header}>
           <TouchableOpacity
             onPress={() => router.navigate("(tabs)/myshop")}

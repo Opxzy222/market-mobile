@@ -49,7 +49,7 @@ const ProfileScreen = () => {
 
   return (
     <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+      <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         {userId && (
           <View style={styles.profileCard}>

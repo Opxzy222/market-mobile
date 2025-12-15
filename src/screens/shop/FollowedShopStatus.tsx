@@ -489,7 +489,7 @@ const FollowedShopStatusScreen = () => {
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
     >
-      <StatusBar barStyle="dark-content" backgroundColor="#2563EB" translucent />
+      <StatusBar barStyle="dark-content" backgroundColor="#3A7BD5" translucent />
       {loading ? (
         <ActivityIndicator size="large" color="#25D366" style={styles.loader} />
       ) : errorMessage ? (

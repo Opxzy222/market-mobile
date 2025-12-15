@@ -1478,7 +1478,7 @@ const StartConversation = () => {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: "#E3F2FD", }} edges={["top", "left", "right"]}>
-      <StatusBar barStyle="light-content" backgroundColor='#2563EB' />
+      <StatusBar barStyle="light-content" backgroundColor='#3A7BD5' />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior="padding"

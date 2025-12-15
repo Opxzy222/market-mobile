@@ -83,12 +83,12 @@ const OTPVerificationScreen = () => {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+      <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
       <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={() => router.push('/PhoneVerification')}
             style={styles.backButton}
           >
             <MaterialIcons name="arrow-back" size={26} color="white" />

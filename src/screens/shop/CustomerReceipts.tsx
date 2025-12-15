@@ -65,11 +65,12 @@ const ReceiptCard = React.memo(({ item, handleAction }) => {
                 </View>
                 <View style={styles.statusContainer}>
                   <Chip
-                    style={[styles.statusChip, { backgroundColor: status.color || "#6B7280" }]}
-                  >
-                    <Ionicons name={status.icon || "help-circle-outline"} size={14} color="#FFF" />
-                    <Text style={styles.statusText}>{status.label || "Unknown"}</Text>
-                  </Chip>
+  style={[styles.statusChip, { backgroundColor: status.color || "#6B7280" }]}
+  textStyle={styles.statusChipText}   // ← Add this
+>
+  <Ionicons name={status.icon || "help-circle-outline"} size={14} color="#FFF" />
+  <Text style={styles.statusText}>{status.label || "Unknown"}</Text>
+</Chip>
                 </View>
               </View>
             </View>
@@ -79,23 +80,24 @@ const ReceiptCard = React.memo(({ item, handleAction }) => {
               {receipt.status?.toLowerCase() === "pending" && (
                 <>
                   <TouchableOpacity
-                    style={styles.actionButton}
-                    onPress={() => handleAction(receipt.id, "accept")}
-                  >
-                    <LinearGradient colors={["#22C55E", "#16A34A"]} style={styles.buttonGradient}>
-                      <Ionicons name="checkmark-outline" size={16} color="#FFF" />
-                      <Text style={styles.actionButtonText}>Accept</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.actionButton, styles.rejectButton]}
-                    onPress={() => handleAction(receipt.id, "reject")}
-                  >
-                    <LinearGradient colors={["#EF4444", "#DC2626"]} style={styles.buttonGradient}>
-                      <Ionicons name="close-outline" size={16} color="#FFF" />
-                      <Text style={styles.actionButtonText}>Reject</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
+  style={styles.actionButton}
+  onPress={() => handleAction(receipt.id, "accept")}
+>
+  <LinearGradient colors={["#22C55E", "#16A34A"]} style={styles.buttonGradient}>
+    <Ionicons name="checkmark-outline" size={16} color="#FFF" />
+    <Text style={styles.actionButtonText}>Accept</Text>
+  </LinearGradient>
+</TouchableOpacity>
+
+<TouchableOpacity
+  style={[styles.actionButton, styles.rejectButton]}
+  onPress={() => handleAction(receipt.id, "reject")}
+>
+  <LinearGradient colors={["#EF4444", "#DC2626"]} style={styles.buttonGradient}>
+    <Ionicons name="close-outline" size={16} color="#FFF" />
+    <Text style={styles.actionButtonText}>Reject</Text>
+  </LinearGradient>
+</TouchableOpacity>
                 </>
               )}
             </View>
@@ -607,7 +609,7 @@ const CustomerReceipts = () => {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+        <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.navigate("(tabs)/account")} style={styles.backButton}>
             <MaterialIcons name="arrow-back" size={24} color="#FFF" />
@@ -630,7 +632,7 @@ const CustomerReceipts = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#2563EB" />
+      <StatusBar barStyle="light-content" backgroundColor="#3A7BD5" />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <MaterialIcons name="arrow-back" size={24} color="#FFF" />
@@ -713,7 +715,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 12,
     paddingHorizontal: 16,
-    backgroundColor: "#2563EB",
+    backgroundColor: "#3A7BD5",
     borderBottomLeftRadius: 16,
     borderBottomRightRadius: 16,
   },
@@ -905,9 +907,18 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   statusChip: {
-    borderRadius: 16,
-    maxWidth: 120,
-    paddingHorizontal: 8,
+  borderRadius: 20,
+  paddingHorizontal: 10,
+  paddingVertical: 4,
+  maxWidth: 140,  // ← Was too small before
+  flexDirection: "row",
+  alignItems: "center",
+  },
+  statusChipText: {
+  fontSize: 13,
+  fontWeight: "700",
+  color: "#FFF",
+  marginLeft: 4,
   },
   statusText: {
     color: "#FFF",
@@ -926,26 +937,28 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   actionButton: {
-    borderRadius: 8,
+  flex: 1,
+  borderRadius: 10,
+  overflow: "hidden",
   },
   rejectButton: {
     backgroundColor: "transparent",
   },
   actionButtonText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#FFF",
-    marginLeft: 4,
-    fontFamily: "System",
-    alignSelf: "center",
-  },
+  color: "#FFF",
+  fontSize: 14,
+  fontWeight: "600",
+  textAlign: "center",
+},
   buttonGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    borderRadius: 8,
-  },
+  flexDirection: "row",           // ← Critical!
+  alignItems: "center",
+  justifyContent: "center",
+  paddingVertical: 9,
+  paddingHorizontal: 14,
+  borderRadius: 10,
+  gap: 6,                         // ← Space between icon and text
+},
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
@@ -1027,7 +1040,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   picker: {
-    backgroundColor: "#F9FAFB",
+    backgroundColor: "#607B8F",
     borderRadius: 8,
     marginBottom: 12,
   },
