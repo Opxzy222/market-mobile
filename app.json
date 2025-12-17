@@ -8,6 +8,7 @@
     "scheme": "gogo-mobile",
     "userInterfaceStyle": "automatic",
     "sdkVersion": "53.0.0",
+    "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/icon2.png",
       "resizeMode": "contain",
@@ -75,7 +76,6 @@
       "runtimeVersion": "2.0.0",
       "plugins": [
         [
-          "react-native-edge-to-edge",
           {
             "android": {
               "parentTheme": "Default",
