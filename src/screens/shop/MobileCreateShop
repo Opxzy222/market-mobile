@@ -1,678 +1,231 @@
-import React, { useState, useEffect } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Pressable,
-  ScrollView,
-  Alert,
-} from "react-native";
-import { SelectList } from "react-native-dropdown-select-list";
-import { MultiSelect } from "react-multi-select-component";
-import * as Location from "expo-location";
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter } from "expo-router";
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import axios from "axios";
-import DateTimePickerModal from "react-native-modal-datetime-picker";
-import { Provider, Button, Switch } from "react-native-paper";  
-import { TimePickerModal } from "react-native-paper-dates";
-import { Ionicons } from "@expo/vector-icons";
-
-
-export default function CreateShopScreen({ navigation }) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [geoLocation, setGeoLocation] = useState({ lat: "", lng: "" });
-  const [address, setAddress] = useState("");
-  const [categories, setCategories] = useState([]);
-  const [subcategories, setSubcategories] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState(null);
-  const [selectedSubcategories, setSelectedSubcategories] = useState([]);
-  const [geoError, setGeoError] = useState("");
-  const [formErrors, setFormErrors] = useState({});
-  const [sessionId, setSessionId] = useState(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const [locations, setLocations] = useState([]); // Top-level locations
-  const [selectedLocation, setSelectedLocation] = useState(null); // First-level selection
-  const [childLocations, setChildLocations] = useState([]); // Second-level locations
-  const [selectedChildLocation, setSelectedChildLocation] = useState(null); // Second-level selection
-  const [grandChildLocations, setGrandChildLocations] = useState([]); // Third-level locations
-  const [selectedGrandChildLocation, setSelectedGrandChildLocation] = useState(null); // Third-level selection
-
-  const router = useRouter();
-
-  const [is24_7, setIs24_7] = useState(false);
-  const [expandedDay, setExpandedDay] = useState(null);
-  const [openingHours, setOpeningHours] = useState({
-    Monday: { open: null, close: null },
-    Tuesday: { open: null, close: null },
-    Wednesday: { open: null, close: null },
-    Thursday: { open: null, close: null },
-    Friday: { open: null, close: null },
-    Saturday: { open: null, close: null },
-    Sunday: { open: null, close: null },
-  });
-
-  const [selectedDay, setSelectedDay] = useState(null);
-  const [selectedType, setSelectedType] = useState(null); // "open" or "close"
-  const [showTimePicker, setShowTimePicker] = useState(false);
-
-  const handleConfirmTime = ({ hours, minutes }) => {
-    if (selectedDay && selectedType) {
-      const newTime = new Date();
-      newTime.setHours(hours, minutes);
-      setOpeningHours((prevHours) => ({
-        ...prevHours,
-        [selectedDay]: {
-          ...prevHours[selectedDay],
-          [selectedType]: newTime,
-        },
-      }));
-    }
-    setShowTimePicker(false);
-  };
-
-  const formatTime = (time) => {
-    return time ? time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Select Time";
-  };
-
-  // Fetch categories
-  useEffect(() => {
-    const fetchCategories = async () => {
-      try {
-        const response = await api.post(
-          "/category/dropdown-options/"
-        );
-        setCategories(
-          response.data.categories.map((cat) => ({
-            key: cat.id,
-            value: cat.name,
-          }))
-        );
-      } catch (error) {
-        console.error("Error fetching categories:", error);
-      }
-    };
-
-    fetchCategories();
-  }, []);
-
-  // Fetch user ID
-  useEffect(() => {
-    const fetchSessionId = async () => {
-      const sessionIdString = await AsyncStorage.getItem("sessionToken");
-      setSessionId(sessionIdString); // No need to parse as an integer
-    };
-
-    fetchSessionId();
-    console.log(sessionId, 'heya')
-  }, []);
-
-  // Fetch top-level locations
-  useEffect(() => {
-    const fetchTopLevelLocations = async () => {
-      try {
-        const response = await api.post(
-          "/location/states/"
-        );
-        setLocations(
-          response.data.locations.map((loc) => ({
-            key: loc.id,
-            value: loc.name,
-          }))
-        );
-      } catch (error) {
-        console.error("Error fetching locations:", error);
-      }
-    };
-
-    fetchTopLevelLocations();
-  }, []);
-
-  const handleLocationChange = async (selectedOption) => {
-    setSelectedLocation(selectedOption);
-    setSelectedChildLocation(null); // Reset child selection
-    setSelectedGrandChildLocation(null); // Reset grandchild selection
-  
-    try {
-      const formData = new FormData();
-      formData.append("parent_id", selectedOption);
-  
-      const response = await api.post(
-        "/location/children/",
-        formData,
+{
+  "expo": {
+    "name": "Gogo Market",
+    "slug": "gogo-mobile",
+    "version": "2.0.0",
+    "orientation": "default",
+    "icon": "./assets/images/icon2.png",
+    "scheme": "gogo-mobile",
+    "userInterfaceStyle": "automatic",
+    "sdkVersion": "53.0.0",
+    "splash": {
+      "image": "./assets/images/icon2.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.timeflies.gogomarket",
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "remote-notification"
+        ],
+        "NSUserNotificationsUsageDescription": "Allow this app to send you notifications about new followers, reviews, posts, and receipts.",
+        "NSLocationWhenInUseUsageDescription": "Allow this app to use your location to find nearby shops.",
+        "NSMotionUsageDescription": "Allow this app to access motion data to estimate small movements.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "runtimeVersion": "2.0.0"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon2.png",
+        "backgroundImage": "./assets/images/adaptive-background.png"
+      },
+      "package": "com.timeflies.gogomarket",
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.INTERNET",
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_PHONE_STATE",
+        "android.permission.ACTIVITY_RECOGNITION",
+        "com.google.android.gms.permission.AD_ID"
+      ],
+      "intentFilters": [
         {
-          headers: {
-            "Content-Type": "multipart/form-data",
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "gogo-mobile",
+              "host": "verification",
+              "pathPrefix": "/"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ],
+      "buildProperties": {
+        "android.enableProguardInReleaseBuilds": true
+      },
+      "runtimeVersion": "2.0.0"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-updates",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow this app to access your photos and videos to share them in chats."
+        }
+      ],
+      [
+        "expo-sqlite",
+        {
+          "enableFTS": true,
+          "android": {
+            "enableFTS": true
           },
-        }
-      );
-  
-      setChildLocations(
-        response.data.locations.map((loc) => ({
-          key: loc.id,
-          value: loc.name,
-        }))
-      );
-    } catch (error) {
-      console.error("Error fetching child locations:", error);
-    }
-  };
-  
-  const handleChildLocationChange = async (selectedOption) => {
-    setSelectedChildLocation(selectedOption);
-    setSelectedGrandChildLocation(null); // Reset grandchild selection
-  
-    try {
-      const formData = new FormData();
-      formData.append("parent_id", selectedOption);
-  
-      const response = await api.post(
-        "/location/children/",
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
-        }
-      );
-  
-      setGrandChildLocations(
-        response.data.locations.map((loc) => ({
-          key: loc.id,
-          value: loc.name,
-        }))
-      );
-    } catch (error) {
-      console.error("Error fetching grandchild locations:", error);
-    }
-  };
-  
-
-  const handleGrandChildLocationChange = (selectedOption) => {
-    setSelectedGrandChildLocation(selectedOption);
-  };
-
-  const handleCategoryChange = async (selectedOption) => {
-    setSelectedCategory(selectedOption);
-
-    try {
-      const formData = new FormData();
-      formData.append("parent_id", selectedOption);
-
-      const response = await api.post(
-        "/category/subcategories/",
-        formData,
-        {
-          headers: { "Content-Type": "multipart/form-data" },
-        }
-      );
-
-      setSubcategories(
-        response.data.subcategories.map((subcat) => ({
-          key: subcat.id,
-          value: subcat.name,
-        }))
-      );
-    } catch (error) {
-      console.error("Error fetching subcategories:", error);
-    }
-  };
-
-  const handlePinLocation = async () => {
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        setGeoError("Permission to access location was denied.");
-        Alert.alert(
-          "Location Access Denied",
-          "Please enable location permissions in your device settings."
-        );
-        return;
-      }
-
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
-
-      setGeoLocation({
-        lat: location.coords.latitude.toString(),
-        lng: location.coords.longitude.toString(),
-      });
-
-      setGeoError(""); // Clear any previous errors
-      Alert.alert("Location Pinned", "Coordinates added successfully.");
-    } catch (error) {
-      console.error("Error fetching geolocation:", error);
-      setGeoError("An error occurred while fetching your location.");
-    }
-  };
-
-  const handleValidation = () => {
-    const errors = {};
-    if (!name.trim()) errors.name = "Shop name is required.";
-    if (!description.trim()) errors.description = "Description is required.";
-    if (!address.trim()) errors.address = "Address is required.";
-    if (!geoLocation.lat || !geoLocation.lng)
-      errors.geoLocation = "Geolocation is required. Please pin your location.";
-    if (!selectedLocation) errors.location = "Location is required.";
-    if (!selectedChildLocation) errors.childLocation = "Child location is required.";
-    if (!selectedGrandChildLocation)
-      errors.grandChildLocation = "Grandchild location is required.";
-
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-
-  const handleSubmit = async () => {
-    if (!handleValidation() || isSubmitting) return;
-
-    setIsSubmitting(true);
-    try {
-      const formData = new FormData();
-      formData.append("shop_name", name);
-      formData.append("description", description);
-      formData.append("geo_location", `POINT(${geoLocation.lng} ${geoLocation.lat})`);
-      formData.append("address", address);
-      formData.append("lga", selectedChildLocation);
-      formData.append("location", selectedGrandChildLocation);
-      formData.append("is_24_7", is24_7.toString()); // Convert boolean to string
-      if (!is24_7) {
-        formData.append("opening_hours", JSON.stringify(openingHours));
-      }
-
-      selectedSubcategories.forEach((sub) =>
-        formData.append("subcategories[]", sub.value)
-      );
-
-      const response = await api.post(
-        "/create-shop/",
-        formData,
-        {
-          headers: {
-            "Content-Type": "multipart/form-data",
-            Authorization: sessionId,  // Added sessionId to headers
+          "ios": {
+            "customBuildFlags": [
+              "-DSQLITE_ENABLE_FTS5=1 -DSQLITE_ENABLE_DBSTAT_VTAB=1 -DSQLITE_ENABLE_SNAPSHOT=1"
+            ]
           }
         }
-      );
-
-      const shopId = response.data.shop_id;
-  
-      Alert.alert("Success", "Your shop has been created!");
-      
-      // Navigate immediately after the alert
-      router.push({ pathname: '/shop/UpdateProduct', params: { shop_id: shopId } });
-    } catch (error) {
-      console.error("Error creating shop:", error);
-      Alert.alert("Error", "Something went wrong. Please try again.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-  
-
-  return (
-    <View style={{ flex: 1 }}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <MaterialIcons name="arrow-back" size={24} color="#007BFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Back</Text>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <View style={styles.card}>
-          <Text style={styles.heading}>Create Your Digital Shop</Text>
-
-          <Text style={styles.label}>Name</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Input shop name"
-            value={name}
-            onChangeText={setName}
-          />
-          {formErrors.name && <Text style={styles.error}>{formErrors.name}</Text>}
-
-          <Text style={styles.label}>Description</Text>
-          <TextInput
-            style={[styles.input, styles.description]}
-            placeholder="Input Shop Description"
-            value={description}
-            onChangeText={setDescription}
-            multiline
-          />
-          {formErrors.description && <Text style={styles.error}>{formErrors.description}</Text>}
-
-          <Provider>
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.label}>24/7 Open</Text>
-          <Switch
-            value={is24_7}
-            onValueChange={() => {
-              setIs24_7(!is24_7);
-              if (!is24_7) {
-                setOpeningHours({
-                  Monday: { open: null, close: null },
-                  Tuesday: { open: null, close: null },
-                  Wednesday: { open: null, close: null },
-                  Thursday: { open: null, close: null },
-                  Friday: { open: null, close: null },
-                  Saturday: { open: null, close: null },
-                  Sunday: { open: null, close: null },
-                });
-              }
-            }}
-          />
-        </View>
-
-        {!is24_7 && (
-          <>
-            <Button
-              mode="outlined"
-              onPress={() => setExpandedDay(expandedDay ? null : "all")}
-              style={styles.expandButton}
-            >
-              {expandedDay ? "Hide Opening Hours" : "Set Opening Hours"}
-            </Button>
-
-            {expandedDay &&
-              Object.keys(openingHours).map((day) => (
-                <View key={day} style={styles.dayContainer}>
-                  <TouchableOpacity
-                    style={styles.dayHeader}
-                    onPress={() => setExpandedDay(expandedDay === day ? null : day)}
-                  >
-                    <Text style={styles.dayLabel}>{day}</Text>
-                    <Ionicons
-                      name={expandedDay === day ? "chevron-up" : "chevron-down"}
-                      size={18}
-                      color="black"
-                    />
-                  </TouchableOpacity>
-
-                  {expandedDay === day && (
-                    <View style={styles.timeRow}>
-                      <TouchableOpacity
-                        onPress={() => {
-                          setSelectedDay(day);
-                          setSelectedType("open");
-                          setShowTimePicker(true);
-                        }}
-                        style={styles.timeInput}
-                      >
-                        <Text>{formatTime(openingHours[day].open)}</Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        onPress={() => {
-                          setSelectedDay(day);
-                          setSelectedType("close");
-                          setShowTimePicker(true);
-                        }}
-                        style={styles.timeInput}
-                      >
-                        <Text>{formatTime(openingHours[day].close)}</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </View>
-              ))}
-          </>
-        )}
-
-        <TimePickerModal
-          visible={showTimePicker}
-          onDismiss={() => setShowTimePicker(false)}
-          onConfirm={handleConfirmTime}
-          hours={selectedDay && openingHours[selectedDay][selectedType] ? openingHours[selectedDay][selectedType].getHours() : 12}
-          minutes={selectedDay && openingHours[selectedDay][selectedType] ? openingHours[selectedDay][selectedType].getMinutes() : 0}
-        />
-      </View>
-    </Provider>
-
-          <Text style={styles.label}>Category</Text>
-          <SelectList
-            setSelected={handleCategoryChange}
-            data={categories}
-            placeholder="Select Category"
-            save="key"
-            searchPlaceholder="Search categories"
-            boxStyles={styles.dropdown}
-          />
-
-          {selectedCategory && subcategories.length > 0 && (
-            <>
-              <Text style={styles.label}>Subcategories</Text>
-              <MultiSelect
-                options={subcategories.map((sub) => ({
-                  label: sub.value,
-                  value: sub.key,
-                }))}
-                value={selectedSubcategories}
-                onChange={setSelectedSubcategories}
-                labelledBy="Select Subcategories"
-              />
-            </>
-          )}
-
-          {/* Location Select Section */}
-          <Text style={styles.label}>State</Text>
-          <SelectList
-            setSelected={handleLocationChange}
-            data={locations}
-            placeholder="Select Location"
-            save="key"
-            boxStyles={styles.dropdown}
-          />
-          {formErrors.location && <Text style={styles.error}>{formErrors.location}</Text>}
-
-          {selectedLocation && (
-            <>
-              <Text style={styles.label}>Local Government</Text>
-              <SelectList
-                setSelected={handleChildLocationChange}
-                data={childLocations}
-                placeholder="Select Child Location"
-                save="key"
-                boxStyles={styles.dropdown}
-              />
-              {formErrors.childLocation && <Text style={styles.error}>{formErrors.childLocation}</Text>}
-            </>
-          )}
-
-          {selectedChildLocation && (
-            <>
-              <Text style={styles.label}>Location</Text>
-              <SelectList
-                setSelected={handleGrandChildLocationChange}
-                data={grandChildLocations}
-                placeholder="Select Grandchild Location"
-                save="key"
-                boxStyles={styles.dropdown}
-              />
-              {formErrors.grandChildLocation && (
-                <Text style={styles.error}>{formErrors.grandChildLocation}</Text>
-              )}
-            </>
-          )}
-
-          <Text style={styles.label}>Address</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Input your shop address"
-            value={address}
-            onChangeText={setAddress}
-          />
-          {formErrors.address && <Text style={styles.error}>{formErrors.address}</Text>}
-
-          {/* Geolocation Section */}
-          <View style={styles.geoSection}>
-            <View style={styles.geoInputContainer}>
-              <Text style={styles.geoLabel}>Latitude</Text>
-              <TextInput
-                style={[styles.input, styles.readOnly]}
-                placeholder="Latitude"
-                value={geoLocation.lat}
-                editable={false}
-              />
-            </View>
-            <View style={styles.geoInputContainer}>
-              <Text style={styles.geoLabel}>Longitude</Text>
-              <TextInput
-                style={[styles.input, styles.readOnly]}
-                placeholder="Longitude"
-                value={geoLocation.lng}
-                editable={false}
-              />
-            </View>
-
-            <TouchableOpacity style={styles.pinButton} onPress={handlePinLocation}>
-              <Text style={styles.pinButtonText}>Pin Location</Text>
-            </TouchableOpacity>
-          </View>
-          {geoError && <Text style={styles.error}>{geoError}</Text>}
-          {formErrors.geoLocation && <Text style={styles.error}>{formErrors.geoLocation}</Text>}
-
-          <Pressable
-            style={[styles.submitButton, isSubmitting && styles.disabledButton]}
-            onPress={handleSubmit}
-            disabled={isSubmitting}
-          >
-            <Text style={styles.submitButtonText}>
-              {isSubmitting ? "Submitting..." : "Create Shop"}
-            </Text>
-          </Pressable>
-        </View>
-      </ScrollView>
-    </View>
-  );
+      ],
+      "expo-font",
+      "expo-secure-store",
+      "expo-video",
+      "expo-web-browser",
+      "react-native-edge-to-edge",
+      "@qore-id/react-native-qoreid-sdk/plugin",
+      [
+        "@react-native-firebase/app"
+      ],
+      [
+        "@react-native-firebase/messaging"
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#ffffff",
+          "androidMode": "default",
+          "androidCollapsedTitle": "#{unread_notifications} new messages",
+          "defaultChannel": "chat_channel",
+          "sounds": [
+            "./assets/sounds/chat_notification.mp3",
+            "./assets/sounds/receipt_notification.mp3"
+          ],
+          "channels": [
+            {
+              "id": "chat_channel",
+              "name": "Chat Notifications",
+              "importance": "high",
+              "sound": "chat_notification",
+              "vibrationPattern": [
+                100,
+                200,
+                300,
+                400
+              ],
+              "enableVibrate": true
+            },
+            {
+              "id": "receipt_channel",
+              "name": "Receipt Notifications",
+              "importance": "high",
+              "sound": "receipt_notification",
+              "vibrationPattern": [
+                100,
+                200,
+                300,
+                400
+              ],
+              "enableVibrate": true
+            }
+          ]
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableHermes": true,
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "buildToolsVersion": "35.0.0",
+            "minSdkVersion": 24,
+            "ndkVersion": "25.2.9519653",
+            "enableProguardInReleaseBuilds": true,
+            "newArchEnabled": false,
+            "enableR8FullMode": false
+          },
+          "ios": {
+            "deploymentTarget": "15.1",
+            "useFrameworks": "static"
+          }
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location."
+        }
+      ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Allow $(PRODUCT_NAME) to access your device motion"
+        }
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-2360241039001516~8918197768",
+          "iosAppId": "ca-app-pub-2360241039001516~4122191720"
+        }
+      ],
+      "./plugins/withCMake",
+      "./plugins/withCustomAndroidConfig",
+      "./plugins/withAdMobAppId",
+      "./plugins/firebase-manifest-fix.js",
+      "./plugins/withCustomNotificationChannel",
+      "./plugins/withDependencyFix",
+      "./plugins/withNoCameraPermission",
+      "expo-mail-composer",
+      "react-native-edge-to-edge"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "assetBundlePatterns": [
+      "**/*",
+      "assets/sounds/**/*"
+    ],
+    "updates": {
+      "enabled": true,
+      "url": "https://u.expo.dev/b260054f-57f1-4c96-8a85-e4886d1dd0ce",
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      },
+      "fallbackToCacheTimeout": 30000
+    },
+    "runtimeVersion": "2.0.0",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "11a350ba-590c-4271-9e5a-a2ba71d36ffc"
+      }
+    },
+    "owner": "opxzy"
+  }
 }
-
-const styles = StyleSheet.create({
-  container: { flexGrow: 1, padding: 20, backgroundColor: "#f9f9f9" },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    marginBottom: 10,
-  },
-  backButton: {
-    marginRight: 10,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  card: {
-    backgroundColor: "#fff",
-    padding: 20,
-    borderRadius: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    elevation: 4,
-  },
-  subcategoriesContainer: {
-    marginBottom: 15,
-    position: "relative",
-    zIndex: 10, // Ensure dropdown stays above other components
-    width: "100%", // Ensure it takes up the full width of the parent
-  },
-  
-  heading: { fontSize: 22, fontWeight: "bold", marginBottom: 20, textAlign: "center" },
-  input: {
-    backgroundColor: "#f5f5f5",
-    borderRadius: 8,
-    padding: 12,
-    borderColor: "#ddd",
-    borderWidth: 1,
-    marginBottom: 15,
-  },
-  description: { height: 100, textAlignVertical: "top" },
-  label: { fontSize: 14, fontWeight: "bold", marginBottom: 5 },
-  labels: { fontSize: 14, fontWeight: "bold", marginBottom: 5, marginTop: 12 },
-  dropdown: {
-    backgroundColor: "#fff",
-    borderColor: "#ddd",
-    borderWidth: 1,
-    borderRadius: 8,
-  },
-  
-  geoInputContainer: { flex: 1, marginRight: 10 },
-  geoLabel: { fontSize: 14, fontWeight: "bold", marginBottom: 5 },
-  geoInput: { width: "100%" },
-  readOnly: { backgroundColor: "#e9ecef" },
-  pinButton: {
-    backgroundColor: "#007BFF",
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  pinButtonText: { color: "#fff", fontWeight: "bold" },
-  submitButton: {
-    backgroundColor: "#4CAF50",
-    paddingVertical: 15,
-    borderRadius: 8,
-    alignItems: "center",
-    marginTop: 20, // Ensure spacing between buttons
-  },
-  submitButtonText: { color: "#fff", fontWeight: "bold" },
-  error: {
-    color: '#FF4D4F', // Modern red shade for error
-    backgroundColor: '#FFF2F0', // Subtle red background for better visibility
-    padding: 8, // Add some padding for readability
-    marginVertical: 6, // Add spacing between errors and other elements
-    borderRadius: 5, // Rounded corners for a modern feel
-    fontSize: 14, // Standard font size for legibility
-    fontWeight: '600', // Slightly bold for emphasis
-    borderWidth: 1, // Optional: Add a border for definition
-    borderColor: '#FFCCC7', // Match the border with the background
-  },
-  expandButton: {
-    marginBottom: 10,
-  },
-  dayContainer: {
-    marginBottom: 8,
-  },
-  dayHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: "#f9f9f9",
-    padding: 10,
-    borderRadius: 5,
-  },
-  dayLabel: {
-    fontSize: 14,
-    fontWeight: "bold",
-  },
-  timeRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 5,
-  },
-  timeInput: {
-    flex: 1,
-    padding: 10,
-    backgroundColor: "#f0f0f0",
-    borderRadius: 5,
-    alignItems: "center",
-    marginHorizontal: 5,
-  },
-
-});

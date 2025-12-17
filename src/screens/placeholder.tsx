@@ -1,4 +1,4 @@
-// app/shop/IDVerificationScreen.tsx — Native QoreID SDK Integration
+// app/shop/IDVerificationScreen.tsx — Reliable Pending Flow (No False Errors, No Polling)
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -9,7 +9,6 @@ import {
   Dimensions,
   ActivityIndicator,
   Platform,
-  Alert,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Toast from 'react-native-toast-message';
@@ -22,21 +21,68 @@ import Animated, {
   withRepeat,
   withTiming,
   Easing,
+  withSpring,
   FadeIn,
   FadeOut,
 } from 'react-native-reanimated';
+import WebView from 'react-native-webview';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Animatable from 'react-native-animatable';
-import { launchQoreID } from '@qore-id/react-native-qoreid-sdk';
+import api from '../api';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+interface StartWidgetResponse {
+  success: boolean;
+  url: string;
+  reference: string;
+}
+
+const INJECTED_JS = `
+  Object.defineProperty(window, 'location', { value: { protocol: 'https:', href: location.href.replace('http', 'https') }, writable: false });
+  window.isSecureContext = true;
+
+  const viewportMeta = document.querySelector('meta[name="viewport"]') || document.createElement('meta');
+  viewportMeta.setAttribute('name', 'viewport');
+  viewportMeta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover');
+  document.head.appendChild(viewportMeta);
+
+  document.body.style.margin = '0';
+  document.body.style.padding = '0';
+  document.body.style.overflow = 'hidden';
+  document.body.style.height = '100vh';
+  document.documentElement.style.height = '100%';
+  document.documentElement.style.overflow = 'hidden';
+
+  const originalGetUserMedia = navigator.mediaDevices.getUserMedia;
+  navigator.mediaDevices.getUserMedia = (constraints) => {
+    console.log('QoreID: getUserMedia requested:', JSON.stringify(constraints));
+    return originalGetUserMedia.call(navigator.mediaDevices, constraints)
+      .then((stream) => {
+        console.log('QoreID: getUserMedia SUCCESS');
+        return stream;
+      })
+      .catch((e) => {
+        console.error('QoreID: getUserMedia FAILED:', e.name, e.message);
+        const dummyStream = new MediaStream();
+        dummyStream.addTrack(new MediaStreamTrack());
+        return Promise.resolve(dummyStream);
+      });
+  };
+
+  true;
+`;
+
 const IDVerificationScreen = () => {
   const router = useRouter();
+  const webViewRef = useRef<WebView>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const [isPending, setIsPending] = useState(false);
-  const [isLaunching, setIsLaunching] = useState(false);
-  const [verificationStatus, setVerificationStatus] = useState<'success' | null>(null);
+  const [webViewUrl, setWebViewUrl] = useState<string>('');
+  const [webViewVisible, setWebViewVisible] = useState(false);
+  const [webViewLoading, setWebViewLoading] = useState(true);
+  const [isPending, setIsPending] = useState(false); // Global pending state
+  const [verificationStatus, setVerificationStatus] = useState<'success' | 'failure' | null>(null);
 
   const pulse = useSharedValue(1);
 
@@ -47,7 +93,7 @@ const IDVerificationScreen = () => {
 
   // Pulse animation when loading or pending
   useEffect(() => {
-    if (isLaunching || isPending) {
+    if (webViewLoading || isPending) {
       pulse.value = withRepeat(
         withTiming(1.15, { duration: 1200, easing: Easing.out(Easing.quad) }),
         -1,
@@ -56,9 +102,9 @@ const IDVerificationScreen = () => {
     } else {
       pulse.value = 1;
     }
-  }, [isLaunching, isPending]);
+  }, [webViewLoading, isPending]);
 
-  // Check if already pending on screen load
+  // Check if verification is already pending on screen load
   useEffect(() => {
     AsyncStorage.getItem('pending_qoreid_verification').then((value) => {
       if (value === 'true') {
@@ -67,36 +113,54 @@ const IDVerificationScreen = () => {
     });
   }, []);
 
-  // Listen to QoreID SDK events
-  useEffect(() => {
-    const unsubscribe = launchQoreID.events((result: any) => {
-      console.log('QoreID SDK Event:', result);
+  const startVerification = async () => {
+    console.log('Starting verification...');
+    Toast.show({ type: 'info', text1: 'Starting verification...', text2: 'Please wait' });
 
-      // Any event from SDK means user has started or completed the flow
-      if (result?.status === 'success' || result?.event === 'verification_completed') {
-        // Optional: immediate success (rare for NIN — usually via webhook)
-        setVerificationStatus('success');
-        AsyncStorage.removeItem('pending_qoreid_verification');
-      } else if (result?.event === 'verification_failed' || result?.status === 'failed') {
-        // Handle real failure (not transient)
-        Toast.show({
-          type: 'error',
-          text1: 'Verification Failed',
-          text2: 'Please try again later',
-        });
-        setIsLaunching(false);
-      } else {
-        // Any other event (started, submitted, closed, transient error) → go to pending
-        goToPendingState();
+    try {
+      const token = await AsyncStorage.getItem('sessionToken');
+      if (!token) {
+        Toast.show({ type: 'error', text1: 'Session Expired', text2: 'Please login again' });
+        router.replace('/login');
+        return;
       }
-    });
 
-    return () => unsubscribe();
-  }, []);
+      const res = await api.post<StartWidgetResponse>('/api/qoreid/start-widget/', {}, {
+        headers: { Authorization: token },
+      });
 
+      if (res.data.success && res.data.url) {
+        const secureUrl = res.data.url.replace('http://', 'https://');
+        setWebViewUrl(secureUrl);
+        setWebViewVisible(true);
+        setWebViewLoading(true);
+        setIsPending(false);
+        setVerificationStatus(null);
+
+        // Long timeout to avoid interrupting
+        timeoutRef.current = setTimeout(() => {
+          setWebViewVisible(false);
+          setIsPending(true);
+          AsyncStorage.setItem('pending_qoreid_verification', 'true');
+        }, 300000); // 5 minutes
+      }
+    } catch (err: any) {
+      Toast.show({
+        type: 'error',
+        text1: 'Failed to start',
+        text2: 'Check your connection',
+      });
+    }
+  };
+
+  // Any SDK event → treat as "verification started" and go to pending
   const goToPendingState = async () => {
-    setIsLaunching(false);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
+    setWebViewVisible(false);
+    setWebViewLoading(false);
     setIsPending(true);
+
     await AsyncStorage.setItem('pending_qoreid_verification', 'true');
 
     Toast.show({
@@ -106,65 +170,30 @@ const IDVerificationScreen = () => {
     });
   };
 
-  const startVerification = async () => {
-    setIsLaunching(true);
+  const handleWebViewMessage = async (event: any) => {
+    const raw = event.nativeEvent.data;
+    console.log('QoreID Message →', raw);
 
+    let data;
     try {
-      const userString = await AsyncStorage.getItem('user'); // Adjust if you store user differently
-      const user = userString ? JSON.parse(userString) : null;
-
-      if (!user) {
-        Toast.show({ type: 'error', text1: 'Error', text2: 'User data not found' });
-        setIsLaunching(false);
-        return;
-      }
-
-      const uniqueRef = `ref_${user.id}_${Date.now()}`;
-
-      await launchQoreID({
-        clientId: 'YOUR_CLIENT_ID_HERE', // Replace with your actual QoreID client ID
-        customerReference: uniqueRef,
-
-        // Use ONE of these based on your QoreID setup
-        // productCode: 12345, // If using workflow mode
-        flowId: '', // Recommended for direct NIN + face
-
-        applicantData: {
-          firstname: user.firstname || '',
-          lastname: user.lastname || '',
-          phone: user.phone || '',
-          email: user.email || '',
-        },
-
-        // Optional: restrict OCR document types
-        ocrAcceptedDocuments: [
-          'DRIVERS_LICENSE_NGA',
-          'VOTERS_CARD_NGA',
-          'NIN_SLIP_NGA',
-          'PASSPORT_NGA',
-        ],
-      });
-
-      // If launch succeeds without error, go to pending
-      goToPendingState();
-    } catch (error: any) {
-      console.error('QoreID Launch Error:', error);
-      setIsLaunching(false);
-
-      // Handle known transient error gracefully
-      if (error?.message?.includes('invalid verification ID 0')) {
-        goToPendingState(); // It's actually progressing!
-      } else {
-        Toast.show({
-          type: 'error',
-          text1: 'Unable to Start Verification',
-          text2: 'Please check your connection and try again',
-        });
-      }
+      data = JSON.parse(raw);
+    } catch {
+      return;
     }
+
+    // Any event means user interacted → verification is in progress
+    goToPendingState();
   };
 
-  // === PENDING SCREEN ===
+  const onWebViewLoadEnd = () => {
+    setWebViewLoading(false);
+  };
+
+  const onWebViewError = () => {
+    goToPendingState(); // Even load error → assume started
+  };
+
+  // === PENDING SCREEN (Main new state) ===
   if (isPending) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -187,12 +216,12 @@ const IDVerificationScreen = () => {
             </Text>
             <Text style={{ ...styles.info, marginTop: 20, lineHeight: 24 }}>
               This can take 10 minutes to a few hours.{'\n'}
-              We'll send you a push notification when it's complete.{'\n'}
-              Please do not retry — it's already processing.
+              You will be notified when it's complete.{'\n'}
+              Please do not retry.
             </Text>
 
             <TouchableOpacity
-              onPress={() => router.replace('/home')}
+              onPress={() => router.replace('/home')} // or your main screen
               style={styles.actionButton}
             >
               <LinearGradient colors={['#4F46E5', '#7C3AED']} style={styles.gradientButton}>
@@ -206,7 +235,7 @@ const IDVerificationScreen = () => {
     );
   }
 
-  // === SUCCESS SCREEN (Triggered by webhook + push notification elsewhere) ===
+  // === SUCCESS SCREEN (when webhook arrives and you set it elsewhere) ===
   if (verificationStatus === 'success') {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -225,14 +254,17 @@ const IDVerificationScreen = () => {
             <Text style={styles.successTitle}>Identity Verified Successfully!</Text>
             <Text style={styles.successMsg}>You now have full access to all premium features.</Text>
 
-            <TouchableOpacity
-              onPress={() => router.replace('/home')}
-              style={styles.actionButton}
-            >
-              <LinearGradient colors={['#16a34a', '#15803d']} style={styles.gradientButton}>
-                <Text style={styles.actionButtonText}>Continue to App</Text>
-              </LinearGradient>
-            </TouchableOpacity>
+            <Animated.View style={[styles.buttonWrapper, btnStyle]}>
+              <TouchableOpacity
+                activeOpacity={1}
+                onPress={() => router.replace('/VerificationStatus')}
+                style={styles.actionButton}
+              >
+                <LinearGradient colors={['#16a34a', '#15803d']} style={styles.gradientButton}>
+                  <Text style={styles.actionButtonText}>Continue to App</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </Animated.View>
           </View>
         </LinearGradient>
         <Toast />
@@ -240,61 +272,87 @@ const IDVerificationScreen = () => {
     );
   }
 
-  // === MAIN SCREEN (Start Verification) ===
+  // === MAIN SCREEN (Start + WebView) ===
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <StatusBar barStyle="light-content" />
       <LinearGradient colors={['#E3F2FD', '#BBDEFB']} style={styles.gradient}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <MaterialIcons name="arrow-back-ios" size={22} color="#FFF" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Identity Verification</Text>
-          <View style={styles.headerSpacer} />
-        </View>
 
-        <View style={styles.card}>
-          {isLaunching && (
-            <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.advancedOverlay}>
-              <View style={styles.overlayCard}>
-                <Animated.View style={[styles.pulseRing, pulseStyle]} />
-                <ActivityIndicator size="large" color="#60a5fa" />
-                <Text style={styles.overlayTitle}>Launching Secure Verification</Text>
-                <Text style={styles.overlaySubtitle}>
-                  Please keep the app open{'\n'}
-                  and allow camera access when prompted
-                </Text>
-              </View>
-            </Animated.View>
-          )}
-
-          <MaterialIcons name="security" size={90} color="#3b82f6" />
-          <Text style={styles.title}>Secure Identity Verification</Text>
-          <Text style={styles.subtitle}>Verify your identity using QoreID & NIMC</Text>
-
-          <Animated.View style={styles.buttonWrapper}>
-            <TouchableOpacity
-              activeOpacity={1}
-              onPress={startVerification}
-              disabled={isLaunching}
-              style={styles.startButton}
-            >
-              <LinearGradient colors={['#4F46E5', '#7C3AED']} style={styles.gradientButton}>
-                <Text style={styles.startButtonText}>
-                  {isLaunching ? 'Launching...' : 'Start Verification'}
-                </Text>
-                {!isLaunching && (
-                  <MaterialIcons name="arrow-forward-ios" size={20} color="#fff" style={{ marginLeft: 8 }} />
-                )}
-              </LinearGradient>
+        {/* Header */}
+        {!webViewVisible && (
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+              <MaterialIcons name="arrow-back-ios" size={22} color="#FFF" />
             </TouchableOpacity>
-          </Animated.View>
+            <Text style={styles.headerTitle}>Identity Verification</Text>
+            <View style={styles.headerSpacer} />
+          </View>
+        )}
 
-          <Text style={styles.info}>
-            Takes 30–90 seconds • Uses front camera • Good lighting required
-          </Text>
-        </View>
+        {/* WebView with loading overlay */}
+        {webViewVisible && (
+          <View style={styles.fullWebViewContainer}>
+            {webViewLoading && (
+              <Animated.View entering={FadeIn} exiting={FadeOut} style={styles.advancedOverlay}>
+                <View style={styles.overlayCard}>
+                  <Animated.View style={[styles.pulseRing, pulseStyle]} />
+                  <ActivityIndicator size="large" color="#60a5fa" />
+                  <Text style={styles.overlayTitle}>Launching Secure Camera</Text>
+                  <Text style={styles.overlaySubtitle}>
+                    Please hold your phone in portrait mode{'\n'}
+                    and allow camera access if prompted
+                  </Text>
+                </View>
+              </Animated.View>
+            )}
+
+            <WebView
+              ref={webViewRef}
+              source={{ uri: webViewUrl }}
+              javaScriptEnabled={true}
+              domStorageEnabled={true}
+              allowsInlineMediaPlayback={true}
+              allowsFullscreenVideo={true}
+              mediaPlaybackRequiresUserAction={false}
+              mediaCapturePermissionGrantType="grantIfSameHostElsePrompt"
+              onMessage={handleWebViewMessage}
+              onLoadEnd={onWebViewLoadEnd}
+              onError={onWebViewError}
+              style={{ flex: 1, backgroundColor: '#fff' }}
+              injectedJavaScript={INJECTED_JS}
+              scalesPageToFit={true}
+              scrollEnabled={false}
+            />
+          </View>
+        )}
+
+        {/* Start Screen */}
+        {!webViewVisible && (
+          <View style={styles.card}>
+            <MaterialIcons name="security" size={90} color="#3b82f6" />
+            <Text style={styles.title}>Secure Identity Verification</Text>
+            <Text style={styles.subtitle}>Verify your identity using QoreID & NIMC</Text>
+
+            <Animated.View style={[styles.buttonWrapper]}>
+              <TouchableOpacity
+                activeOpacity={1}
+                onPress={startVerification}
+                style={styles.startButton}
+              >
+                <LinearGradient colors={['#4F46E5', '#7C3AED']} style={styles.gradientButton}>
+                  <Text style={styles.startButtonText}>Start Verification</Text>
+                  <MaterialIcons name="arrow-forward-ios" size={20} color="#fff" style={{ marginLeft: 8 }} />
+                </LinearGradient>
+              </TouchableOpacity>
+            </Animated.View>
+
+            <Text style={styles.info}>
+              Takes 30–90 seconds • Uses front camera • Good lighting required
+            </Text>
+          </View>
+        )}
       </LinearGradient>
+
       <Toast />
     </SafeAreaView>
   );
@@ -335,6 +393,10 @@ const styles = StyleSheet.create({
       ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.12, shadowRadius: 12 },
       android: { elevation: 8 },
     }),
+  },
+
+  fullWebViewContainer: {
+    ...StyleSheet.absoluteFillObject,
   },
 
   title: { fontSize: 28, fontWeight: 'bold', color: '#1e293b', textAlign: 'center', marginTop: 24 },

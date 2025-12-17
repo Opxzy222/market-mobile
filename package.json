@@ -9,8 +9,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "test": "jest --watchAll",
-    "lint": "expo lint",
-    "postinstall": "patch-package"
+    "lint": "expo lint"
   },
   "jest": {
     "preset": "jest-expo"
@@ -22,7 +21,6 @@
     "@gorhom/bottom-sheet": "^5.1.2",
     "@mobile-reality/react-native-select-pro": "^2.3.0",
     "@mui/material": "^6.3.1",
-    "@qore-id/react-native-qoreid-sdk": "^2.1.0-rc",
     "@react-native-async-storage/async-storage": "2.1.2",
     "@react-native-community/datetimepicker": "8.4.1",
     "@react-native-community/netinfo": "^11.4.1",
@@ -47,6 +45,7 @@
     "expo-camera": "~16.1.11",
     "expo-checkbox": "~4.1.4",
     "expo-constants": "~17.1.8",
+    "expo-dev-client": "^6.0.20",
     "expo-document-picker": "~13.1.6",
     "expo-file-system": "~18.1.9",
     "expo-font": "^13.0.2",

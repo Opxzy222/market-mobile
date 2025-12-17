@@ -1,5 +1,5 @@
 // cart/NewOrderEditor.tsx
-// FINAL — DEC 10, 2025 — VERIFIED USERS ONLY + DAILY LIMIT MODAL
+// FINAL — DEC 15, 2025 — KEYBOARD AVOIDANCE FIXED + VERIFIED USERS + DAILY LIMIT
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -15,6 +15,7 @@ import {
   ActivityIndicator,
   TextInput,
   Modal,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCart } from '@/context/CartContext';
@@ -24,7 +25,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
-import api from '../../src/api';
 
 const COLORS = {
   background: '#F9FAFB',
@@ -35,6 +35,7 @@ const COLORS = {
   textSecondary: '#6B7280',
   border: '#E5E7EB',
 };
+
 const TAB_BAR_HEIGHT = Platform.OS === 'ios' ? 84 : 70;
 const FOOTER_PADDING = 160;
 const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'https://api.gogo-digital.com';
@@ -52,7 +53,7 @@ export default function NewOrderEditor() {
   const [message, setMessage] = useState('');
   const [limitModalVisible, setLimitModalVisible] = useState(false);
 
-  // VERIFICATION STATE — EXACTLY LIKE ReviewForm
+  // VERIFICATION STATE
   const [isVerified, setIsVerified] = useState<boolean | null>(null);
 
   const isMountedRef = useRef(true);
@@ -81,22 +82,20 @@ export default function NewOrderEditor() {
     });
   }, []);
 
-  // FETCH VERIFICATION STATUS — IDENTICAL TO ReviewForm
+  // Fetch verification status
   useEffect(() => {
     const fetchVerification = async () => {
       try {
         const value = await AsyncStorage.getItem("user_verified");
         const userVerified = value ? JSON.parse(value) : null;
         if (userVerified !== null) {
-          setIsVerified(userVerified); // true or false
+          setIsVerified(userVerified);
         }
-        // if null → stays null (still loading or not set)
       } catch (error) {
         console.error('Error fetching verification status:', error);
         setIsVerified(null);
       }
     };
-
     fetchVerification();
   }, []);
 
@@ -174,58 +173,65 @@ export default function NewOrderEditor() {
             </View>
           </View>
 
-          <Animated.View style={[animatedStyle, { flex: 1 }]}>
-            <ScrollView
-              style={styles.scrollView}
-              contentContainerStyle={[
-                styles.scrollContent,
-                { paddingBottom: TAB_BAR_HEIGHT + FOOTER_PADDING },
-              ]}
-            >
-              {items.map((item, index) => (
-                <View key={item.id} style={index === 0 ? styles.firstItem : styles.itemWrapper}>
-                  <CartItemRow item={item} />
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0} // Adjusts for header height on iOS
+          >
+            <Animated.View style={[animatedStyle, { flex: 1 }]}>
+              <ScrollView
+                style={styles.scrollView}
+                contentContainerStyle={[
+                  styles.scrollContent,
+                  { paddingBottom: TAB_BAR_HEIGHT + FOOTER_PADDING },
+                ]}
+                keyboardShouldPersistTaps="handled"
+              >
+                {items.map((item, index) => (
+                  <View key={item.id} style={index === 0 ? styles.firstItem : styles.itemWrapper}>
+                    <CartItemRow item={item} />
+                  </View>
+                ))}
+
+                <AddCustomItemButton onPress={() => setShowCustomModal(true)} />
+
+                <View style={styles.messageContainer}>
+                  <Text style={styles.messageLabel}>Add a message (optional)</Text>
+                  <TextInput
+                    style={styles.messageInput}
+                    placeholder="Anything you’d like the seller to know?"
+                    placeholderTextColor="#888"
+                    value={message}
+                    onChangeText={setMessage}
+                    multiline
+                    numberOfLines={4}
+                    maxLength={500}
+                    textAlignVertical="top"
+                  />
+                  <Text style={styles.charCount}>
+                    {message.length}/500
+                  </Text>
                 </View>
-              ))}
 
-              <AddCustomItemButton onPress={() => setShowCustomModal(true)} />
+                <View style={styles.footer}>
+                  <View style={styles.totalRow}>
+                    <Text style={styles.totalLabel}>Total Amount</Text>
+                    <Text style={styles.totalAmount}>₦{totalAmount.toLocaleString()}</Text>
+                  </View>
 
-              <View style={styles.messageContainer}>
-                <Text style={styles.messageLabel}>Add a message (optional)</Text>
-                <TextInput
-                  style={styles.messageInput}
-                  placeholder="Anything you’d like the seller to know?"
-                  placeholderTextColor="#888"
-                  value={message}
-                  onChangeText={setMessage}
-                  multiline
-                  numberOfLines={4}
-                  maxLength={500}
-                  textAlignVertical="top"
-                />
-                <Text style={styles.charCount}>
-                  {message.length}/500
-                </Text>
-              </View>
-
-              <View style={styles.footer}>
-                <View style={styles.totalRow}>
-                  <Text style={styles.totalLabel}>Total Amount</Text>
-                  <Text style={styles.totalAmount}>₦{totalAmount.toLocaleString()}</Text>
+                  <SendOrderButton
+                    shopId={shopIdNum}
+                    items={items}
+                    sessionToken={sessionToken}
+                    message={message}
+                    isVerified={isVerified}
+                    onSuccess={handleSuccess}
+                    onError={handleSendError}
+                  />
                 </View>
-
-                <SendOrderButton
-                  shopId={shopIdNum}
-                  items={items}
-                  sessionToken={sessionToken}
-                  message={message}
-                  isVerified={isVerified} // ← PASSED DOWN
-                  onSuccess={handleSuccess}
-                  onError={handleSendError}
-                />
-              </View>
-            </ScrollView>
-          </Animated.View>
+              </ScrollView>
+            </Animated.View>
+          </KeyboardAvoidingView>
 
           <AddCustomItemModal
             visible={showCustomModal}
@@ -278,20 +284,19 @@ export default function NewOrderEditor() {
   );
 }
 
-// UPDATED SendOrderButton — NOW CHECKS VERIFICATION EXACTLY LIKE ReviewForm
+// SendOrderButton component (unchanged)
 const SendOrderButton: React.FC<{
   shopId: number;
   items: any[];
   sessionToken: string | null;
   message: string;
-  isVerified: boolean | null; // ← NEW PROP
+  isVerified: boolean | null;
   onSuccess: () => void;
   onError?: (error: any) => boolean;
 }> = ({ shopId, items, sessionToken, message, isVerified, onSuccess, onError }) => {
   const [loading, setLoading] = useState(false);
 
   const handleSend = async () => {
-    // VERIFICATION CHECK — IDENTICAL TO ReviewForm
     if (isVerified === false) {
       Alert.alert(
         'Verification Required',
@@ -304,7 +309,6 @@ const SendOrderButton: React.FC<{
       Alert.alert('Error', 'Unable to verify user status. Please try again.');
       return;
     }
-    // ← Only proceeds if isVerified === true
 
     if (!sessionToken) {
       Alert.alert('Error', 'Please log in again.');
@@ -395,11 +399,7 @@ const AddCustomItemButton = ({ onPress }: { onPress: () => void }) => (
   </TouchableOpacity>
 );
 
-// ALL STYLES — 100% UNTOUCHED
 const styles = StyleSheet.create({
-  // ... [ALL YOUR ORIGINAL STYLES EXACTLY AS THEY WERE] ...
-  // (I kept them all — nothing moved, nothing changed)
-
   limitOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.7)',
@@ -507,28 +507,99 @@ const styles = StyleSheet.create({
   headerSpacer: {
     width: 46,
   },
-
-  shopCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', marginHorizontal: 16, marginTop: 16, padding: 16, borderRadius: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 2, gap: 12 },
-  shopIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#EFF6FF', justifyContent: 'center', alignItems: 'center' },
+  shopCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    marginHorizontal: 16,
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+    gap: 12,
+  },
+  shopIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   shopName: { fontSize: 18, fontWeight: '600', color: COLORS.text },
   itemCount: { fontSize: 14, color: COLORS.textSecondary },
   scrollView: { flex: 1, marginTop: 12 },
   scrollContent: { paddingHorizontal: 16 },
   firstItem: { marginTop: 0 },
   itemWrapper: { marginTop: 12 },
-  addCustomBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#EFF6FF', padding: 16, borderRadius: 16, marginTop: 20, borderWidth: 1.5, borderColor: COLORS.primary, borderStyle: 'dashed', gap: 8 },
+  addCustomBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EFF6FF',
+    padding: 16,
+    borderRadius: 16,
+    marginTop: 20,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    borderStyle: 'dashed',
+    gap: 8,
+  },
   addCustomText: { fontSize: 16, fontWeight: '600', color: COLORS.primary },
-  footer: { backgroundColor: '#FFF', padding: 16, marginTop: 24, marginHorizontal: -16, marginBottom: -16, borderTopWidth: 1, borderColor: COLORS.border, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 10 },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  footer: {
+    backgroundColor: '#FFF',
+    padding: 16,
+    marginTop: 24,
+    marginHorizontal: -16,
+    marginBottom: -16,
+    borderTopWidth: 1,
+    borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  totalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   totalLabel: { fontSize: 18, fontWeight: '600', color: COLORS.text },
   totalAmount: { fontSize: 22, fontWeight: '800', color: COLORS.primary },
   sendBtn: { borderRadius: 16, overflow: 'hidden', elevation: 3 },
-  sendGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16 },
+  sendGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+  },
   sendText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
   emptyTitle: { fontSize: 20, fontWeight: '700', color: COLORS.text, marginTop: 16 },
-  emptyText: { fontSize: 16, color: COLORS.textSecondary, textAlign: 'center', marginTop: 8, marginBottom: 24 },
-  backBtn: { backgroundColor: COLORS.primary, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
+  emptyText: {
+    fontSize: 16,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 24,
+  },
+  backBtn: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
   backBtnText: { color: '#FFF', fontWeight: '600' },
   messageContainer: {
     backgroundColor: '#FFF',

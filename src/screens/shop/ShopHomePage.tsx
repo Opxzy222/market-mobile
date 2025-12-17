@@ -124,12 +124,22 @@ const ShopHomePage = () => {
       const newData = res.data;
       setData(newData);
 
+      // === CRITICAL: Sync verification_status and clean up old pending flag ===
+      const verificationStatus = newData.verification_status || 'not_started';
+
+      // If verification is complete (success or failed), remove old pending flag
+      if (verificationStatus === 'verified' || verificationStatus === 'failed') {
+        await AsyncStorage.removeItem('pending_qoreid_verification');
+      }
+
+
       await AsyncStorage.multiSet([
         ['shopDashboardData', JSON.stringify(newData)],
         ['shopDashboardDataTimestamp', Date.now().toString()],
         ['user_verified', JSON.stringify(newData.user_verified)],
         ['phone_verified', JSON.stringify(newData.phone_verified)],
         ['shop_id', JSON.stringify(newData.shop_id)],
+        ['verification_status', verificationStatus],
         [
           'subscription_cache',
           JSON.stringify({

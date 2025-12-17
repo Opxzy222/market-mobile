@@ -43,7 +43,6 @@
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.INTERNET",
         "android.permission.CAMERA",
-        "android.permission.READ_MEDIA_IMAGES",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.RECORD_AUDIO",
         "android.permission.SYSTEM_ALERT_WINDOW",
@@ -68,10 +67,30 @@
           ]
         }
       ],
+      "edgeToEdgeEnabled": true,
       "buildProperties": {
+        "android.enableR8.fullMode": true,
         "android.enableProguardInReleaseBuilds": true
       },
-      "runtimeVersion": "2.0.0"
+      "runtimeVersion": "2.0.0",
+      "plugins": [
+        [
+          "react-native-edge-to-edge",
+          {
+            "android": {
+              "parentTheme": "Default",
+              "enforceNavigationBarContrast": false
+            }
+          }
+        ],
+        [
+          "expo-screen-orientation",
+          {
+            "initialOrientation": "DEFAULT",
+            "supportedOrientations": ["PORTRAIT", "LANDSCAPE"]
+          }
+        ]
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -105,7 +124,6 @@
       "expo-secure-store",
       "expo-video",
       "expo-web-browser",
-      "@qore-id/react-native-qoreid-sdk/plugin",
       [
         "@react-native-firebase/app"
       ],
@@ -158,15 +176,14 @@
         "expo-build-properties",
         {
           "android": {
-            "enableHermes": true,
             "compileSdkVersion": 35,
             "targetSdkVersion": 35,
             "buildToolsVersion": "35.0.0",
             "minSdkVersion": 24,
             "ndkVersion": "25.2.9519653",
+            "enableHermes": false,
             "enableProguardInReleaseBuilds": true,
-            "newArchEnabled": false,
-            "enableR8FullMode": false
+            "edgeToEdgeEnabled": true
           },
           "ios": {
             "deploymentTarget": "15.1",
@@ -218,9 +235,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "11a350ba-590c-4271-9e5a-a2ba71d36ffc"
+        "projectId": "031ec283-a253-419e-b6ed-0b7fc20dc68a"
       }
     },
-    "owner": "opxzy"
+    "owner": "time_flies"
   }
 }

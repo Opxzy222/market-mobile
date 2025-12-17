@@ -1,67 +1,63 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, StatusBar } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, StatusBar, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Toast from 'react-native-toast-message';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import Animated, { FadeInUp, FadeInDown, ZoomIn } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 
-interface VerificationStatus {
+type VerificationStatusType = 'not_started' | 'pending' | 'verified' | 'failed';
+
+interface StatusData {
   phoneVerified: boolean;
-  userVerified: boolean;
+  idVerificationStatus: VerificationStatusType;
 }
 
 const VerificationStatusScreen = () => {
-  const [status, setStatus] = useState<VerificationStatus>({ phoneVerified: false, userVerified: false });
+  const [status, setStatus] = useState<StatusData>({
+    phoneVerified: false,
+    idVerificationStatus: 'not_started',
+  });
   const router = useRouter();
 
   const loadVerificationStatus = useCallback(async () => {
     try {
       const sessionToken = await AsyncStorage.getItem('sessionToken');
-      console.log('Session Token:', sessionToken); // Debug session token
       if (!sessionToken) {
         Toast.show({ type: 'error', text1: 'Error', text2: 'Please log in again.' });
         router.push('/login');
         return;
       }
 
-      // Retrieve verification statuses from AsyncStorage
+      // Load phone verification (old flag)
       const phoneVerifiedStr = await AsyncStorage.getItem('phone_verified');
-      const userVerifiedStr = await AsyncStorage.getItem('user_verified');
-
-      console.log('Phone Verified (raw):', phoneVerifiedStr, 'User Verified (raw):', userVerifiedStr); // Debug raw values
-
-      // Parse JSON strings to booleans, default to false if not found
       const isPhoneVerified = phoneVerifiedStr ? JSON.parse(phoneVerifiedStr) : false;
-      const isUserVerified = userVerifiedStr ? JSON.parse(userVerifiedStr) : false;
 
-      // Update state with latest values
-      setStatus({ phoneVerified: !!isPhoneVerified, userVerified: !!isUserVerified });
-      console.log('Phone Verified:', isPhoneVerified, 'User Verified:', isUserVerified); // Debug state
+      // Load new ID verification status
+      const idStatusStr = await AsyncStorage.getItem('verification_status');
+      const idVerificationStatus: VerificationStatusType = 
+        (idStatusStr as VerificationStatusType) || 'not_started';
 
-      Toast.show({
-        type: 'info',
-        text1: 'Verification Status Loaded',
-        text2: `Phone: ${isPhoneVerified ? 'Verified' : 'Not Verified'}, ID: ${isUserVerified ? 'Verified' : 'Not Verified'}`,
+      setStatus({
+        phoneVerified: !!isPhoneVerified,
+        idVerificationStatus,
       });
     } catch (error) {
-      console.error('Error fetching verification status from AsyncStorage:', error);
+      console.error('Error loading verification status:', error);
       Toast.show({
         type: 'error',
         text1: 'Error',
-        text2: 'Failed to load verification status. Please try again.',
+        text2: 'Failed to load status. Please try again.',
       });
-      // Reset to default state on error to avoid stale data
-      setStatus({ phoneVerified: false, userVerified: false });
+      setStatus({ phoneVerified: false, idVerificationStatus: 'not_started' });
     }
   }, [router]);
 
-  // Fetch data every time the screen comes into focus
   useFocusEffect(
     useCallback(() => {
       loadVerificationStatus();
-      // No cleanup needed, as AsyncStorage operations are idempotent
     }, [loadVerificationStatus])
   );
 
@@ -72,10 +68,8 @@ const VerificationStatusScreen = () => {
         text1: 'Already Verified',
         text2: 'Your phone number is already verified.',
       });
-      console.log('Phone verification already completed');
       return;
     }
-    console.log('Navigating to PhoneVerification');
     router.push('/PhoneVerification');
   };
 
@@ -86,21 +80,79 @@ const VerificationStatusScreen = () => {
         text1: 'Phone Verification Required',
         text2: 'Please verify your phone number first.',
       });
-      console.log('ID Verification blocked: Phone not verified');
       return;
     }
-    if (status.userVerified) {
+
+    if (status.idVerificationStatus === 'verified') {
       Toast.show({
         type: 'success',
         text1: 'Already Verified',
-        text2: 'Your ID is already verified.',
+        text2: 'Your identity is already verified.',
       });
-      console.log('ID Verification blocked: Already verified');
       return;
     }
-    console.log('Navigating to IDVerification');
+
+    if (status.idVerificationStatus === 'pending') {
+      Toast.show({
+        type: 'info',
+        text1: 'Verification in Progress',
+        text2: 'Please wait. We are processing your ID with NIMC.',
+      });
+      return;
+    }
+
+    if (status.idVerificationStatus === 'failed') {
+      Toast.show({
+        type: 'error',
+        text1: 'Previous Attempt Failed',
+        text2: 'You can try verifying your ID again.',
+      });
+    }
+
+    // Only allow navigation if not_started or failed
     router.push('/IDVerification');
   };
+
+  // Helper to get ID verification UI state
+  const getIDStatusConfig = () => {
+    switch (status.idVerificationStatus) {
+      case 'verified':
+        return {
+          icon: 'check-circle',
+          color: '#10B981',
+          title: 'ID Verification',
+          subtitle: 'Verified',
+          gradient: ['#D1FAE5', '#A7F3D0'],
+        };
+      case 'pending':
+        return {
+          icon: 'schedule',
+          color: '#F59E0B',
+          title: 'ID Verification in Progress',
+          subtitle: 'Processing with NIMC...',
+          gradient: ['#FFFBEB', '#FEF3C7'],
+          showSpinner: true,
+        };
+      case 'failed':
+        return {
+          icon: 'error-outline',
+          color: '#EF4444',
+          title: 'ID Verification Failed',
+          subtitle: 'Tap to retry',
+          gradient: ['#FEE2E2', '#FECACA'],
+        };
+      default: // not_started
+        return {
+          icon: 'badge',
+          color: '#6B7280',
+          title: 'ID Verification',
+          subtitle: 'Verify your identity with NIN or ID',
+          gradient: ['#F3F4F6', '#E5E7EB'],
+        };
+    }
+  };
+
+  const idConfig = getIDStatusConfig();
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
@@ -108,7 +160,7 @@ const VerificationStatusScreen = () => {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.navigate('(tabs)/profile')} style={styles.backButton}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <MaterialIcons name="arrow-back" size={26} color="white" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Verification Status</Text>
@@ -118,58 +170,80 @@ const VerificationStatusScreen = () => {
         {/* Content */}
         <Animated.View style={styles.contentContainer} entering={FadeInUp.duration(500)}>
           <Animated.Text style={styles.subtitle} entering={FadeInUp.duration(500).delay(200)}>
-            Complete the steps below to secure your account
+            Complete the steps below to fully secure and activate your account
           </Animated.Text>
-          <Animated.View style={styles.card} entering={FadeInDown.duration(500).delay(300)}>
+
+          <Animated.View style={styles.card} entering={FadeInDown.duration(600).delay(300)}>
             {/* Phone Verification */}
             <TouchableOpacity
-              style={[styles.statusItem, status.phoneVerified && styles.statusItemDisabled]}
+              style={[styles.statusItem, status.phoneVerified && styles.statusItemSuccess]}
               onPress={handlePhoneVerification}
               disabled={status.phoneVerified}
             >
+              <LinearGradient
+                colors={status.phoneVerified ? ['#D1FAE5', '#A7F3D0'] : ['#F3F4F6', '#E5E7EB']}
+                style={StyleSheet.absoluteFill}
+              />
               <View style={styles.statusContent}>
                 <View style={styles.statusIconContainer}>
                   <Animated.View entering={ZoomIn.duration(400).delay(400)}>
                     <MaterialIcons
                       name={status.phoneVerified ? 'check-circle' : 'phone'}
-                      size={28}
+                      size={32}
                       color={status.phoneVerified ? '#10B981' : '#6B7280'}
                     />
                   </Animated.View>
                 </View>
-                <View>
+                <View style={styles.textContainer}>
                   <Text style={styles.statusText}>Phone Verification</Text>
                   <Text style={styles.statusSubText}>
-                    {status.phoneVerified ? 'Verified' : 'Verify your phone number'}
+                    {status.phoneVerified ? 'Verified ✓' : 'Verify your phone number'}
                   </Text>
                 </View>
+                {status.phoneVerified && (
+                  <MaterialIcons name="check" size={28} color="#10B981" />
+                )}
               </View>
             </TouchableOpacity>
 
             {/* ID Verification */}
             <TouchableOpacity
-              style={[styles.statusItem, (status.userVerified || !status.phoneVerified) && styles.statusItemDisabled]}
+              style={[
+                styles.statusItem,
+                (status.idVerificationStatus === 'verified' || status.idVerificationStatus === 'pending') && styles.statusItemSuccess,
+                !status.phoneVerified && styles.statusItemLocked,
+              ]}
               onPress={handleIDVerification}
-              disabled={status.userVerified || !status.phoneVerified}
+              disabled={status.idVerificationStatus === 'verified' || status.idVerificationStatus === 'pending' || !status.phoneVerified}
             >
+              <LinearGradient
+                colors={idConfig.gradient}
+                style={StyleSheet.absoluteFill}
+              />
               <View style={styles.statusContent}>
                 <View style={styles.statusIconContainer}>
-                  <Animated.View entering={ZoomIn.duration(400).delay(500)}>
-                    <MaterialIcons
-                      name={status.userVerified ? 'check-circle' : 'badge'}
-                      size={28}
-                      color={status.userVerified ? '#10B981' : !status.phoneVerified ? '#D1D5DB' : '#6B7280'}
-                    />
+                  <Animated.View entering={ZoomIn.duration(400).delay(600)}>
+                    {idConfig.showSpinner ? (
+                      <ActivityIndicator size={28} color="#F59E0B" />
+                    ) : (
+                      <MaterialIcons
+                        name={idConfig.icon}
+                        size={32}
+                        color={idConfig.color}
+                      />
+                    )}
                   </Animated.View>
                 </View>
-                <View>
-                  <Text style={[styles.statusText, !status.phoneVerified && styles.statusTextDisabled]}>
-                    ID Verification
-                  </Text>
-                  <Text style={[styles.statusSubText, !status.phoneVerified && styles.statusSubTextDisabled]}>
-                    {status.userVerified ? 'Verified' : !status.phoneVerified ? 'Requires phone verification' : 'Verify your identity'}
-                  </Text>
+                <View style={styles.textContainer}>
+                  <Text style={styles.statusText}>{idConfig.title}</Text>
+                  <Text style={styles.statusSubText}>{idConfig.subtitle}</Text>
                 </View>
+                {status.idVerificationStatus === 'verified' && (
+                  <MaterialIcons name="check" size={28} color="#10B981" />
+                )}
+                {status.idVerificationStatus === 'pending' && (
+                  <ActivityIndicator size={24} color="#F59E0B" />
+                )}
               </View>
             </TouchableOpacity>
           </Animated.View>
@@ -182,96 +256,94 @@ const VerificationStatusScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f8fafc',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 12,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
     backgroundColor: '#3A7BD5',
-    borderBottomLeftRadius: 35,
-    borderBottomRightRadius: 35,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 8,
   },
   backButton: {
-    padding: 5,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    padding: 8,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 21,
     fontWeight: 'bold',
     color: '#FFFFFF',
     flex: 1,
     textAlign: 'center',
+    marginRight: -40,
   },
   headerSpacer: {
-    width: 42,
+    width: 50,
   },
   contentContainer: {
     paddingHorizontal: 20,
     paddingTop: 32,
+    flex: 1,
   },
   subtitle: {
     fontSize: 16,
-    fontWeight: '400',
-    color: '#6B7280',
-    marginBottom: 24,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 28,
+    lineHeight: 24,
   },
   card: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
+    borderRadius: 20,
+    padding: 8,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.05)',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 10,
   },
   statusItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 10,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.08)',
+    marginVertical: 8,
+    borderRadius: 16,
+    overflow: 'hidden',
+    position: 'relative',
   },
-  statusItemDisabled: {
-    opacity: 0.7,
+  statusItemSuccess: {
+    opacity: 1,
+  },
+  statusItemLocked: {
+    opacity: 0.6,
   },
   statusContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
+    padding: 20,
   },
   statusIconContainer: {
-    marginRight: 16,
+    width: 50,
+    alignItems: 'center',
+  },
+  textContainer: {
+    flex: 1,
+    marginLeft: 16,
   },
   statusText: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  statusTextDisabled: {
-    color: '#6B7280',
+    fontWeight: '700',
+    color: '#1E293B',
   },
   statusSubText: {
-    fontSize: 14,
-    fontWeight: '400',
-    color: '#6B7280',
-  },
-  statusSubTextDisabled: {
-    color: '#9CA3AF',
+    fontSize: 14.5,
+    color: '#64748B',
+    marginTop: 4,
   },
 });
 
